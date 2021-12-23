@@ -1,0 +1,24 @@
+cp ~/bmad_dist/INSTALL .
+
+svn co https://accserv.classe.cornell.edu/svn/packages/forest
+svn co https://accserv.classe.cornell.edu/svn/trunk/build_system
+svn co https://accserv.classe.cornell.edu/svn/trunk/util
+
+svn co https://accserv.classe.cornell.edu/svn/trunk/src/bmad
+svn co https://accserv.classe.cornell.edu/svn/trunk/src/bsim
+svn co https://accserv.classe.cornell.edu/svn/trunk/src/cpp_bmad_interface
+svn co https://accserv.classe.cornell.edu/svn/trunk/src/examples
+svn co https://accserv.classe.cornell.edu/svn/trunk/src/lux
+svn co https://accserv.classe.cornell.edu/svn/trunk/src/mad_tpsa
+svn co https://accserv.classe.cornell.edu/svn/trunk/src/regression_tests
+svn co https://accserv.classe.cornell.edu/svn/trunk/src/sim_utils
+svn co https://accserv.classe.cornell.edu/svn/trunk/src/tao
+svn co https://accserv.classe.cornell.edu/svn/trunk/src/util_programs
+
+git clone https://github.com/bmad-sim/bmad-doc.git
+
+rm -rf */.git
+rm -rf */.svn
+
+git add *
+git commit -am 'Init commit.'
