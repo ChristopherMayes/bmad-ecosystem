@@ -1,0 +1,27 @@
+# The fortran modules provided by this target.
+provides
+ tao_c_interface_mod.mod
+ tao_change_mod.mod
+ tao_command_mod.mod
+ tao_data_and_eval_mod.mod
+ tao_dmerit_mod.mod
+ tao_geodesic_lm_optimizer_mod.mod
+ tao_get_user_input_mod.mod
+ tao_graph_setup_mod.mod
+ tao_init_data_mod.mod
+ tao_init_mod.mod
+ tao_init_variables_mod.mod
+ tao_input_struct.mod
+ tao_interface.mod
+ tao_lattice_calc_mod.mod
+ tao_lm_optimizer_mod.mod
+ tao_misalign_mod.mod
+ tao_plot_mod.mod
+ tao_plot_window_mod.mod
+ tao_scale_mod.mod
+ tao_set_mod.mod
+ tao_struct.mod
+ tao_svd_optimizer_mod.mod
+ tao_top10_mod.mod
+ tao_wave_mod.mod
+ tao_x_scale_mod.mod

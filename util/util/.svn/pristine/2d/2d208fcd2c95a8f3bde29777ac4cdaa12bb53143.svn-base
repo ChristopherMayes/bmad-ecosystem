@@ -1,0 +1,16 @@
+# Script to define common build linker flags
+# This script is invoked by either the ACC Release or 
+# Distribution environments.
+# No Package Specific settings are in this file.
+
+# Set Plot Library Linker Flags
+if [ "${ACC_PLOT_PACKAGE}" == "plplot" ] ; then
+    export PLOT_LINK_LIBS="plplotfortran;plplot;csirocsa;qsastime"
+    export PLOT_LINK_FLAGS="-lplplotfortran -lplplot -lcsirocsa -lqsastime -lpthread"
+else
+    export PLOT_LINK_LIBS="pgplot"
+    export PLOT_LINK_FLAGS="-lpgplot"
+fi
+
+# Set base Bmad Library Linker Flags as updated by dcs16 in RT#56661
+export ACC_BMAD_LINK_LIBS="xrlf03;xrl;recipes_f-90_LEPP;forest;fgsl;gsl;gslcblas;lapack95;lapack;blas;hdf5hl_fortran;hdf5_hl;hdf5_fortran;hdf5;fftw3;fftw3_omp"

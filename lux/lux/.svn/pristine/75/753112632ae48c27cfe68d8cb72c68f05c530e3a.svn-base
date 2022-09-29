@@ -1,0 +1,23 @@
+set (EXENAME lux_mpi)
+
+FILE (GLOB SRC_FILES "code/*.f90")
+set (SRC_FILES program/lux_mpi.f90 ${SRC_FILES})
+
+SET (LINK_FLAGS ${READLINE_LINK_FLAGS})
+
+set (LINK_LIBS
+  bmad
+  xrlf03
+  xrl
+  sim_utils
+  ${PLOT_LINK_LIBS}
+  recipes_f-90_LEPP
+  forest
+  fgsl
+  gsl
+  gslcblas
+  hdf5hl_fortran
+  hdf5_hl
+  hdf5_fortran
+  hdf5
+)

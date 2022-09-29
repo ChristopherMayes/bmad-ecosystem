@@ -1,0 +1,2 @@
+/opt/rh/devtoolset-8/root/usr/bin/ar qc /home/dcs16/dcs16/bmad_distribution/bmad_dist_gfortran_mpi_openmp_shared/debug/lib/liblux.a CMakeFiles/lux.dir/code/lux_module.f90.o
+/opt/rh/devtoolset-8/root/usr/bin/ranlib /home/dcs16/dcs16/bmad_distribution/bmad_dist_gfortran_mpi_openmp_shared/debug/lib/liblux.a

@@ -1,0 +1,30 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/dcs16/dcs16/bmad_distribution/bmad_dist_gfortran_mpi_openmp_shared/sim_utils/file/read_dir.cpp
+dirent.h
+-
+stdlib.h
+-
+string.h
+-
+
+/home/dcs16/dcs16/bmad_distribution/bmad_dist_gfortran_mpi_openmp_shared/sim_utils/misc/cpp_fortran_utils.cpp
+
+/home/dcs16/dcs16/bmad_distribution/bmad_dist_gfortran_mpi_openmp_shared/sim_utils/misc/program_sleep.cpp
+time.h
+-
+
+/home/dcs16/dcs16/bmad_distribution/bmad_dist_gfortran_mpi_openmp_shared/sim_utils/optimizers/opti.cpp
+cmath
+-
+cstdlib
+-
+iostream
+-
+

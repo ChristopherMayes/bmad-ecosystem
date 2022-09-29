@@ -1,0 +1,148 @@
+\chapter{Python/GUI Interface}
+\index{python interface}
+\label{c:python}
+
+It is sometimes convenient to be able to run Tao via Python. For example, in an online control
+system environment. \tao has scripts for doing this in one of two ways. One way is using the
+\vn{ctypes} module. The other way is using the \vn{pexpect} module. A Web search will point to
+documentation on \vn{ctypes} and \vn{pexpect}. The advantage of \vn{ctypes} is that it directly
+accesses \tao code which makes communication between Python and \tao more robust. The disadvantage of
+\vn{ctypes} is that it needs a shared-object version of the \vn{Tao} library. [See the Bmad web site
+for information on building shared-object libraries.] The disadvantage of \vn{pexpect} is that it is
+slower and it is possible for \vn{pexpect} to time out waiting for a response from \tao.
+
+%--------------------------------------------------------------------------
+\section{Python Interface Via Pexpect}
+
+A python module, \vn{tao_pipe.py}, for interfacing \tao to \vn{Python}
+is provided in the directory \vn{tao/python/tao_pexpect}.
+
+The \vn{tao_pipe} module uses the \vn{pexpect} module. The
+\vn{pexpect} module is a general purpose tool for interfacing
+Python with programs like \tao. If \vn{pexpect} is not present
+your system, it can be downloaded from
+\vn{www.noah.org/wiki/pexpect}. 
+
+Example:
+\begin{example}
+  >>> import tao_pipe                                       # import module
+  >>> p = tao_pipe.tao_io("../bin/tao -lat my_lat.bmad")    # init session
+  >>> p.cmd_in("show global")               # Command to Tao
+  >>> print(p.output)                       # print the output from Tao
+  >>> p.cmd("show global")                  # Like p.cmd_in() excepts prints the output too.
+\end{example}
+
+After each call to \vn{tao_io.cmd} and \vn{tao_io.cmd_in}, the
+\vn{tao_io.output} variable is set to the multi-line output string
+returned by \tao. To chop this string into lines, use the splitlines()
+string method.
+
+\index{python}
+To get information from \tao into Python, the output from \tao,
+contained in \vn{tao_io.output}, needs to be parsed. For long term
+maintainability of python scripts, use the \vn{python} (\sref{s:python}) command 
+as opposed to the \vn{show} command . See the \vn{python} command for more details.
+
+%--------------------------------------------------------------------------
+\section{Python Interface Via Ctypes}
+
+A \vn{ctypes} based python module \vn{pytao.py} for interfacing \tao to \vn{Python} is provided in
+the directory \vn{tao/python/pytao}.
+
+A test driver script named \vn{pytao_example.py} is in the same directory. See the documentation in both of
+these files for further information.
+
+%--------------------------------------------------------------------------
+\section{Tao Python command}
+\label{s:python.python}
+
+To get output from \tao that can be easily parsed by Python, use the \vn{python} command
+(\sref{s:python}). The output of this command are semi-colon delimited lists. Besides being easily
+parsed, the syntax of the output from the \vn{python} command will not change over time as the \tao
+program is developed. [However, the content of the lists will change when \tao's internal structures
+are modified in the course of \tao program development.]
+
+Documentation on the \vn{python} command is contained in the code file itself at:
+\begin{example}
+  tao/code/tao_python_cmd.f90
+\end{example}
+
+Example: The command
+\begin{example}
+  python global
+\end{example}
+will produce as output:
+\begin{example}
+  lm_opt_deriv_reinit;REAL;T; -1.0000000000000000E+00
+  de_lm_step_ratio;REAL;T;  1.0000000000000000E+00
+  de_var_to_population_factor;REAL;T;  5.0000000000000000E+00
+  lmdif_eps;REAL;T;  9.9999999600419720E-13
+  svd_cutoff;REAL;T;  9.9999997473787516E-06
+  unstable_penalty;REAL;T;  1.0000000474974513E-03
+  ... etc ...
+\end{example}
+
+To simplify the process of parsing parameter lists, a Python class called \vn{tao_parameter} is
+defined in the file:
+\begin{example}
+  tao/python/pytao/util/parameters.py
+\end{example}
+This class defines components
+\begin{example}
+    name:       The name of the parameter
+    type:       "STR", "INT", "REAL", "LOGIC", "ENUM", etc...
+    can_vary:   Either 'T', 'F', or 'I', indicating whether or not the
+                user may change the value of the parameter. 'I' indicates
+                that the parameter is to be ignored by a gui when displaying parameters.
+    value:      The value held in the parameter, should be of the
+                appropriate type for the specified param_type
+                (or 'T'/'F' for LOGIC)
+\end{example}
+Further documentation on this class is in this file. The following Python program will parse a parameter
+list data file and crate a dictionary holding the information
+\begin{example}
+  from pytao.util.parameters import *
+  df = open('spin.dat', 'r')
+  param_dict = tao_parameter_dict(df.readlines())
+  print (str(param_dict))
+\end{example}
+Note: The \bmad setup scripts will append the directory \vn{tao/python} to the \vn{PYTHONPATH}
+environment variable.
+
+
+%--------------------------------------------------------------------------
+\section{Plotting Issues}
+\label{s:gui.plot}
+
+When using \tao with a \vn{GUI}, and when the \vn{GUI} is doing the plotting, the \vn{-noplot} and
+\vn{-external_plotting} options (\sref{s:command.line}) should be used when starting \tao. The
+\vn{-noplot} option (which sets \vn{global%plot_on}) prevents \tao from opening a plotting
+window. Note: Both of these options can also be set, after startup, with the \vn{set global} command
+and the setting of both can be viewed using the \vn{show global} command.
+
+With \vn{-external_plotting} set, the external code should handle how plots are assigned to plot
+regions and it would be potentially disruptive if a user tired to place plots (which could
+inadvertently happen when running command files). To avoid this, with \vn{-external_plotting} set,
+the \vn{place} command will not do any placement but rather save the \vn{place} arguments (which is
+the name of a template plot and a region name) to a buffer which then can be read out by the
+external code \vn{python place_buffer} command. The external code may then decide how to
+proceed. The external code is able to bypass the buffering and perform placements by using
+\vn{place} with the \vn{-no_buffer} switch (\sref{s:place}).
+
+Normally when \tao is not displaying the plot page when the \vn{-noplot} option is used, \tao will,
+to save time, not calculate the points needed for plotting curves. The exception is if
+\vn{-external_plotting} is turned on. In this case, to make plot references unambiguous, plot can be
+referred to by their index number. The plot index number can be viewed using the \vn{python
+plot_list} command. Template plots can be referenced using the syntax ``\vn{@Tnnn}'' where \vn{nnn}
+is the index number. For example, \vn{@T3} referrers to the template plot with index 3. Similarly,
+the displayed plots (plots that are associated with plot regions) can be referred to using the
+syntax ``\vn{@Rnnn}''.
+
+%--------------------------------------------------------------------------
+\section{Python commands}
+\label{s:python.commands}
+
+The following python sub-commands are available:
+
+\input{python-interface-commands.tex}
+
