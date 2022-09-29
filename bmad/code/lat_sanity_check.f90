@@ -18,7 +18,18 @@ subroutine lat_sanity_check (lat, err_flag)
 use bmad_interface, except_dummy => lat_sanity_check
 
 implicit none
-     
+
+type lord_slave1_struct
+  integer :: n_lord = 0
+  integer :: n_slave = 0
+  integer :: n_lord_field = 0
+  integer :: n_slave_field = 0
+end type
+
+type lord_slave_struct
+  type (lord_slave1_struct), allocatable :: ele(:)
+end type
+
 type (lat_struct), target :: lat
 type (nametable_struct), pointer :: nt
 type (ele_struct), pointer :: ele, slave, lord, lord2, slave1, slave2, ele2
@@ -32,6 +43,8 @@ type (cylindrical_map_struct), pointer :: cl_map
 type (grid_field_struct), pointer :: g_field
 type (taylor_field_struct), pointer :: t_field
 type (ele_attribute_struct) info
+type (lord_slave_struct), allocatable, target :: bls(:)
+type (lord_slave1_struct), pointer :: b
 
 real(rp) s1, s2, ds, ds_small, l_lord, g(3)
 real(rp), pointer :: array(:)
@@ -48,11 +61,14 @@ logical good_control(12,12), girder_here, finished, foundit, problem_found
 ! Check the nametable.
 ! Instead of quiting, lat_sanity_check will repair a broken nametable.
 
+allocate (bls(0:ubound(lat%branch, 1)))
 problem_found = .false.
 nt => lat%nametable
 n = -1
+
 do ib = 0, ubound(lat%branch, 1)
   branch => lat%branch(ib)
+  allocate (bls(ib)%ele(0:branch%n_ele_max))
 
   do ie = 0, branch%n_ele_max
     n = n + 1
@@ -84,6 +100,51 @@ if (n /= nt%n_max) then
 endif
 
 if (problem_found) call create_lat_ele_nametable(lat, nt)
+
+! Count lord/slave links
+
+do i = 1, lat%n_control_max
+  ctl => lat%control(i)
+  if (ctl%attribute == 'FIELD_OVERLAPS') then
+    b => bls(ctl%lord%ix_branch)%ele(ctl%lord%ix_ele)
+    b%n_slave_field = b%n_slave_field + 1
+    b => bls(ctl%slave%ix_branch)%ele(ctl%slave%ix_ele)
+    b%n_lord_field = b%n_lord_field + 1
+  else
+    b => bls(ctl%lord%ix_branch)%ele(ctl%lord%ix_ele)
+    b%n_slave = b%n_slave + 1
+    b => bls(ctl%slave%ix_branch)%ele(ctl%slave%ix_ele)
+    b%n_lord = b%n_lord + 1
+  endif
+enddo
+
+do ib = 0, ubound(lat%branch, 1)
+  branch => lat%branch(ib)
+
+  do ie = 0, branch%n_ele_max
+    ele => branch%ele(ie)
+
+    if (ele%n_lord /= bls(ib)%ele(ie)%n_lord) then
+      call out_io (s_fatal$, r_name, 'LORD/SLAVE BOOKKEEPING ERROR: ELE%N_LORD INCORRECT!', 'PLEASE REPORT THIS!')
+      problem_found = .true.
+    endif
+
+    if (ele%n_slave /= bls(ib)%ele(ie)%n_slave) then
+      call out_io (s_fatal$, r_name, 'LORD/SLAVE BOOKKEEPING ERROR: ELE%N_SLAVE INCORRECT!', 'PLEASE REPORT THIS!')
+      problem_found = .true.
+    endif
+
+    if (ele%n_lord_field /= bls(ib)%ele(ie)%n_lord_field) then
+      call out_io (s_fatal$, r_name, 'LORD/SLAVE BOOKKEEPING ERROR: ELE%N_LORD_FIELD INCORRECT!', 'PLEASE REPORT THIS!')
+      problem_found = .true.
+    endif
+
+    if (ele%n_slave_field /= bls(ib)%ele(ie)%n_slave_field) then
+      call out_io (s_fatal$, r_name, 'LORD/SLAVE BOOKKEEPING ERROR: ELE%N_SLAVE_FIELD INCORRECT!', 'PLEASE REPORT THIS!')
+      problem_found = .true.
+    endif
+  enddo
+enddo
 
 ! Some global checks
 
@@ -206,7 +267,8 @@ branch_loop: do i_b = 0, ubound(lat%branch, 1)
     ! Do not check the extra elements temporarily inserted by bmad_parser2.
 
     select case (ele%key)
-    case (def_mad_beam$, def_parameter$, def_particle_start$, def_bmad_com$, def_line$, def_ptc_com$) 
+    case (def_mad_beam$, def_parameter$, def_particle_start$, def_bmad_com$, def_line$, def_ptc_com$, &
+                                                                                      def_space_charge_com$) 
       cycle
     end select
 
@@ -334,14 +396,14 @@ branch_loop: do i_b = 0, ubound(lat%branch, 1)
     ! ac_kicker needs to have the time variation defined.
 
     if (ele%key == ac_kicker$) then
-      if (.not. allocated(ele%ac_kick%amp_vs_time) .and. .not. allocated(ele%ac_kick%frequencies)) then
+      if (.not. allocated(ele%ac_kick%amp_vs_time) .and. .not. allocated(ele%ac_kick%frequency)) then
         call out_io (s_fatal$, r_name, &
                       'ELEMENT: ' // trim(ele%name) // '  ' // trim(str_ix_ele), &
                       'DOES NOT HAVE THE TIME DEPENDENCE (USING AMP_VS_TIME OR FREQUENCIES ATTRIBUTES) DEFINED.')
         err_flag = .true.
       endif
 
-      if (allocated(ele%ac_kick%amp_vs_time) .and. allocated(ele%ac_kick%frequencies)) then
+      if (allocated(ele%ac_kick%amp_vs_time) .and. allocated(ele%ac_kick%frequency)) then
         call out_io (s_fatal$, r_name, &
                       'ELEMENT: ' // trim(ele%name) // '  ' // trim(str_ix_ele), &
                       'HAS SET BOTH AMP_VS_TIME AND FREQUENCIES ATTRIBUTES SET.', &

@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 #+
 # Script to convert from MADX lattice format to Bmad lattice format.
 # See the README file for more details
@@ -32,6 +34,7 @@ class seq_struct:
     self.seq_ele_dict = OrderedDict()
     self.last_ele_offset = ''
     self.line = ''                   # For when turning a sequence into a line
+    self.drift_list = []
 
 class common_struct:
   def __init__(self):
@@ -165,6 +168,13 @@ bmad_param_name = {
 
 #------------------------------------------------------------------
 #------------------------------------------------------------------
+# Is character a valid character to be used in a label?
+
+def is_label_char(char):
+  return char.isalnum() or char in '._'
+
+#------------------------------------------------------------------
+#------------------------------------------------------------------
 # Order var defs so that vars that depend upon other vars are come later.
 # Also comment out first occurances if there are multiple defs of the same var.
 
@@ -197,7 +207,17 @@ def order_var_def_list():
 
     moved = False
     for ix2 in range(len(new_def_list)-1, ix, -1):
-      if new_def_list[ix2][0] in vdef[1]:
+      sub = new_def_list[ix2][0]
+      str = vdef[1]
+      ns = len(str)
+      found = False
+
+      for match in re.finditer(sub, str):
+        j = match.start()
+        k = match.end()
+        if (j == 0 or not is_label_char(str[j-1])) and (k > len(str)-1 or not is_label_char(str[k])): found = True
+
+      if found:
         new_def_list.pop(ix)
         new_def_list.insert(ix2, vdef)
         moved = True
@@ -250,7 +270,7 @@ def bmad_param(param, ele_name):
   elif len(param) == 5 and param[0:2] == 'tm' and param[2] in '123456' and param[3] in '123456' and param[4] in '123456':
     return f'tt{param[2:]}'
 
-  # Translate something like "k1s" to "k1" in the hopes that k1 on the MADX side is zero so on the 
+  # Translate something like "k1s" to "k1" in the hopes that k1 on the MADX side is zero so the 
   # translation is k1s -> k1, tilt -> tilt + pi/2
   elif len(param) == 3 and param[0] == 'k' and param[1].isdigit() and param[2] == 's':
     return f'{param[:-1]}'
@@ -605,7 +625,7 @@ def parse_and_write_element(dlist, write_to_file, command):
 
   if 'apertype' in params:
     aperture = bmad_expression(params.pop('aperture').replace('{', '').replace('}', ''), '')
-    [params['x_limit'], params['y_limit']] = aperture.split(',')[0:2]
+    [params['x_limit'], params['y_limit']] = aperture.split(',')[2:4]
 
     if params['apertype'] in ['ellipse', 'circle']:
       params['aperture_type'] = 'elliptical'
@@ -796,14 +816,35 @@ def parse_command(command, dlist):
     common.seq_dict[seq.name] = seq
     offset = f'{seq.l} - {add_parens(seq.last_ele_offset, False)}'
 
+    # Replace "[[...]]" marker strings in offsets for elements that have been inserted when ref 
+    # element has not yet been defined at the point the element was parsed.
+
+    if not common.superimpose_eles and not is_zero(offset):
+      drift_name = f'drift{common.drift_count}'
+      seq.drift_list.append(f'{drift_name}: drift, l = {offset}')
+      seq.line += drift_name + ', '
+      common.drift_count += 1
+    
+    for ix, drift in enumerate(seq.drift_list):
+      while '[[' in drift:
+        ix1 = drift.find('[[')
+        ix2 = drift.find(']]')
+        ref_ele_name = drift[ix1+2:ix2]
+        from_ref_ele = seq.seq_ele_dict[ref_ele_name]
+        offset = from_ref_ele.at
+        if 'l' in from_ref_ele.param:
+          if seq.refer == 'entry': offset += f' + {add_parens(bmad_expression(from_ref_ele.param["l"], ""), False)/2}'
+          if seq.refer == 'exit': offset += f' - {add_parens(bmad_expression(from_ref_ele.param["l"], ""), False)/2}'
+        drift = f'{drift[:ix1]}({offset}){drift[ix2+2:]}'
+        seq.drift_list[ix] = drift
+
+    for drift in seq.drift_list:
+      f_out.write(drift + '\n')
+
+    #
+
     if not common.superimpose_eles:
-      if is_zero(offset):
-        wrap_write (f'{seq.name}: line = ({seq.line[:-2]})', f_out)
-      else:
-        drift_name = f'drift{common.drift_count}'
-        f_out.write(f'{drift_name}: drift, l = {offset}\n')
-        wrap_write (f'{seq.name}: line = ({seq.line}{drift_name})', f_out)
-        common.drift_count += 1
+      wrap_write (f'{seq.name}: line = ({seq.line[:-2]})', f_out)
 
     return
 
@@ -874,19 +915,32 @@ def parse_command(command, dlist):
         common.ele_dict[dlist[0]].count += 1
         ele_name = f'{dlist[0]}__{common.ele_dict[dlist[0]].count}'
         ele = parse_and_write_element([ele_name, ':']+dlist, True, command)
+      seq.seq_ele_dict[ele_name] = ele    # In case this element is used as a positional reference
 
-    else:
+    else:   # Subsequence
+      ele = ele_struct(dlist[0])
+      ele.params = parameter_dictionary(dlist[2:])
+      ele.at = ele.params['at']
+      seq.seq_ele_dict[dlist[0]] = ele    # In case this element is used as a positional reference      
       is_ele_here = False
 
     # Finish ele in sequence.
 
     if is_ele_here:
       if ele.from_ref_ele != '':
-        from_ref_ele = seq.seq_ele_dict[ele.from_ref_ele]
-        offset += f' + {add_parens(bmad_expression(from_ref_ele.at, ""), False)}'
-        if 'l' in from_ref_ele.param:
-          if seq.refer == 'entry': offset += f' + {add_parens(bmad_expression(from_ref_ele.param["l"], ""), False)/2}'
-          if seq.refer == 'exit': offset += f' - {add_parens(bmad_expression(from_ref_ele.param["l"], ""), False)/2}'
+        if ele.from_ref_ele in seq.seq_ele_dict:
+          from_ref_ele = seq.seq_ele_dict[ele.from_ref_ele]
+          offset += f' + {add_parens(bmad_expression(from_ref_ele.at, ""), False)}'
+          if 'l' in from_ref_ele.param:
+            if seq.refer == 'entry': offset += f' + {add_parens(bmad_expression(from_ref_ele.param["l"], ""), False)/2}'
+            if seq.refer == 'exit': offset += f' - {add_parens(bmad_expression(from_ref_ele.param["l"], ""), False)/2}'
+        else:
+          # Ref element is not yet defined so put in marker string "[[...]]" that will be removed later to
+          # be replaced by the actual offset.
+          if offset == '':
+            offset = f'[[{ele.from_ref_ele}]]'
+          else:
+            offset += f' + [[{ele.from_ref_ele}]]'
 
       if common.superimpose_eles:
         f_out.write(f'superimpose, element = {ele_name}, ref = {seq.name}_mark, ' + \
@@ -927,7 +981,7 @@ def parse_command(command, dlist):
         else:
           drift_name = f'drift{common.drift_count}'
           drift_line = f'{drift_name}: drift, l = {this_offset}'
-          f_out.write(drift_line + '\n')
+          seq.drift_list.append(drift_line)
           seq.line += f'{drift_name}, {ele_name}, '
           seq.last_ele_offset = last_offset
           common.drift_count += 1
@@ -956,15 +1010,18 @@ def parse_command(command, dlist):
     this_offset = f'{offset}'
 
     if seq2.refpos != '':
-      refpos_ele = seq2.ele_dict[seq2.refpos]
+      refpos_ele = seq2.seq_ele_dict[seq2.refpos]
       offset += f' - {add_parens(refpos_ele.at, False)}'
       last_offset += f' + {refpos_ele.at} - {add_parens(seq2.l, False)}'
+      print (f'A: {last_offset}')
     elif seq.refer == 'entry':
       if length != '': last_offset += f' + {length}'
+      print (f'B: {last_offset}')
     elif seq.refer == 'centre':
       offset += f' - {add_parens(length, False)}/2'
       if length != '': this_offset += f' - {length}/2'
       if length != '': last_offset += f' + {length}/2'
+      print (f'C: {last_offset}')
     else:
       offset += f' - {add_parens(length, False)}'
       if length != '': this_offset += f' - {length}'
@@ -979,7 +1036,8 @@ def parse_command(command, dlist):
       common.drift_count += 1
 
       if seq.last_ele_offset != '': drift_line += f' - {add_parens(seq.last_ele_offset, False)}'
-      f_out.write(drift_line + '\n')
+      seq.drift_list.append(drift_line)
+      print (f'3: {seq.drift_list[-1]}')
       seq.line += f'{drift_name}, {ele_name}, '
       seq.last_ele_offset = last_offset
 
@@ -1007,14 +1065,21 @@ def parse_command(command, dlist):
              f'  You may have to edit the Bmad lattice file by hand to resolve this.')
     common.var_name_list.append(dlist[0])
     name = dlist[0]
-    value = bmad_expression(command.split('=')[1].strip(), dlist[0])
+    value = bmad_expression(command.split('=')[1].strip(), '')
     if '[' in value or not common.prepend_vars:    # Involves an element parameter
       f_out.write(f'{name} = {value}\n')
     else:
       common.var_def_list.append([name, value])
     return
 
-  # Ele param set
+  # "qf, k1 = ..." parameter set
+
+  if len(dlist) > 4 and dlist[0] in common.ele_dict and dlist[1] == ',' and dlist[3] == '=':
+    f_out.write(dlist[0] + '[' + bmad_param(dlist[2]) + '] = ' + bmad_expression(''.join(dlist[4:]), dlist[2]) + '\n')
+    return
+
+
+  # Ele "qf->k1 = ..." parameter set
 
   if dlist[1] == '=' and '->' in dlist[0]:
     [ele_name, dummy, param] = dlist[0].partition('->')
@@ -1087,19 +1152,6 @@ def parse_command(command, dlist):
     if 'y'      in param: f_out.write(f'particle_start[y] = {bmad_expression(param["y"], "")}\n')
     if 'px'     in param: f_out.write(f'particle_start[px] = {bmad_expression(param["px"], "")}\n')
     if 'py'     in param: f_out.write(f'particle_start[py] = {bmad_expression(param["py"], "")}\n')
-    return
-
-  # "qf, k1 = ..." parameter set
-
-  if len(dlist) > 4 and dlist[0] in common.ele_dict and dlist[1] == ',' and dlist[3] == '=':
-    f_out.write(dlist[0] + '[' + bmad_param(dlist[2]) + '] = ' + bmad_expression(''.join(dlist[4:]), dlist[2]) + '\n')
-    return
-
-  # "qf->k1 = ..." parameter set
-
-  if '->' in dlist[0] and dlist[1] == '=':
-    p = dlist[0].split('->')
-    f_out.write(p[0] + '[' + bmad_param(p[1]) + '] = ' + bmad_expression(''.join(dlist[2:]), p[1]) + '\n')
     return
 
   # Element def

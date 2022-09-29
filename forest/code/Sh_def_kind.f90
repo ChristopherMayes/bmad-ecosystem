@@ -85,7 +85,7 @@ MODULE S_DEF_KIND
 
   PRIVATE SEPR,SEPP,SYMPSEPR,SYMPSEPP !,SEPTTRACK
   !  PRIVATE IN,IN1,IN2
-  INTEGER IN(4,4),IN1(10),IN2(10)
+ ! INTEGER IN(4,4),IN1(10),IN2(10)
   PRIVATE ZEROR_CAV_TRAV,ZEROP_CAV_TRAV
   private fringe_TEAPOTr,fringe_TEAPOTp,INTER_TEAPOT,INTEP_TEAPOT
   PRIVATE fringe_STREXR,fringe_STREXP
@@ -182,10 +182,11 @@ PRIVATE DIRECTION_VR,DIRECTION_VP   !,DIRECTION_V
   PRIVATE push_quaternionr,push_quaternionP
   PRIVATE get_omega_spinR,get_omega_spinP   !,get_omega_spin 
   private radiate_2p,radiate_2r,radiate_2_prober,radiate_2_probep,radiate_2_probe  !,radiate_2
-  private quaternion_8_to_matrix,crossp,RAD_SPIN_qua_PROBER,RAD_SPIN_qua_PROBEP
+  private quaternion_r_to_matrix,quaternion_8_to_matrix,crossp,RAD_SPIN_qua_PROBER,RAD_SPIN_qua_PROBEP
   logical :: do_d_sij=.false.
   !  INTEGER, PRIVATE :: ISPIN0P=0,ISPIN1P=3
    ! oleksii 
+  real(dp),target :: vertical_kick = 0
   real(dp) n_oleksii(3)
   real(dp) :: t_ns_oleksii=0,t_nb_oleksii=0,t_bks_approx=0, i_bks=0 ,theta_oleksii=0
   integer :: print_oleksii =0
@@ -201,8 +202,9 @@ type(work) w_bks
  PRIVATE feval_CAV_bmad_prober,rk2bmad_cav_prober,rk4bmad_cav_prober,rk4bmad_cav_probep
  private rk6bmad_cav_prober,rk6bmad_cav_probep
  private INTE_sol5_prober,INTE_SOL5_probep
- private INT_SAGAN_prober
-
+ private INT_SAGAN_prober,INT_SAGAN_probep
+ logical :: gaussian_stoch=.false.
+!type(real_8) radcoe
   INTERFACE radiate_2_force
      MODULE PROCEDURE radiate_2_forcer
      MODULE PROCEDURE radiate_2_forcep
@@ -240,6 +242,7 @@ type(work) w_bks
  
   INTERFACE TRACK_SLICE_sagan
      MODULE PROCEDURE INT_SAGAN_prober
+     MODULE PROCEDURE INT_SAGAN_probep
   END INTERFACE 
 
   INTERFACE TRACK_SLICE_CAV4
@@ -1126,6 +1129,7 @@ type(work) w_bks
 
 
   INTERFACE makeso3
+     MODULE PROCEDURE quaternion_r_to_matrix
      MODULE PROCEDURE quaternion_8_to_matrix
   END INTERFACE
 
@@ -1207,7 +1211,7 @@ CONTAINS !----------------------------------------------------------------------
     real(dp) DH,DD
 
     SELECT CASE(EL%P%METHOD)
-    CASE(2,4,6)
+    CASE(2,4,6,8)
        DH=EL%L/EL%P%NST
        DD=EL%P%LD/EL%P%NST
 
@@ -1234,7 +1238,7 @@ CONTAINS !----------------------------------------------------------------------
 
     CALL ALLOC(DH)
     SELECT CASE(EL%P%METHOD)
-    CASE(2,4,6)
+    CASE(2,4,6,8)
        DH=EL%L/EL%P%NST
        DD=EL%P%LD/EL%P%NST
 
@@ -1263,7 +1267,7 @@ CONTAINS !----------------------------------------------------------------------
     real(dp) DH,DD
 
     SELECT CASE(EL%P%METHOD)
-    CASE(2,4,6)
+    CASE(2,4,6,8)
        DH=EL%L/EL%P%NST
        DD=EL%P%LD/EL%P%NST
 
@@ -1288,7 +1292,7 @@ CONTAINS !----------------------------------------------------------------------
 
     CALL ALLOC(DH)
     SELECT CASE(EL%P%METHOD)
-    CASE(2,4,6)
+    CASE(2,4,6,8)
        DH=EL%L/EL%P%NST
        DD=EL%P%LD/EL%P%NST
 
@@ -1653,10 +1657,12 @@ CONTAINS !----------------------------------------------------------------------
 
        if(J==1) then
           if(EL7%P%DIR==1) THEN
+ 
              CALL EDGE(EL7%P,EL7%BN,EL7%H1,EL7%H2,EL7%FINT,EL7%HGAP,1,X,k)
              IF(k%FRINGE.or.el7%p%permfringe==1.or.el7%p%permfringe==3) CALL MULTIPOLE_FRINGE(EL7%P,EL7%AN,EL7%BN,1,X,k)
              IF(el7%p%permfringe==2.or.el7%p%permfringe==3) &
              CALL FRINGE2QUAD(EL7%P,EL7%bn(2),EL7%an(2),EL7%VA,EL7%VS,1,X,k)
+ 
           ELSE
              CALL EDGE(EL7%P,EL7%BN,EL7%H1,EL7%H2,EL7%FINT,EL7%HGAP,2,X,k)
              IF(k%FRINGE.or.el7%p%permfringe==1.or.el7%p%permfringe==3) CALL MULTIPOLE_FRINGE(EL7%P,EL7%AN,EL7%BN,2,X,k)
@@ -4171,28 +4177,33 @@ X(6)=X(6)+((X(2)*X(2)+X(4)*X(4))/2.0_dp/pz**2)*(1.0_dp/b+x(5))*L/pz + x(5)*L/pz 
     TYPE(REAL_8) PZ
     logical(lp) EXACT,ctime
     real(dp) b
-
+ 
     call PRTP("DRIFT:0", X)
-
+ 
     IF(EXACT) THEN
        CALL ALLOC(PZ)
        if(ctime) then
+ 
           PZ=SQRT(1.0_dp+2.0_dp*X(5)/b+x(5)**2-X(2)**2-X(4)**2)
           X(1)=X(1)+L*X(2)/PZ
           X(3)=X(3)+L*X(4)/PZ
        !   X(6)=X(6)+L*(1.0_dp/b+X(5))/PZ-(1-T)*LD/b
           X(6)=X(6)+(L/B)*(-2.0_dp*X(5)/B-x(5)**2+X(2)**2+X(4)**2)/pz/(1.0_dp+pz) &
  + L*X(5)/PZ + (L-LD)/B + T*LD/B
+ 
+ 
        else
           call PRTP("********* UNEXPECTED TIME=FALSE **********")
+
+ 
 
           PZ=SQRT((1.0_dp+X(5))**2-X(2)**2-X(4)**2)
           X(1)=X(1)+L*X(2)/PZ
           X(3)=X(3)+L*X(4)/PZ
-          X(6)=X(6)+L*(1.0_dp+X(5))/PZ-(1-T)*LD
+ !         X(6)=X(6)+L*(1.0_dp+X(5))/PZ-(1-T)*LD
           X(6)=X(6)+L*(-2.0_dp*X(5) -x(5)**2+X(2)**2+X(4)**2)/pz/(1.0_dp+pz) &
  + L*X(5)/PZ + (L-LD)  + T*LD 
-
+ 
        endif
        CALL KILL(PZ)
     ELSE
@@ -8569,13 +8580,13 @@ integer :: kkk=0
 
        DK2=EL%L/EL%P%NST
        DK=DK2/2.0_dp
-
+ 
        CALL PUSHTKT7(EL,X,k)
        CALL KICKPATH(EL,DK,X,k)
        CALL KICKTKT7(EL,DK2,X,k)
        CALL KICKPATH(EL,DK,X,k)
        CALL PUSHTKT7(EL,X,k)
-
+ 
 
        CALL KILL(DK,DK2)
 
@@ -11650,12 +11661,18 @@ integer :: kkk=0
     real(dp),INTENT(IN):: DL
     TYPE(TEAPOTP),INTENT(IN):: EL
     TYPE(REAL_8) XN(6),PZ,PT,A,ah
-    real(dp)  b,R
+    real(dp)  b,R,eps
+    logical ic
     TYPE(INTERNAL_STATE) k !,OPTIONAL :: K
-
+    
     call PRTP("SPROT:0", X)
-
+     ic=.false.
     if(EL%P%B0/=0.0_dp) then
+     if(abs(EL%P%B0)<10*eps_da) then
+      eps=eps_da
+      eps_da=EL%P%B0/1000
+      ic=.true.
+     endif
        CALL ALLOC( XN,6)
        CALL ALLOC( PZ)
        CALL ALLOC( PT)
@@ -11691,8 +11708,13 @@ integer :: kkk=0
        CALL KILL( PZ)
        CALL KILL( PT)
        CALL KILL( A,ah)
+     if(ic) then
+      eps_da=eps
+     endif
     else
+ 
        CALL DRIFT(YL,DL,EL%P%beta0,k%TOTALPATH,EL%P%EXACT,k%TIME,X)
+ 
     endif
 
     call PRTP("SPROT:1", X)
@@ -11846,10 +11868,17 @@ endif
     TYPE(TEAPOTP),INTENT(IN):: EL
     TYPE(REAL_8) XN(6),PZ,PT,A,PZS,DPX
     TYPE(REAL_8)  dpxn,xt1,xt2,xi,zeta,v,w
-
-    real(dp)  b,R
+    logical ic
+    real(dp)  b,R,eps
     TYPE(INTERNAL_STATE) k !,OPTIONAL :: K
     real(dp) dir
+
+      ic=.false.
+     if(abs(EL%P%B0)<10*eps_da) then
+      eps=eps_da
+      eps_da=EL%P%B0/1000
+      ic=.true.
+     endif
 
     if(old_thick_bend) then
 
@@ -12008,6 +12037,9 @@ xn(3)= ARCSIN_x(xt1*DIR*EL%BN(1))*xt1
     call PRTP("SSEC:1", X)
 
 endif
+     if(ic) then
+      eps_da=eps 
+     endif
   END SUBROUTINE SsecP
 
   SUBROUTINE SKICKR(EL,YL,X,k)
@@ -12058,9 +12090,10 @@ endif
 
    !call PRTP1("B1=", B(1)*YL)
    !call PRTP1("B2=", B(2)*YL)
-
+ 
     X(2)=X(2)+YL*DIR*B(1)
     X(4)=X(4)+YL*DIR*B(2)
+ 
 
     IF(.NOT.EL%DRIFTKICK) THEN
        X(2)=X(2)+YL*DIR*EL%BN(1)*(1.0_dp+X(1)*EL%P%B0)
@@ -14239,7 +14272,7 @@ endif
              CALL ROT_XZ(EL%P%EDGE(2),X,EL%P%BETA0,DONEITT,k%TIME)
   !        ELSE
   !              IF(el%p%permfringe==2.or.el%p%permfringe==3) CALL FRINGE2QUAD(EL%P,EL%bn(2),EL%an(2),EL%VA,EL%VS,2,X,k)
-                IF(k%FRINGE.or.el%p%permfringe==1.or.el%p%permfringe==3)CALL MULTIPOLE_FRINGE(EL%P,EL%AN,EL%BN,2,X,k)
+  !              IF(k%FRINGE.or.el%p%permfringe==1.or.el%p%permfringe==3)CALL MULTIPOLE_FRINGE(EL%P,EL%AN,EL%BN,2,X,k)
   !           CALL EDGE_TRUE_PARALLEL(EL%P,EL%BN,EL%H1,EL%H2,EL%FINT(2),EL%HGAP(2),2,X,k)
   !        ENDIF
 
@@ -22180,6 +22213,7 @@ call kill(vm,phi,z)
     endif
 
   f=0
+!   f(5)=f(5)-radcoe*CRADF(EL%P)*(1.0_dp+X(5))**3*B2*DLDS
    f(5)=f(5)-CRADF(EL%P)*(1.0_dp+X(5))**3*B2*DLDS
  
 
@@ -22257,6 +22291,7 @@ call kill(vm,phi,z)
      f(i)=0
     enddo
    f(5)=f(5)-CRADF(EL%P)*(1.0_dp+X(5))**3*B2*DLDS
+!   f(5)=f(5)-radcoe*CRADF(EL%P)*(1.0_dp+X(5))**3*B2*DLDS!
  
 
     if(el%kind/=kindpa) then
@@ -22326,6 +22361,7 @@ call kill(vm,phi,z)
     endif
 
   
+!    if(K%radiation) X(5)=X(5)-radcoe*CRADF(EL%P)*(1.0_dp+X(5))**3*B2*FAC*DS*DLDS
     if(K%radiation) X(5)=X(5)-CRADF(EL%P)*(1.0_dp+X(5))**3*B2*FAC*DS*DLDS
 
 
@@ -22390,7 +22426,7 @@ call kill(vm,phi,z)
     TYPE(REAL_8), intent(in):: B2,dlds
     TYPE(REAL_8) st,z,x(6),av(3)
  
-    real(dp) b30,x1,x3,denf,denf0    
+    real(dp) b30,x1,x3,denf,denf0,denv
     type(damap) xpmap
  
     integer i,j   !,ja,ia
@@ -22410,20 +22446,31 @@ call kill(vm,phi,z)
  
 
        b30=b2
+!write(6,*) " oldb2 ",b30   
        b30=b30**1.5e0_dp
        denf0=cflucf(el%p)
        denf=denf0*b30 *FAC*DS*denf
- 
+!
+       denv=vertical_kick*denf*el%p%GAMMA0I**2*13.0/55.0_dp     
+
+
+
+
+
+!write(6,*) "denf ",denf
+!write(6,*) "FAC,DS,L ",FAC,DS%r,c%parent_fibre%mag%L
+
+!eeeeeeeeeee
        call alloc(xpmap)
 
        xpmap%v(1)=x(1)
        xpmap%v(3)=x(3)
        xpmap%v(5)=x(5)
        xpmap%v(6)=x(6)
-     !  xpmap%v(2)=xp(1)
-     !  xpmap%v(4)=xp(2)
-       xpmap%v(2)=x(2)
-       xpmap%v(4)=x(4)
+       xpmap%v(2)=xp(1)
+       xpmap%v(4)=xp(2)
+     !  xpmap%v(2)=x(2)
+     !  xpmap%v(4)=x(4)
 
        xpmap=xpmap**(-1)
 
@@ -22432,14 +22479,20 @@ call kill(vm,phi,z)
              X1=(xpmap%v(i)).sub.'000010'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
              X3=(xpmap%v(j)).sub.'000010'
              P%E_IJ(i,j)=p%E_IJ(i,j)+denf*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
+             X1=(xpmap%v(i)).sub.'000100'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
+             X3=(xpmap%v(j)).sub.'000100'
+             P%E_IJ(i,j)=p%E_IJ(i,j)+denv*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
+             X1=(xpmap%v(i)).sub.'010000'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
+             X3=(xpmap%v(j)).sub.'010000'
+             P%E_IJ(i,j)=p%E_IJ(i,j)+denv*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
           enddo
        enddo    
        call kill(xpmap)
 ! new eq 15
- 
+! remove fac 
        if(compute_stoch_kick) then 
-        c%delta_rad_in=(denf)+c%delta_rad_in
-        c%delta_rad_out=(denf)+c%delta_rad_out
+        c%delta_rad_in=(denf)/2+c%delta_rad_in
+        c%delta_rad_out=denf/2+c%delta_rad_out
        endif
 
     call alloc(st)
@@ -22451,6 +22504,7 @@ call kill(vm,phi,z)
     endif
 
    if(K%radiation)  X(5)=X(5)-CRADF(EL%P)*(1.0_dp+X(5))**3*B2*FAC*DS*DLDS
+!   if(K%radiation)  X(5)=X(5)-radcoe*CRADF(EL%P)*(1.0_dp+X(5))**3*B2*FAC*DS*DLDS
 
 
     if(el%kind/=kindpa) then
@@ -22539,8 +22593,13 @@ call kill(vm,phi,z)
 
   
     if(K%radiation) X(5)=X(5)-CRADF(EL%P)*(1.0_dp+X(5))**3*B2*FAC*DS*DLDS
+!    if(K%radiation) X(5)=X(5)-radcoe*CRADF(EL%P)*(1.0_dp+X(5))**3*B2*FAC*DS*DLDS
     if(k%stochastic) then
        !         t=sqrt(12.e0_dp)*(bran(bran_init)-half)
+
+ if(gaussian_stoch) then
+     call grnf(t,9.0_dp)
+ else
        t=RANF()
        !         t=sqrt(12.d0)*(RANF()-half)
        if(t>0.5_dp) then
@@ -22548,6 +22607,7 @@ call kill(vm,phi,z)
        else
           t=-1.0_dp
        endif
+ endif
        if(before) then
           x(5)=x(5)+t*c%delta_rad_in
        else
@@ -22625,6 +22685,7 @@ call kill(vm,phi,z)
     type(internal_state) k
     real(dp) Sm(3,3),sdelta(3,3)
     type(quaternion) qdelta
+    real(dp) denv
     IF(.NOT.CHECK_STABLE) return
 !!!  ee =  ray direction
 !!!  bb =  b field
@@ -22650,6 +22711,8 @@ call kill(vm,phi,z)
        b30=b30**1.5e0_dp
        denf0=cflucf(el%p)
        denf=denf0*b30 *FAC*DS*denf
+       denv=vertical_kick*denf*el%p%GAMMA0I**2*13.0/55.0_dp     
+
 !       if(doone.and.c%parent_fibre%magp%name(1:5)/="BENDT") denf=0
 !       if(c%pos_in_fibre/=3.and.c%parent_fibre%magp%name(1:5)=="BENDT") denf=0
 !denf=denf*4
@@ -22661,10 +22724,10 @@ call kill(vm,phi,z)
        xpmap%v(3)=x(3)
        xpmap%v(5)=x(5)
        xpmap%v(6)=x(6)
-     !  xpmap%v(2)=xp(1)
-     !  xpmap%v(4)=xp(2)
-       xpmap%v(2)=x(2)
-       xpmap%v(4)=x(4)
+       xpmap%v(2)=xp(1)
+       xpmap%v(4)=xp(2)
+     !  xpmap%v(2)=x(2)
+     !  xpmap%v(4)=x(4)
 
        xpmap=xpmap**(-1)
 
@@ -22673,6 +22736,12 @@ call kill(vm,phi,z)
              X1=(xpmap%v(i)).sub.'000010'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
              X3=(xpmap%v(j)).sub.'000010'
              P%E_IJ(i,j)=p%E_IJ(i,j)+denf*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
+             X1=(xpmap%v(i)).sub.'000100'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
+             X3=(xpmap%v(j)).sub.'000100'
+             P%E_IJ(i,j)=p%E_IJ(i,j)+denv*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
+             X1=(xpmap%v(i)).sub.'010000'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
+             X3=(xpmap%v(j)).sub.'010000'
+             P%E_IJ(i,j)=p%E_IJ(i,j)+denv*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
           enddo
        enddo    
        call kill(xpmap)
@@ -22778,7 +22847,7 @@ dspin=matmul(s,n_oleksii)
  
        endif
 
-       if(compute_stoch_kick) c%delta_rad_out=root(denf)
+       if(compute_stoch_kick) c%delta_rad_out=sqrt(denf)
     endif
 
 
@@ -22794,6 +22863,7 @@ dspin=matmul(s,n_oleksii)
     !   X(5)=one/(one/(one+X(5))-B2*FAC*DS)-one
     !   X(5)=one/(one/(one+X(5))+CRADF(EL%P)*(one+X(5))*B2*DLDS*FAC*DS)-one
     !          X(5)=X(5)-CRADF(EL%P)*(one+X(5))**3*B2*FAC*DS/SQRT((one+X(5))**2-X(2)**2-X(4)**2)
+!  if(K%radiation)  X(5)=X(5)-radcoe*CRADF(EL%P)*(1.0_dp+X(5))**3*B2*FAC*DS*DLDS
   if(K%radiation)  X(5)=X(5)-CRADF(EL%P)*(1.0_dp+X(5))**3*B2*FAC*DS*DLDS
 
 
@@ -22854,6 +22924,8 @@ dspin=matmul(s,n_oleksii)
        b30=b30**1.5e0_dp
        denf0=cflucf(el%p)
        denf=denf0*b30 *FAC*DS*denf
+       denv=vertical_kick*denf*el%p%GAMMA0I**2*13.0/55.0_dp    
+
   !     if(doone) denf=0
  
        call alloc(xpmap)
@@ -22861,16 +22933,22 @@ dspin=matmul(s,n_oleksii)
        xpmap%v(3)=x(3)
        xpmap%v(5)=x(5)
        xpmap%v(6)=x(6)
-     !  xpmap%v(2)=xp(1)
-     !  xpmap%v(4)=xp(2)
-       xpmap%v(2)=x(2)
-       xpmap%v(4)=x(4)
+       xpmap%v(2)=xp(1)
+       xpmap%v(4)=xp(2)
+     !  xpmap%v(2)=x(2)
+     !  xpmap%v(4)=x(4)
        xpmap=xpmap**(-1)
        do i=1,6
           do j=1,6
-             X1=(xpmap%v(i)).sub.'000010'
+             X1=(xpmap%v(i)).sub.'000010'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
              X3=(xpmap%v(j)).sub.'000010'
-             p%E_IJ(i,j)=p%E_IJ(i,j)+denf*x1*x3
+             P%E_IJ(i,j)=p%E_IJ(i,j)+denf*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
+             X1=(xpmap%v(i)).sub.'000100'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
+             X3=(xpmap%v(j)).sub.'000100'
+             P%E_IJ(i,j)=p%E_IJ(i,j)+denv*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
+             X1=(xpmap%v(i)).sub.'010000'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
+             X3=(xpmap%v(j)).sub.'010000'
+             P%E_IJ(i,j)=p%E_IJ(i,j)+denv*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
           enddo
        enddo
        call kill(xpmap)
@@ -22966,7 +23044,7 @@ dspin=matmul(s,n_oleksii)
         endif
  
        endif
-       if(compute_stoch_kick) c%delta_rad_in=root(denf)
+       if(compute_stoch_kick) c%delta_rad_in=sqrt(denf)
     endif
     p%x=x
     call kill(x)
@@ -22993,7 +23071,7 @@ dspin=matmul(s,n_oleksii)
 
   end subroutine crossp 
 
-  subroutine  quaternion_8_to_matrix(q,s)
+  subroutine  quaternion_r_to_matrix(q,s)
     implicit none
     TYPE(quaternion), INTENT(INOUT) :: q
     real(dp) s(3,3)
@@ -23012,9 +23090,37 @@ dspin=matmul(s,n_oleksii)
     enddo
 
 
+    end subroutine  quaternion_r_to_matrix
+
+  subroutine  quaternion_8_to_matrix(q,s)
+    implicit none
+    TYPE(quaternion_8), INTENT(INOUT) :: q
+    type(real_8)  s(3,3)
+    integer i,j
+    type(quaternion_8) sq,sf
+    
+    call alloc(sq)
+    call alloc(sf)
+    do i=1,3
+     do j=1,3
+      s(i,j)=0.d0
+     enddo
+    enddo
+
+ 
+    do i=1,3
+     sq=0.0_dp
+     sq%x(i)=1.0_dp
+     sf=q*sq*q**(-1)
+     do j=1,3
+       s(j,i)=sf%x(j)
+     enddo
+    enddo
+
+    call kill(sq)
+    call kill(sf)
+
     end subroutine  quaternion_8_to_matrix
-
-
 !!!!!!!!!!!!!!! new bmad CAV4 !!!!!!!!!!!!!!
 !                                 (tI,y,q,k,f,q,c)    
   subroutine feval_CAV_bmad_prober(z0,x,qi,k,f,q,c)    !(Z0,X,k,f,D)   ! MODELLED BASED ON DRIFT
@@ -23088,7 +23194,7 @@ endif
 
   END subroutine feval_CAV_bmad_prober
 
-  subroutine feval_CAV_bmad_probep(z0,x,qi,k,f,q,e_ij,denf,c)    !(Z0,X,k,f,D)   ! MODELLED BASED ON DRIFT
+  subroutine feval_CAV_bmad_probep(z0,x,qi,k,f,q,e_ij,denf,c,fac,ds)    !(Z0,X,k,f,D)   ! MODELLED BASED ON DRIFT
     IMPLICIT NONE
     TYPE(integration_node),pointer, INTENT(IN):: c
     type(real_8), INTENT(INout) :: x(6)
@@ -23099,6 +23205,7 @@ endif
     TYPE(INTERNAL_STATE) k !,OPTIONAL :: K
     type(real_8) A(3),AD(3),PZ
     REAL(DP),intent(inout):: e_ij(6,6),denf
+    real(dp),intent(in) ::fac,ds   !
 
     d=>c%parent_fibre%magp%c4
     
@@ -23155,7 +23262,7 @@ endif
 !  
 
 !    
-if(k%radiation.or.k%spin.or.k%envelope) call RAD_SPIN_force_PROBE(c,x,q%x(1:3),k,f,e_ij,denf)
+if(k%radiation.or.k%spin.or.k%envelope) call RAD_SPIN_force_PROBE(c,x,q%x(1:3),k,f,e_ij,denf,fac,ds)
 
  
 if(k%spin) then
@@ -23265,11 +23372,11 @@ endif
     hr=h
    cr=0.5_dp
                
-    call feval_CAV_bmad_probe(tI,y,qy,k,f,q,de_ij,denf,c)   
+    call feval_CAV_bmad_probe(tI,y,qy,k,f,q,de_ij,denf,c,cr,hr)   
 
   if(compute_stoch_kick) then 
-  c%delta_rad_in=(hr*denf*cr)+c%delta_rad_in 
-  c%delta_rad_out=(hr*denf*cr)+c%delta_rad_out 
+  c%delta_rad_in=denf+c%delta_rad_in 
+  c%delta_rad_out=denf+c%delta_rad_out 
   endif
 
 
@@ -23292,10 +23399,10 @@ endif
     endif
 
     tt=tI+h/2.0_dp
-    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,c)
+    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,c,cr,hr)
   if(compute_stoch_kick) then 
-  c%delta_rad_in=(hr*denf*cr)+c%delta_rad_in 
-  c%delta_rad_out=(hr*denf*cr)+c%delta_rad_out 
+  c%delta_rad_in=denf+c%delta_rad_in 
+  c%delta_rad_out=denf+c%delta_rad_out 
   endif
     do  j=1,ne
        b(j)=h*f(j)
@@ -23468,10 +23575,10 @@ subroutine rk4bmad_cav_probep(ti,p,k,ct,h)   ! (ti,h,GR,y,k)
     hr=h
    cr=0.25_dp
 
-    call feval_CAV_bmad_probe(tI,y,qy,k,f,q,de_ij,denf,ct)   
+    call feval_CAV_bmad_probe(tI,y,qy,k,f,q,de_ij,denf,ct,cr,hr)   
 if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
 
 
@@ -23495,10 +23602,10 @@ if(compute_stoch_kick) then
  
 
     tt=tI+h/2.0_dp
-    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
  if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
 
 
@@ -23521,10 +23628,10 @@ if(compute_stoch_kick) then
        yt(j)=y(j)+b(j)/2.0_dp
     enddo
 
-    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
    if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
 
 
@@ -23547,10 +23654,10 @@ if(compute_stoch_kick) then
     endif
 
     tt=tI+h
-    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
  if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
 
 
@@ -23809,10 +23916,10 @@ subroutine rk6bmad_cav_probep(ti,p,k,ct,h)   ! (ti,h,GR,y,k)
     y=p%x
     hr=h
    cr=0.125_dp
-    call feval_CAV_bmad_probe(tI,y,qy,k,f,q,de_ij,denf,ct)   
+    call feval_CAV_bmad_probe(tI,y,qy,k,f,q,de_ij,denf,ct,cr,hr)   
  if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
 
     do  j=1,ne
@@ -23835,10 +23942,10 @@ subroutine rk6bmad_cav_probep(ti,p,k,ct,h)   ! (ti,h,GR,y,k)
  
 
     tt=tI+h/9.0_dp
-    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
   do  j=1,ne
        b(j)=h*f(j)
@@ -23862,10 +23969,10 @@ subroutine rk6bmad_cav_probep(ti,p,k,ct,h)   ! (ti,h,GR,y,k)
      
     tt=tI+h/6.0_dp
 
-    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
  if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
 
     do  j=1,ne
@@ -23890,10 +23997,10 @@ subroutine rk6bmad_cav_probep(ti,p,k,ct,h)   ! (ti,h,GR,y,k)
  
 
    tt=tI+h/3.0_dp
-    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
  if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
 
 
@@ -23915,10 +24022,10 @@ subroutine rk6bmad_cav_probep(ti,p,k,ct,h)   ! (ti,h,GR,y,k)
     enddo
 
    tt=tI+0.5_dp*h
-    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
  if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
     do  j=1,ne
        e(j)=h*f(j)
@@ -23939,10 +24046,10 @@ subroutine rk6bmad_cav_probep(ti,p,k,ct,h)   ! (ti,h,GR,y,k)
     endif
 
      tt = tI+2.0_dp*h/3.0_dp
-    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
  if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
 
     do   j=1,ne
@@ -23964,10 +24071,10 @@ subroutine rk6bmad_cav_probep(ti,p,k,ct,h)   ! (ti,h,GR,y,k)
     endif
 
     tt = tI + 5.0_dp*h/6.0_dp
-    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
  if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
 
     do  j=1,ne
@@ -23988,10 +24095,10 @@ subroutine rk6bmad_cav_probep(ti,p,k,ct,h)   ! (ti,h,GR,y,k)
     endif
 
     tt = tI + h
-    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_CAV_bmad_probe(tt,yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
  if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in 
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out 
+  ct%delta_rad_in=denf+ct%delta_rad_in 
+  ct%delta_rad_out=denf+ct%delta_rad_out 
   endif
 
     do  j=1,ne
@@ -24124,7 +24231,7 @@ endif
    END subroutine feval_teapot_quar
 
 
- subroutine feval_teapot_quap(x,qi,k,f,q,e_ij,denf,c)   !electric teapot s
+ subroutine feval_teapot_quap(x,qi,k,f,q,e_ij,denf,c,cr,hr)   !electric teapot s
     IMPLICIT NONE
     TYPE(integration_node),pointer, INTENT(IN):: c
     type(real_8), INTENT(INout) :: x(6)
@@ -24137,7 +24244,7 @@ endif
     TYPE(INTERNAL_STATE) k !,OPTIONAL :: K
     integer i
     type(fibre), pointer :: fi
-
+    real(dp), intent(in)  :: cr,hr
     fi=>c%parent_fibre
     el=>fi%magp%tp10
    
@@ -24152,7 +24259,7 @@ endif
  
      DIR=EL%P%DIR*EL%P%CHARGE
 
-
+ 
 
 
      IF(EL%P%EXACT) THEN
@@ -24209,7 +24316,7 @@ endif
 
 ! patrice 
 !        
-if(k%radiation.or.k%spin.or.k%envelope) call RAD_SPIN_force_PROBE(c,x,q%x(1:3),k,f,e_ij,denf)
+if(k%radiation.or.k%spin.or.k%envelope) call RAD_SPIN_force_PROBE(c,x,q%x(1:3),k,f,e_ij,denf,cr,hr)
  
 if(k%spin) then
  q%x(0)=0.0_dp
@@ -24550,11 +24657,11 @@ enddo
     cr=0.5_dp
 
 
-    call feval_teapot_qua(y,qy,k,f,q,de_ij,denf,c)
+    call feval_teapot_qua(y,qy,k,f,q,de_ij,denf,c,cr,hr)
 
   if(compute_stoch_kick) then 
-  c%delta_rad_in=(hr*denf*cr)+c%delta_rad_in
-  c%delta_rad_out=(hr*denf*cr)+c%delta_rad_out
+  c%delta_rad_in=denf+c%delta_rad_in
+  c%delta_rad_out=denf+c%delta_rad_out
   endif
 
     do  j=1,ne
@@ -24578,10 +24685,10 @@ enddo
     endif
 
 
-    call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,c)
+    call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,c,cr,hr)
   if(compute_stoch_kick) then 
-  c%delta_rad_in=(hr*denf*cr)+c%delta_rad_in
-  c%delta_rad_out=(hr*denf*cr)+c%delta_rad_out
+  c%delta_rad_in=denf+c%delta_rad_in
+  c%delta_rad_out=denf+c%delta_rad_out
   endif
 
 
@@ -24641,10 +24748,10 @@ subroutine rk4_teapot_probep(p,k,ct,h)
     y=p%x
     hr=h
 
-    call feval_teapot_qua(y,qy,k,f,q,de_ij,denf,ct)
+    call feval_teapot_qua(y,qy,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
     do  j=1,ne
@@ -24666,10 +24773,10 @@ subroutine rk4_teapot_probep(p,k,ct,h)
     endif
 
 
-    call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
 
@@ -24691,10 +24798,10 @@ subroutine rk4_teapot_probep(p,k,ct,h)
       e_ijb =hr*de_ij
     endif
 
-    call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct)
+    call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
 
@@ -24716,10 +24823,10 @@ subroutine rk4_teapot_probep(p,k,ct,h)
       e_ijc =hr*de_ij
     endif
 
-    call feval_teapot_qua(yt,qyt,k,f,q,e_ijd,denf,ct)
+    call feval_teapot_qua(yt,qyt,k,f,q,e_ijd,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
   
@@ -24786,10 +24893,10 @@ subroutine rk4_teapot_probep(p,k,ct,h)
     y=pf%x
     hr=h
     cr=0.125_dp
-     call feval_teapot_qua(y,qy,k,f,q,de_ij,denf,ct)
+     call feval_teapot_qua(y,qy,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
     do  j=1,ne
@@ -24808,10 +24915,10 @@ subroutine rk4_teapot_probep(p,k,ct,h)
       e_ija =hr*de_ij
     endif
 
-     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct)
+     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
 
@@ -24831,10 +24938,10 @@ subroutine rk4_teapot_probep(p,k,ct,h)
       e_ijb =hr*de_ij
     endif
 
-     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct)
+     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
     do  j=1,ne
@@ -24852,10 +24959,10 @@ subroutine rk4_teapot_probep(p,k,ct,h)
     if(k%envelope)  then
       e_ijc =hr*de_ij
     endif
-     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct)
+     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
     do  j=1,ne
@@ -24873,10 +24980,10 @@ subroutine rk4_teapot_probep(p,k,ct,h)
     if(k%envelope)  then
       e_ijd =hr*de_ij
     endif
-     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct)
+     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
     do  j=1,ne
@@ -24894,10 +25001,10 @@ subroutine rk4_teapot_probep(p,k,ct,h)
     if(k%envelope)  then
       e_ije =hr*de_ij
     endif
-     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct)
+     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
     do   j=1,ne
@@ -24915,10 +25022,10 @@ enddo
     if(k%envelope)  then
       e_ijg =hr*de_ij
     endif
-     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct)
+     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
     do  j=1,ne
@@ -24938,10 +25045,10 @@ enddo
       e_ijo =hr*de_ij
     endif
 
-     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct)
+     call feval_teapot_qua(yt,qyt,k,f,q,de_ij,denf,ct,cr,hr)
   if(compute_stoch_kick) then 
-  ct%delta_rad_in=(hr*denf*cr)+ct%delta_rad_in
-  ct%delta_rad_out=(hr*denf*cr)+ct%delta_rad_out
+  ct%delta_rad_in=denf+ct%delta_rad_in
+  ct%delta_rad_out=denf+ct%delta_rad_out
   endif
 
     do  j=1,ne
@@ -27987,7 +28094,7 @@ SUBROUTINE RAD_SPIN_force_PROBER(c,x,om,k,fo,zw)
 
  end SUBROUTINE RAD_SPIN_force_PROBER
 
- SUBROUTINE RAD_SPIN_force_PROBEp(c,x,om,k,fo,e_ij,denf)
+ SUBROUTINE RAD_SPIN_force_PROBEp(c,x,om,k,fo,e_ij,denf,cr,hr)
     type(real_8), INTENT(INOUT) :: x(6),om(3)
     type(real_8),INTENT(INOUT) :: fo(6)    
     TYPE(fibre),pointer ::  f
@@ -27996,6 +28103,7 @@ SUBROUTINE RAD_SPIN_force_PROBER(c,x,om,k,fo,zw)
     type(real_8)  b2,dlds ,ff(6)
     TYPE(INTERNAL_STATE) k 
     real(dp),intent(inout) :: e_ij(6,6),denf
+    real(dp),intent(in) ::cr,hr
      integer i,pos
 
      call alloc(b2,dlds)
@@ -28009,7 +28117,7 @@ SUBROUTINE RAD_SPIN_force_PROBER(c,x,om,k,fo,zw)
      pos=C%POS_IN_FIBRE-2     !  unknown.... to be checked later
      CALL get_omega_spin(c,OM,B2,dlds,XP,X,pos,k,Ed,B)
 
-
+ 
    do i=1,3
      om(i)=om(i)/2.0_dp
  
@@ -28022,7 +28130,7 @@ SUBROUTINE RAD_SPIN_force_PROBER(c,x,om,k,fo,zw)
      enddo
     endif
     if(k%envelope) then
-    call radiate_envelope(c,x,b2,dlds,XP,k, e_ij,denf)
+    call radiate_envelope(c,x,b2,dlds,XP,k, e_ij,denf,cr,hr)
     endif
      call kill(b2,dlds)
      call kill(ff)
@@ -28033,7 +28141,7 @@ SUBROUTINE RAD_SPIN_force_PROBER(c,x,om,k,fo,zw)
  end SUBROUTINE RAD_SPIN_force_PROBEp
 
 
-  subroutine radiate_envelope(c,xx,b2,dlds,XP,k, e_ij,denf)
+  subroutine radiate_envelope(c,xx,b2,dlds,XP,k, e_ij,denf,fac,ds)
     implicit none
     TYPE(integration_node), POINTER::c
     TYPE(ELEMENTP), POINTER::EL
@@ -28041,9 +28149,11 @@ SUBROUTINE RAD_SPIN_force_PROBER(c,x,om,k,fo,zw)
     TYPE(REAL_8),INTENT(INOUT) :: xx(6)
     real(dp),INTENT(INOUT) :: e_ij(6,6)
     TYPE(REAL_8), intent(in):: B2,dlds
-    TYPE(REAL_8) st,av(3),z,x(6)
+    TYPE(REAL_8)  x(6)
+!    TYPE(REAL_8) st,av(3),z,x(6)
+    real(dp),intent(in) ::fac,ds
     type(quaternion) q
-    real(dp) b30,x1,x3,denf  , denf0
+    real(dp) b30,x1,x3,denf,denf0,denv 
     type(damap) xpmap
     integer i,j 
     type(internal_state) k
@@ -28051,7 +28161,7 @@ SUBROUTINE RAD_SPIN_force_PROBER(c,x,om,k,fo,zw)
  
     e_ij=0
 
- 
+     call alloc(x)
      x=xx
 
     el=>c%parent_fibre%magp
@@ -28061,20 +28171,32 @@ SUBROUTINE RAD_SPIN_force_PROBER(c,x,om,k,fo,zw)
  
 
        b30=b2
+!write(6,*) "b2 ",b30
        b30=b30**1.5e0_dp
        denf0=cflucf(el%p)
-       denf=denf0*b30 *denf
- 
+       denf=denf0*b30 *denf!    *FAC*DS
+       denv=vertical_kick*denf*el%p%GAMMA0I**2*13.0/55.0_dp    
+
+!write(6,*) "denf ",denf
+!write(6,*) "FAC,DS,L ",FAC,DS,c%parent_fibre%mag%L
+
+     !  b30=b2
+     !  b30=b30**1.5e0_dp
+     !  denf0=cflucf(el%p)
+     !  denf=denf0*b30 *FAC*DS*denf
+ !eeeeeeeeeeeeeeeeeeeeeee
+
+
        call alloc(xpmap)
 
        xpmap%v(1)=x(1)
        xpmap%v(3)=x(3)
        xpmap%v(5)=x(5)
        xpmap%v(6)=x(6)
-     !  xpmap%v(2)=xp(1)
-     !  xpmap%v(4)=xp(2)
-       xpmap%v(2)=x(2)
-       xpmap%v(4)=x(4)
+       xpmap%v(2)=xp(1)
+       xpmap%v(4)=xp(2)
+     !  xpmap%v(2)=x(2)
+     !  xpmap%v(4)=x(4)
 
        xpmap=xpmap**(-1)
 
@@ -28082,12 +28204,19 @@ SUBROUTINE RAD_SPIN_force_PROBER(c,x,om,k,fo,zw)
           do j=1,6
              X1=(xpmap%v(i)).sub.'000010'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
              X3=(xpmap%v(j)).sub.'000010'
-            E_IJ(i,j)=E_IJ(i,j)+denf*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
+             E_IJ(i,j)=E_IJ(i,j)+denf*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
+             X1=(xpmap%v(i)).sub.'000100'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
+             X3=(xpmap%v(j)).sub.'000100'
+             E_IJ(i,j)=E_IJ(i,j)+denv*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
+             X1=(xpmap%v(i)).sub.'010000'   ! Still works if BMAD units are used because xpmax**(-1) is needed!!!
+             X3=(xpmap%v(j)).sub.'010000'
+             E_IJ(i,j)=E_IJ(i,j)+denv*x1*x3 ! In a code internally using BMAD units '000001' is needed!!!
           enddo
        enddo    
        call kill(xpmap)
- 
+      call kill(x)
 
+   denf=denf*FAC*DS*0.5e0_dp
    !    if(compute_stoch_kick) then 
    !     c%delta_rad_in=(denf)+c%delta_rad_in
    !     c%delta_rad_out=(denf)+c%delta_rad_out
@@ -28194,7 +28323,7 @@ SUBROUTINE kick_stochastic_before(c,p)
           t=-1.0_dp
        endif
           p%x(5)=p%x(5)+t*c%delta_rad_in
-          p%x(5)=p%x(5)+t*c%delta_rad_out
+
        
 end SUBROUTINE kick_stochastic_before
 
@@ -28231,20 +28360,7 @@ end SUBROUTINE kick_stochastic_after
 
    end subroutine  clear_compute_stoch_kick
 
-  subroutine  root_stoch_kick(L)
-   implicit none
-   type(layout), pointer :: L
-   type(integration_node), pointer :: c
-   integer i
 
-    c=>l%t%start
-    do i=1,L%t%n
-     c%delta_rad_in =sqrt(c%delta_rad_in/2.0_DP)
-     c%delta_rad_out=sqrt(c%delta_rad_out/2.0_DP)
-    c=>c%next
-    enddo
-
-   end subroutine  root_stoch_kick
 
   SUBROUTINE INTE_dkd2_probep(p,k,c)
     IMPLICIT NONE
@@ -28672,5 +28788,200 @@ end SUBROUTINE push_quaternionP
 
 
   END SUBROUTINE INT_SAGAN_prober
+
+
+  SUBROUTINE INT_SAGAN_probep(p,k,c,i)
+    IMPLICIT NONE
+    integer ipause, mypause
+    type(probe_8), INTENT(INOUT) ::  p
+    TYPE(integration_node),pointer, INTENT(IN):: c
+    type(fibre), pointer :: f
+     
+    TYPE(SAGANP), pointer :: EL
+    integer,INTENT(IN):: I
+    
+    TYPE(REAL_8) Z
+    TYPE(REAL_8) D,DH
+    TYPE(REAL_8)   D1,D2,DK1,DK2
+    TYPE(REAL_8) DF(4),DK(4)
+    INTEGER J
+    TYPE(INTERNAL_STATE),OPTIONAL :: K
+
+
+
+    f=>c%parent_fibre
+    el=> f%magp%wi
+
+    SELECT CASE(EL%P%METHOD)
+    CASE(2)
+
+     call alloc(d,dh,z)
+
+       DH=EL%L/2.0_dp/EL%P%NST
+       D=EL%L/EL%P%NST
+       IF(EL%P%DIR==1) THEN
+          Z=(i-1)*d
+       ELSE
+          Z=EL%L-(i-1)*d
+       ENDIF
+
+       if(el%xprime) then
+        call rk2_sagan(z,d,el,p%x,k)
+       else
+
+          Z=Z+EL%P%DIR*DH
+          CALL driftsagan(EL,DH,Z,1,p%x,k)
+          CALL driftsagan(EL,DH,Z,2,p%x,k)
+          CALL KICKPATH(EL,DH,p%x,k)
+
+       if(k%spin.or.k%radiation) then
+          CALL KICK(EL,DH,Z,P%x,k)
+          call RAD_SPIN_qua_PROBE(c,p,k,d)  !,zw=z)
+          CALL KICK(EL,DH,Z,P%x,k)
+         else
+           CALL KICK(EL,D,Z,P%x,k)
+        endif
+
+          CALL KICKPATH(EL,DH,P%x,k)
+          CALL driftsagan(EL,DH,Z,2,P%x,k)
+          CALL driftsagan(EL,DH,Z,1,P%x,k)
+       !       Z=Z+EL%P%DIR*DH
+      endif
+     call kill(d,dh,z)
+
+    CASE(4)
+     call alloc(d,d1,d2,dk1,dk2,z)
+
+       D=EL%L/EL%P%NST
+
+       DK1=D*FK1
+       D1=DK1/2.0_dp
+       DK2=D*FK2
+       D2=DK2/2.0_dp
+       IF(EL%P%DIR==1) THEN
+          Z=(i-1)*d
+       ELSE
+          Z=EL%L-(i-1)*d
+       ENDIF
+
+       if(el%xprime) then
+        call rk4_sagan(z,d,el,P%x,k)
+       else
+
+       Z=Z+EL%P%DIR*D1
+       CALL driftsagan(EL,D1,Z,1,P%x,k)
+       CALL driftsagan(EL,D1,Z,2,P%x,k)
+       CALL KICKPATH(EL,D1,P%x,k)
+       if(k%spin.or.k%radiation) then
+          CALL KICK(EL,D1,Z,P%x,k)
+          call RAD_SPIN_qua_PROBE(c,p,k,DK1)  !,zw=z)
+          CALL KICK(EL,D1,Z,P%x,k)
+         else
+          CALL KICK(EL,DK1,Z,P%x,k)
+        endif
+       CALL KICKPATH(EL,D1,P%x,k)
+       CALL driftsagan(EL,D1,Z,2,P%x,k)
+       CALL driftsagan(EL,D1,Z,1,P%x,k)
+       Z=Z+EL%P%DIR*D1+D2
+       CALL driftsagan(EL,D2,Z,1,P%x,k)
+       CALL driftsagan(EL,D2,Z,2,P%x,k)
+       CALL KICKPATH(EL,D2,P%x,k)
+
+       if(k%spin.or.k%radiation) then
+         CALL KICK(EL,D2,Z,P%x,k)
+          call RAD_SPIN_qua_PROBE(c,p,k,DK2)  !,zw=z)
+         CALL KICK(EL,D2,Z,P%x,k)
+         else
+         CALL KICK(EL,DK2,Z,P%x,k)
+        endif
+       CALL KICKPATH(EL,D2,P%x,k)
+       CALL driftsagan(EL,D2,Z,2,P%x,k)
+       CALL driftsagan(EL,D2,Z,1,P%x,k)
+       Z=Z+EL%P%DIR*(D1+D2)
+       CALL driftsagan(EL,D1,Z,1,P%x,k)
+       CALL driftsagan(EL,D1,Z,2,P%x,k)
+       CALL KICKPATH(EL,D1,P%x,k)
+       if(k%spin.or.k%radiation) then
+          CALL KICK(EL,D1,Z,P%x,k)
+          call RAD_SPIN_qua_PROBE(c,p,k,DK1) !,zw=z)
+          CALL KICK(EL,D1,Z,P%x,k)
+         else
+          CALL KICK(EL,DK1,Z,P%x,k)
+        endif
+       CALL KICKPATH(EL,D1,P%x,k)
+       CALL driftsagan(EL,D1,Z,2,P%x,k)
+       CALL driftsagan(EL,D1,Z,1,P%x,k)
+      endif
+     call kill(d,d1,d2,dk1,dk2,z)
+
+
+    CASE(6)
+     call alloc(d,z)
+     call alloc(dk)
+     call alloc(df)
+       DO j =1,4
+          DK(j)=EL%L*YOSK(J)/EL%P%NST
+          DF(j)=DK(j)/2.0_dp
+       ENDDO
+       D=EL%L/EL%P%NST
+       IF(EL%P%DIR==1) THEN
+          Z=(i-1)*d
+       ELSE
+          Z=EL%L-(i-1)*d
+       ENDIF
+
+       if(el%xprime) then
+        call rk6_sagan(z,d,el,P%x,k)
+       else
+
+
+       DO J=4,1,-1
+          Z=Z+EL%P%DIR*DF(J)
+          CALL driftsagan(EL,DF(J),Z,1,P%x,k)
+          CALL driftsagan(EL,DF(J),Z,2,P%x,k)
+          CALL KICKPATH(EL,DF(J),P%x,k)
+            if(k%spin.or.k%radiation) then
+               CALL KICK(EL,DF(J),Z,P%x,k)
+               call RAD_SPIN_qua_PROBE(c,p,k,DK(J))  !,zw=z)
+               CALL KICK(EL,DF(J),Z,P%x,k)
+              else
+               CALL KICK(EL,DK(J),Z,P%x,k)
+             endif
+          CALL KICKPATH(EL,DF(J),P%x,k)
+          CALL driftsagan(EL,DF(J),Z,2,P%x,k)
+          CALL driftsagan(EL,DF(J),Z,1,P%x,k)
+          Z=Z+EL%P%DIR*DF(J)
+       ENDDO
+       DO J=2,4
+          Z=Z+EL%P%DIR*DF(J)
+          CALL driftsagan(EL,DF(J),Z,1,P%x,k)
+          CALL driftsagan(EL,DF(J),Z,2,P%x,k)
+          CALL KICKPATH(EL,DF(J),P%x,k)
+            if(k%spin.or.k%radiation) then
+               CALL KICK(EL,DF(J),Z,P%x,k)
+               call RAD_SPIN_qua_PROBE(c,p,k,DK(J))  !,zw=z)
+               CALL KICK(EL,DF(J),Z,P%x,k)
+              else
+               CALL KICK(EL,DK(J),Z,P%x,k)
+             endif
+          CALL KICKPATH(EL,DF(J),P%x,k)
+          CALL driftsagan(EL,DF(J),Z,2,P%x,k)
+          CALL driftsagan(EL,DF(J),Z,1,P%x,k)
+          Z=Z+EL%P%DIR*DF(J)
+       ENDDO
+
+      endif
+
+     call kill(d,z)
+     call kill(dk)
+     call kill(df)
+
+    CASE DEFAULT
+       WRITE(6,*) " THE METHOD ",EL%P%METHOD," IS NOT SUPPORTED"
+       ipause=mypause(357)
+    END SELECT
+
+
+  END SUBROUTINE INT_SAGAN_probep
 
 END MODULE S_DEF_KIND

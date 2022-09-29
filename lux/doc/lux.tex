@@ -11,7 +11,7 @@
 \usepackage{alltt}
 \usepackage[T1]{fontenc}   % so _, <, and > print correctly in text.
 \usepackage[strings]{underscore}    % to use "_" in text
-\usepackage[pdftex,colorlinks=true]{hyperref}
+\usepackage[pdftex,colorlinks=true,bookmarksnumbered=true]{hyperref}
 
 \newcommand{\fig}[1]{Figure~\ref{#1}}
 \newcommand{\lux}{Lux\xspace}
@@ -20,7 +20,7 @@
 \newcommand{\Endeq}{\end{equation}}
 \newcommand{\CRNO}{\nonumber \\}
 \newcommand{\Eq}[1]{{Eq.~(\protect\ref{#1})}}
-\newcommand\ttcmd{\begingroup\catcode`\_=11 \catcode`\%=11 \dottcmd}
+\newcommand\ttcmd{\begingroup\catcode`\_=11 \catcode`\%=11 \dottcmd}  % Must be last package!
 \newcommand\dottcmd[1]{\texttt{#1}\endgroup}
 \newcommand{\vn}{\ttcmd}   
 
@@ -60,7 +60,7 @@
 
 \title{Lux Program}
 \author{D. Sagan, K. Finkelstein}
-\date{September 8, 2021}
+\date{June 3, 2022}
 
 %---------------------------------------------------------------------------------
 
@@ -81,19 +81,19 @@ detector. \lux uses the Bmad subroutine library\cite{b:bmad} for tracking and la
 \lux comes in two versions: A single threaded version whose executable is called \vn{lux} and an
 parallel compute version using MPI whose executable is called \vn{lux_mpi}. [Note to Distribution
 maintainers: The single threaded version will always be built when compiling the Distribution. The
-MPI version is built by building the Distribution with MPI enabled. See the documentation on the Bmad
-web site for more details.]
+MPI version is built by building the Distribution with MPI enabled. See the documentation on the
+Bmad web site for more details.]
 
 %------------------------------------------------------------------
 \section{Running \lux} 
 \label{s:run}
 
-See the documentation for setting up the Bmad environmental variables at
+See the documentation for setting up the Bmad environment variables at
 \begin{example}
   \url{https://wiki.classe.cornell.edu/ACC/ACL/RunningPrograms}
 \end{example}
 
-Once the Bmad environmental variables have bee set, the syntax for invoking the single threaded
+Once the Bmad environment variables have bee set, the syntax for invoking the single threaded
 version of \lux is
 \begin{example}
   lux \{-silent\} \{<master-input-file-name>\}
@@ -107,7 +107,11 @@ a run. This is useful to avoid long output when \lux is run repeatedly via a scr
 Example input files are in the \vn{\$ACC_ROOT_DIR/lux/examples} subdirectory.
 
 To run the parallel version of \lux, see the documentation on running programs on the Bmad web site
-for more details.
+for more details. If running on a single machine (as opposed to multiple machines in a cluster),
+typically \vn{mpirun} or \vn{mpiexec} is used. Example:
+\begin{example}
+  mpirun -np 8 lux_mpi
+\end{example}
 
 Note that two input files are always required to run \lux: The master input file
 (\sref{s:master.file}) and the Bmad lattice file (\sref{s:lat.file}).
@@ -179,6 +183,7 @@ An example is:
     lux_param%intensity_min_photon1_cutoff = 1e-3  ! photon1_out file cutoff
     lux_param%n_photon1_out_max = 100              ! Max photons in photon1_out_file.
     lux_param%reject_dead_at_det_photon1 = False
+    lux_param%timer_print_dtime = 300
 
     lux_param%histogram_variable = "x_angle"     ! Histogram independent var.
     lux_param%histogram_bin_width = 1e-4         ! Width of histogram bins.
@@ -210,19 +215,19 @@ header, \lux would put the values of these two parameters:
 Notice that the name used for the \vn{cryst[graze_angle_in]} parameters has been mangled to make it
 readable by a python script. In particular, the ``['' character is replaced by ``\_\_'' and the ``]''
 character is removed.
-
+  %
   \item[\vn{lux_param\%det_pix_out_file}] \Newline
 Name of the output data file recording the X-ray intensity on the
 detector. See section~\sref{s:det.pix.file} for more details. The file
 name may be ``numbered'' using a ``\#'' character (\sref{s:number}). A
 blank file name will prevent a file being generated.
-
+  %
   \item[\vn{lux_param\%detector_element}] \Newline
 Name of the lattice detector element where the photon are absorbed.
-
+  %
   \item[\vn{lux_param\%histogram_bin_width}] \Newline
 Bin width of histogram. See \sref{s:histo.file} for more details.
-
+  %
   \item[\vn{lux_param\%histogram_variable}] \Newline
 Variable used in constructing the histogram (\sref{s:histo.file}).
 Possibilities are:
@@ -236,26 +241,26 @@ Possibilities are:
   "energy"        ! photon energy relative to the reference (default).
 \end{example}
 If not given then no histogram file is produced.
-
+  %
   \item[\vn{lux_param\%intensity_min_det_pixel_cutoff}] \Newline
 Sets the threshold absorbed photon intensity such that all pixels
 who's intensity is below this will not be included in the
 \vn{det_pix_out} file (\sref{s:det.pix.file}). This intensity is
 relative to the maximum pixel intensity.
-
+  %
   \item[\vn{lux_param\%intensity_min_photon1_cutoff}] \Newline
 Cutoff intensity below which a photon will not be included in
 the photon1_out file (\sref{s:photon1.file}).
-
+  %
   \item[\vn{lux_param\%intensity_normalization_coef}] \Newline
 Coefficient used to normalize the photon intensity with (\sref{s:photon.descrip}).
-
+  %
   \item[\vn{lux_param\%lattice_file}] \Newline
 Name of the input file that defines the X-ray optics setup from source
 to detector. The syntax of the file conforms to the Bmad lattice
 format. The Bmad manual has a detailed description of this format.
 Examples are presented in section~\sref{s:lat.file}.
-
+  %
   \item[\vn{lux_param\%mpi_run_size}] \Newline
 Only used when running the parallel version of \lux. This parameter
 determines how many photons a slave process is asked to track before
@@ -268,31 +273,31 @@ sending back data to the master process:
 The value 0.1 is the default. Changing this number can affect
 running time but the running time should be fairly insensitive
 to the value of \vn{%mpi_run_size}.
-
+  %
   \item[\vn{lux_param\%normalization_includes_pixel_area}] \Newline
 Does the factor used for computing the normalized photon intensity (\sref{s:photon.descrip}) include
 the pixel area of the detector?
-
+  %
   \item[\vn{lux_param\%photon_init_element}] \Newline
 Name of the lattice element that is the source of the photons (\sref{s:lat.file}).
-
+  %
   \item[\vn{lux_param\%n_photon1_out_max}] \Newline
 Maximum number of photons to record in the \vn{photon1_out_file}.
 Default is 100.
-
+  %
   \item[\vn{lux_param\%photon1_element}] \Newline
 The photon position values in the photon1_out file will be the
 photon position at the lattice element named by \vn{lux_param%photon1_element}. 
 If \vn{photon1_element} is blank (default), the
 detector element used will be used (\sref{s:photon1.file}).
-
+  %
   \item[\vn{lux_param\%photon1_out_file}] \Newline
 Name of the output data file recording the starting and ending
 positions of individual photons. See section~\sref{s:photon1.file} for
 more details. The file name may be ``numbered'' using 
 a ``\#'' character (\sref{s:number}). A blank file name will prevent a
 file being generated.
-
+  %
   \item[\vn{lux_param\%random_engine}] \Newline
 Type of ``random'' number generator to use. Possibilities are:
 \begin{example}
@@ -303,34 +308,40 @@ The \vn{quasi} number generator gives a more-or-less uniform
 distribution of numbers. That is, a quasi random generator is not
 actually random. The numbers generated with the quasi random generator
 are always the same from run to run.
-
+  %
   \item[\vn{lux_param\%random_seed}] \Newline
 If the \vn{random_engine} is set to \vn{pseudo}, \vn{%random_seed} is the random number seed used by
-the random number generator. If set to 0, the system clock will be used so that the
-output results will vary from run to run. Not used if the \vn{random_engine} is set to \vn{quasi}.
-
+the random number generator. If set to 0, the system clock will be used so that the output results
+will show statistical variations from run to run. Not used if the \vn{random_engine} is set to
+\vn{quasi}.  If the seed is nonzero, the results will be the same from run to run. However, the
+results when using the MPI version of \lux will not be exactly the same at the non-MPI \lux version.
+  %
   \item[\vn{lux_param\%reject_dead_at_det_photon1}] \Newline
 If \vn{reject_dead_to_det_photon1} is set to True, do not print to the photon_out file any photons
 that do not reach the detector. This switch is only relevant when the lattice element at which the
 photon positions are being evaluated is not the detector (\sref{s:photon1.file}).
-
+  %
   \item[\vn{lux_param\%scale_initial_field_to_1}] \Newline
 Scale the field so that $E_x^2 + E_y^2 = 1$? Default is True. Only used if at least one field
 component is non-zero. See \sref{s:photon.descrip} for more details.
-
+  %
   \item[\vn{lux_param\%stop_num_photons}] \Newline
 Maximum number of photons to track (\sref{s:det}).
-
+  %
   \item[\vn{lux_param\%stop_total_intensity}] \Newline
 Cumulative unnormalized intensity at the detector to stop
 at (\sref{s:det}).  Note: This parameter is ignored if running the
 parallel version of \lux and only \vn{lux_param%stop_num_photons}
 is used.
-
+  %
+  \item[\vn{lux_param\%timer_print_dtime}] \Newline
+The program will print a tracking status message every so often. The nominal time between status
+messages is set by \vn{lux_param%timer_print_dtime} which is a number in seconds. The default is
+\vn{300}.
+  %
   \item[\vn{lux_param\%track_out_file}] \Newline
 The \vn{track_out_file} records how many photons are lost at each lattice element. This is useful for
 diagnosing cases when too many photons are being lost before reaching the detector.
-
   \end{description}
 
 %------------------------------------------------------------------
@@ -812,11 +823,11 @@ There is a python script for making an intensity plot of the
   $ACC_ROOT_DIR/lux/scripts/plot_det_pix.py
 \end{example}
 
-The script needs Python3 to run. You can invoke the script using the command
+The script needs python3 to run. You can invoke the script using the command:
 \begin{example}
   <path-to-lux-root-dir>/scripts/plot_det_pix.py <det_pix_out_file>
 \end{example}
-where \vn{<det_pix_out_file>} is the actual name of the \vn{det_pix_out_file}.  If the default
+where \vn{<det_pix_out_file>} is the actual name of the \vn{det_pix_out_file}. If the default
 version of python is not python3 then the following may work
 \begin{example}
   python3 <path-to-lux-root-dir>/scripts/plot_det_pix.py <det_pix_out_file>
@@ -824,18 +835,28 @@ version of python is not python3 then the following may work
 
 The script has a number of optional arguments. The syntax for running the script is:
 \begin{example}
-    plot_det_pix.py \{-scale <scale>\} \{-plot <who_to_plot>\} \{<data_file_name>\}
+  plot_det_pix.py \{-aspect <aspect_ratio>\} \{-scale <scale>\} 
+                                         \{-plot <who_to_plot>\} \{<data_file_name>\}
   <who_to_plot> = x         # Intensity of x-polarized photons
                 = y         # Intensity of y-polarized photons
                 = i         # Total intensity (sum of x & y polarizations)
                 = e         # Energy
   Defaults:
+    <aspect_ratio>   = 1
     <scale>          = 1e3
     <data_file_name> = det_pix
     <who_to_plot>    = i
 \end{example}
 
 Figure~\ref{f:det.plot} shows two example intensity plots. 
+
+The \vn{<scale>} parameter sets the scale of the axis numbers. A scale of \vn{1e3} results in the
+axis numbers being in millimeters.
+
+The \vn{<aspect_ratio>} parameter sets the aspect ratio of the plot. An aspect ratio of one (the
+default) will mean that the vertical and horizontal scales (detector position per plotted unit
+length) begin the same. An aspect ratio greater than one will enlarge the vertical scale and less than
+one will enlarge the horizontal scale.
 
 %------------------------------------------------------------------
 \subsection{Other plotting}

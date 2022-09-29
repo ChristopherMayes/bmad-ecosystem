@@ -33,8 +33,6 @@ contains
 
 subroutine tao_single_track (tao_lat, calc_ok, ix_branch, print_err)
 
-use mode3_mod
-
 implicit none
 
 type (tao_lattice_struct), target :: tao_lat
@@ -44,10 +42,9 @@ type (coord_struct), pointer :: orbit(:)
 type (branch_struct), pointer :: branch
 type (tao_lattice_branch_struct), pointer :: tao_branch
 type (ele_struct), pointer :: ele
-type (beam_init_struct), pointer :: beam_init
 
+real(rp) sigma(6,6)
 real(rp), parameter :: vec0(6) = 0
-real(rp) covar, radix, tune3(3), N_mat(6,6), D_mat(6,6), G_inv(6,6)
 
 integer i, ii, n, nn, ix_branch, status, ix_lost, i_dim
 
@@ -182,19 +179,99 @@ endif
 if (branch%param%particle /= photon$ .and. s%global%rad_int_calc_on .and. &
             (u%calc%rad_int_for_data .or. u%calc%rad_int_for_plotting .or. s%global%track_type == 'beam')) then
   call radiation_integrals (tao_lat%lat, tao_branch%orbit, &
-                      tao_branch%modes, tao_branch%ix_rad_int_cache, ix_branch, tao_lat%rad_int)
+                      tao_branch%modes_ri, tao_branch%ix_rad_int_cache, ix_branch, tao_lat%rad_int)
+  if (branch%param%geometry == closed$) then
+    tao_lat%high_e_lat = u%model%lat
+    ele => tao_lat%high_e_lat%branch(ix_branch)%ele(0)
+    call emit_6d(ele, .true., tao_branch%modes_6d, sigma)
+  endif
 endif
 
-! Sigma matric calc.
+end subroutine tao_single_track
 
-if ((u%calc%beam_sigma_for_data .or. u%calc%beam_sigma_for_plotting) .and. &
-                                              branch%param%particle /= photon$) then
-  beam_init => u%model_branch(0)%beam%beam_init
-  ele => branch%ele(0)
-  if (.not. associated(ele%mode3)) allocate (ele%mode3)
-  if (.not. allocated(tao_branch%linear)) allocate(tao_branch%linear(0:branch%n_ele_max))
+!------------------------------------------------------------------------------
+!------------------------------------------------------------------------------
+!------------------------------------------------------------------------------
+!+
+! Subroutine tao_lat_sigma_track (tao_lat, calc_ok, ix_branch, print_err)
+!
+! Routine to track the 6x6 sigma matrix through the lattice using the lattice linear transfer matrices.
+!
+! Input:
+!   tao_lat     -- tao_lattice_struct: Structure containing the lattice.
+!   ix_branch   -- integer: Branch index to track through.
+!   print_err   -- logical, optional: Default False. Print error messages if, eg, lattice is unstable?
+!
+! Output:
+!   calc_ok     -- logical: Set True if there were no problems, False otherwise.
+!-
 
-  if (branch%param%geometry == closed$) then
+subroutine tao_lat_sigma_track (tao_lat, calc_ok, ix_branch, print_err)
+
+use mode3_mod
+
+implicit none
+
+type (tao_lattice_struct), target :: tao_lat
+type (lat_struct), pointer :: lat
+type (tao_universe_struct), pointer :: u
+type (tao_lattice_branch_struct), pointer :: tao_branch
+type (ele_struct), pointer :: ele
+type (branch_struct), pointer :: branch
+type (beam_init_struct), pointer :: beam_init
+type (tao_model_branch_struct), pointer :: model_branch
+type (bunch_params_struct) :: bunch_params
+
+real(rp) covar, radix, tune3(3), N_mat(6,6), D_mat(6,6), G_inv(6,6)
+
+integer ix_branch
+integer i, n, ie0, ibf, ief
+
+logical, optional :: print_err
+logical calc_ok, err
+
+character(80) :: lines(10)
+character(*), parameter :: r_name = "tao_lat_sigma_track"
+
+!
+
+u => tao_lat%u
+lat => tao_lat%lat
+branch => tao_lat%lat%branch(ix_branch)
+tao_branch => tao_lat%tao_branch(ix_branch)
+model_branch => u%model_branch(ix_branch)
+ie0 = model_branch%beam%ix_track_start
+if (ie0 == not_set$) return
+
+if ((.not. u%calc%lat_sigma_for_data .and. s%com%optimizer_running) .or. branch%param%particle == photon$) return
+
+beam_init => u%model_branch(0)%beam%beam_init
+ele => branch%ele(ie0)
+if (ele%lord_status == super_lord$) ele => pointer_to_slave(ele, ele%n_slave)
+if (.not. associated(ele%mode3)) allocate (ele%mode3)
+
+! Sigma mat at beginning
+
+if (branch%ix_from_branch >= 0) then  ! Propagate through fork
+  ibf = branch%ix_from_branch
+  ief = branch%ix_from_ele
+  tao_branch%lat_sigma(ie0)%mat = tao_lat%tao_branch(ibf)%lat_sigma(ief)%mat
+
+elseif (s%global%init_lat_sigma_from_beam) then
+  call calc_bunch_params (model_branch%ele(ie0)%beam%bunch(s%global%bunch_to_plot), bunch_params, err, print_err)
+  tao_branch%lat_sigma(ie0)%mat = bunch_params%sigma
+
+else
+  call calc_emit_from_beam_init(beam_init, ele, ele%ref_species)
+  D_mat = 0
+  D_mat(1,1) = ele%a%emit   ! Set by calc_this_emit
+  D_mat(2,2) = ele%a%emit
+  D_mat(3,3) = ele%b%emit
+  D_mat(4,4) = ele%b%emit
+  D_mat(5,5) = beam_init%sig_z * beam_init%sig_pz
+  D_mat(6,6) = beam_init%sig_z * beam_init%sig_pz
+
+  if (branch%param%geometry == closed$ .and. branch%param%t1_with_rf(6,5) /= 0) then
     call transfer_matrix_calc (lat, branch%param%t1_with_RF, ix_branch = ix_branch, one_turn=.true.)
     call make_N (branch%param%t1_with_RF, N_mat, err, tunes_out = tune3)
     if (err) then
@@ -204,16 +281,8 @@ if ((u%calc%beam_sigma_for_data .or. u%calc%beam_sigma_for_plotting) .and. &
       call out_io (s_error$, r_name, lines(1:n))
       return
     endif
-  
-    D_mat = 0
-    D_mat(1,1) = beam_init%a_emit   ! tao_branch%modes%a%emittance
-    D_mat(2,2) = beam_init%a_emit   ! tao_branch%modes%a%emittance
-    D_mat(3,3) = beam_init%b_emit   ! tao_branch%modes%b%emittance
-    D_mat(4,4) = beam_init%b_emit   ! tao_branch%modes%b%emittance
-    D_mat(5,5) = beam_init%sig_z * beam_init%sig_pz   ! tao_branch%modes%z%emittance
-    D_mat(6,6) = beam_init%sig_z * beam_init%sig_pz   ! tao_branch%modes%z%emittance
 
-    tao_branch%linear(0)%sigma = matmul(matmul(N_mat, D_mat), transpose(N_mat))
+    tao_branch%lat_sigma(ie0)%mat = matmul(matmul(N_mat, D_mat), transpose(N_mat))
 
   else
     covar = beam_init%dPz_dz * beam_init%sig_z**2
@@ -232,47 +301,66 @@ if ((u%calc%beam_sigma_for_data .or. u%calc%beam_sigma_for_plotting) .and. &
       ele%z%gamma = 1
     else
       ele%z%beta  = beam_init%sig_z**2 / ele%z%emit
-      ele%z%alpha = - covar / ele%z%emit
+      ele%z%alpha = -covar / ele%z%emit
       ele%z%gamma = (1 + ele%z%alpha**2) / ele%z%beta
     endif
 
-    call twiss3_from_twiss2 (branch%ele(0))
+    call twiss3_from_twiss2 (ele)
 
-    G_inv = 0
-    G_inv(1,1) = sqrt(ele%a%beta)
-    G_inv(2,1:2) = [-ele%a%alpha / sqrt(ele%a%beta), 1/sqrt(ele%a%beta)]
-    G_inv(3,3) = sqrt(ele%b%beta)
-    G_inv(4,3:4) = [-ele%b%alpha / sqrt(ele%b%beta), 1/sqrt(ele%b%beta)]
-    G_inv(5,5) = sqrt(ele%z%beta)
-    G_inv(6,5:6) = [-ele%z%alpha / sqrt(ele%z%beta), 1/sqrt(ele%z%beta)]
+    if (ele%a%beta == 0 .or. ele%b%beta == 0) then  ! Twiss not set in lattice?
+      tao_branch%lat_sigma(ie0)%mat = 0
+    else
+      G_inv = 0
+      G_inv(1,1) = sqrt(ele%a%beta)
+      G_inv(2,1:2) = [-ele%a%alpha / sqrt(ele%a%beta), 1/sqrt(ele%a%beta)]
+      G_inv(3,3) = sqrt(ele%b%beta)
+      G_inv(4,3:4) = [-ele%b%alpha / sqrt(ele%b%beta), 1/sqrt(ele%b%beta)]
+      G_inv(5,5) = sqrt(ele%z%beta)
+      G_inv(6,5:6) = [-ele%z%alpha / sqrt(ele%z%beta), 1/sqrt(ele%z%beta)]
 
-    N_mat = matmul(ele%mode3%v, G_inv)
+      N_mat = matmul(ele%mode3%v, G_inv)
 
-    D_mat = 0
-    D_mat(1,1) = beam_init%a_emit
-    D_mat(2,2) = beam_init%a_emit
-    D_mat(3,3) = beam_init%b_emit
-    D_mat(4,4) = beam_init%b_emit
-    D_mat(5,5) = ele%z%emit
-    D_mat(6,6) = ele%z%emit
-
-    tao_branch%linear(0)%sigma = matmul(matmul(N_mat, D_mat), transpose(N_mat))
+      tao_branch%lat_sigma(ie0)%mat = matmul(matmul(N_mat, D_mat), transpose(N_mat))
+    endif
   endif
-
-  do i = 1, branch%n_ele_track
-    ele => branch%ele(i)
-    tao_branch%linear(i)%sigma = matmul(matmul(ele%mat6, tao_branch%linear(i-1)%sigma), transpose(ele%mat6))
-  enddo
 endif
 
-end subroutine tao_single_track
+! And propagate
+
+i = ie0
+do 
+  i = i + 1
+  if (i > branch%n_ele_track) then
+    if (ie0 == 0) exit
+    tao_branch%lat_sigma(0)%mat = tao_branch%lat_sigma(branch%n_ele_track)%mat
+    i = 1
+  endif
+  if (i == ie0) exit
+  ele => branch%ele(i)
+  tao_branch%lat_sigma(i)%mat = matmul(matmul(ele%mat6, tao_branch%lat_sigma(i-1)%mat), transpose(ele%mat6))
+enddo
+
+end subroutine tao_lat_sigma_track
 
 !------------------------------------------------------------------------------
 !------------------------------------------------------------------------------
 !------------------------------------------------------------------------------
-
-! Right now, there is no beam tracking in circular lattices. 
-! If extracting from a lat then the beam is generated at the extraction point.
+!+
+! Subroutine tao_beam_track (u, tao_lat, ix_branch, beam, calc_ok)
+!
+! Routine to track a a beam of particles.
+!
+! Input:
+!   u         -- tao_universe_struct: Universe to track through.
+!   tao_lat   -- tao_lattice_struct: Structure containing the lattice.
+!   ix_branch -- integer: Branch index to track through.
+!   beam      -- beam_struct: Initial beam distribution
+!   print_err -- logical, optional: Default False. Print error messages if, eg, lattice is unstable?
+!
+! Output:
+!   beam      -- beam_struct: Final beam distribution.
+!   calc_ok   -- logical: Set True if there were no problems, False otherwise.
+!-
 
 subroutine tao_beam_track (u, tao_lat, ix_branch, beam, calc_ok)
 
@@ -284,8 +372,9 @@ implicit none
 type (tao_lattice_struct), target :: tao_lat
 type (lat_struct), pointer :: lat
 type (ele_struct), pointer :: ele
+type (ele_struct) slice_ele
 type (tao_universe_struct), target :: u
-type (beam_struct) :: beam
+type (beam_struct) :: init_beam, beam
 type (normal_modes_struct) :: modes
 type (tao_graph_struct), pointer :: graph
 type (tao_curve_struct), pointer :: curve
@@ -294,26 +383,26 @@ type (branch_struct), pointer :: branch
 type (tao_lattice_branch_struct), pointer :: tao_branch
 type (tao_model_element_struct), pointer :: tao_model_ele(:)
 type (tao_model_branch_struct), pointer :: model_branch
-type (bunch_params_struct), pointer :: bunch_params
+type (bunch_params_struct) :: bunch_params
 
-real(rp) sig(6,6)
+real(rp) sig(6,6), significant_length, s_slice_start, s_next_comb, s_slice_end, s_travel
+real(rp) :: value1, value2, f, time, old_time, s_start, s_end, s_target, ds_step
 
-integer what_lat, n_lost_old, ie_start, ie_end
 integer i, n, i_uni, ip, ig, ic, ie
-integer n_bunch, n_part, i_uni_to, ix_track
-integer n_lost, ix_branch
+integer what_lat, n_lost_old, ie_start, ie_end, i_uni_to, ix_track
+integer n_bunch, n_part, n_lost, ix_branch, ix_comb, ix_slice
 integer, allocatable :: ix_ele(:)
 
 character(*), parameter :: r_name = "tao_beam_track"
 
-real(rp) :: value1, value2, f, time, old_time
-
 logical calc_ok, print_err, err, lost, new_beam_file, can_save
+logical old_at_ele_end, at_ele_end, at_comb_pt, comb_calc_on
 
 ! Initialize 
 
 call re_allocate (ix_ele, 1)
 
+significant_length = bmad_com%significant_length
 s%com%have_tracked_beam = .true.
 branch => tao_lat%lat%branch(ix_branch)
 tao_branch => tao_lat%tao_branch(ix_branch)
@@ -330,11 +419,41 @@ new_beam_file = .true.
 
 ie_start = model_branch%beam%ix_track_start
 ie_end   = model_branch%beam%ix_track_end
+s_start = branch%ele(ie_start)%s
+s_end = branch%ele(ie_end)%s
+
+if (ie_start == not_set$ .or. ie_end == not_set$) then
+  call out_io (s_error$, r_name, 'BEAM END POSITION NOT PROPERLY SET. NO TRACKING DONE.')
+  return
+endif
 
 tao_branch%bunch_params(:)%n_particle_lost_in_ele = 0
 tao_branch%bunch_params(:)%n_particle_live = 0
 tao_branch%bunch_params(:)%n_particle_live = 0
 tao_branch%bunch_params(:)%twiss_valid = .false.
+
+ds_step = u%beam%comb_ds_step
+comb_calc_on = (ds_step > 0)
+
+if (comb_calc_on) then
+  if (s_end < s_start) then
+    s_travel = s_end + branch%param%total_length - s_start
+  else
+    s_travel = s_end - s_start
+  endif
+
+  n = nint(s_travel/ds_step)
+  ds_step = s_travel / n
+
+  if (allocated(tao_branch%bunch_params_comb)) then
+    if (n /= ubound(tao_branch%bunch_params_comb, 1)) deallocate(tao_branch%bunch_params_comb)
+  endif
+
+  if (.not. allocated(tao_branch%bunch_params_comb)) allocate(tao_branch%bunch_params_comb(0:n))
+
+else
+  if (allocated(tao_branch%bunch_params_comb)) deallocate(tao_branch%bunch_params_comb)
+endif
 
 ! Transfer wakes from  design
 
@@ -361,23 +480,53 @@ if (ie_end < ie_start .and. branch%param%geometry == open$) then
 endif
 
 n_lost_old = 0
-ie = ie_start - 1
+ie = ie_start
+s_target = s_start
+ele => branch%ele(ie)
+old_at_ele_end = .true.
+at_ele_end = .true.        ! Status when reaching s_target
+at_comb_pt = comb_calc_on  ! Status when reaching s_target
+ix_comb = -1
 
-do 
-  ie = ie + 1
-  if (ie > branch%n_ele_track) ie = 1
-
-  bunch_params => tao_branch%bunch_params(ie)
-  ele => branch%ele(ie)
-
+do
   ! track to the element and save for phase space plot
 
-  if (s%com%use_saved_beam_in_tracking) then
+  if (comb_calc_on .and. bmad_com%csr_and_space_charge_on .and. ele%csr_method /= steady_state_3d$ .and. &
+                                             (ele%csr_method /= off$ .or. ele%space_charge_method /= off$)) then
+    call out_io (s_warn$, r_name, 'comb_ds_step positive not compatable with CSR calc.', &
+                                  'comb_ds_step will be set negative.')
+    u%beam%comb_ds_step = -1
+    comb_calc_on = .false.
+    deallocate (tao_branch%bunch_params_comb)
+  endif
+
+  if (s%com%use_saved_beam_in_tracking .and. ele%s == s_target .and. at_ele_end) then
     beam = tao_model_ele(ie)%beam
 
   else
     if (ie /= ie_start) then
-      call track_beam (lat, beam, branch%ele(ie-1), ele, err, centroid = tao_branch%orbit)
+      if (old_at_ele_end .and. at_ele_end) then
+        call track_beam (lat, beam, branch%ele(ie-1), ele, err, centroid = tao_branch%orbit)
+      else
+        if (old_at_ele_end .and. .not. at_ele_end) then
+          ix_slice = 1
+          s_slice_end = s_next_comb - ele%s_start
+          call element_slice_iterator(ele, branch%param, ix_slice, 9, slice_ele, 0.0_rp, s_slice_end)
+        elseif (.not. old_at_ele_end .and. .not. at_ele_end) then
+          ix_slice = ix_slice + 1
+          s_slice_end = s_slice_end + ds_step
+          call element_slice_iterator(ele, branch%param, ix_slice, -1, slice_ele, s_slice_end-ds_step, s_slice_end)
+        else 
+          ix_slice = ix_slice + 1
+          call element_slice_iterator(ele, branch%param, ix_slice, ix_slice, slice_ele, s_slice_end, ele%value(l$))
+        endif
+
+        do i = 1, size(beam%bunch)
+          call track1_bunch (beam%bunch(i), slice_ele, err)
+        enddo
+      endif
+
+
       if (err) then
         calc_ok = .false.
         return
@@ -385,9 +534,9 @@ do
     endif
 
     can_save = (ie == ie_start .or. ie == ie_end .or. ele%key == fork$ .or. ele%key == photon_fork$)
-    if (tao_model_ele(ie)%save_beam_internally .or. can_save) tao_model_ele(ie)%beam = beam
+    if (at_ele_end .and. (tao_model_ele(ie)%save_beam_internally .or. can_save)) tao_model_ele(ie)%beam = beam
 
-    if (u%beam%dump_file /= '' .and. tao_model_ele(ie)%save_beam_to_file) then
+    if (at_ele_end .and. (u%beam%dump_file /= '' .and. tao_model_ele(ie)%save_beam_to_file)) then
       if (index(u%beam%dump_file, '.h5') == 0 .and. index(u%beam%dump_file, '.hdf5') == 0) then
         call write_beam_file (u%beam%dump_file, beam, new_beam_file, ascii$, lat)
       else
@@ -400,7 +549,7 @@ do
   ! Lost particles
 
   n_bunch = s%global%bunch_to_plot
-  n_lost = count(beam%bunch(n_bunch)%particle(:)%state /= alive$)
+  n_lost = count(beam%bunch(n_bunch)%particle(:)%state /= alive$ .and. beam%bunch(n_bunch)%particle(:)%state /= pre_born$)
   if (n_lost /= n_lost_old) then
     n = size(beam%bunch(n_bunch)%particle(:))
     if (size(s%u) == 1) then
@@ -422,8 +571,7 @@ do
     ix_track = ie
     lost = .true.
     call out_io (s_warn$, r_name, &
-            'TOO MANY PARTICLES HAVE BEEN LOST AT ELEMENT ' // trim(ele_loc_name(ele)) // &
-                                          ': ' // trim(ele%name))
+            'TOO MANY PARTICLES HAVE BEEN LOST AT ELEMENT ' // trim(ele_loc_name(ele)) // ': ' // trim(ele%name))
   endif
 
   ! calc bunch params
@@ -446,12 +594,18 @@ do
 
   if (ie == ie_start) then
     bunch_params%n_particle_lost_in_ele = 0
+    if (comb_calc_on) tao_branch%bunch_params_comb(0) = bunch_params
   else
-    bunch_params%n_particle_lost_in_ele = tao_branch%bunch_params(ie-1)%n_particle_live - &
-                                                     bunch_params%n_particle_live
+    bunch_params%n_particle_lost_in_ele = tao_branch%bunch_params(ie-1)%n_particle_live - bunch_params%n_particle_live
   endif
 
-  ! Timer 
+  if (at_ele_end) tao_branch%bunch_params(ie) = bunch_params
+  if (at_comb_pt) then
+    ix_comb = ix_comb + 1
+    tao_branch%bunch_params_comb(ix_comb) = bunch_params
+  endif
+
+  ! Timer
 
   if (s%global%beam_timer_on) then
     call run_timer ('READ', time)
@@ -462,22 +616,47 @@ do
     endif
   endif
 
-  if (ie == ie_end) exit
+  if (ie == ie_end .and. at_ele_end) exit
+
+  ! Calc next step
+
+  if (at_ele_end) then
+    ie = ie + 1
+    if (ie > branch%n_ele_track) then
+      ie = 1
+      s_target = s_target - branch%param%total_length
+      s_start = s_start - branch%param%total_length
+    endif
+    ele => branch%ele(ie)
+  endif
+
+  old_at_ele_end = at_ele_end
+
+  s_next_comb = s_start + (ix_comb+1) * ds_step
+  if (comb_calc_on .and. ele%s > s_next_comb + significant_length) then
+    s_target = s_next_comb
+    at_ele_end = .false.
+    at_comb_pt = .true.
+  else
+    s_target = ele%s
+    at_ele_end = .true.
+    at_comb_pt = (comb_calc_on .and. abs(s_target - s_next_comb) < significant_length) 
+  endif
 enddo
 
 ! only post total lost if no extraction or extracting to a turned off lattice
 
 n_lost = 0
 do n_bunch = 1, size(beam%bunch)
-  n_lost = n_lost + count(beam%bunch(n_bunch)%particle%state /= alive$)
+  n_lost = n_lost + count(beam%bunch(n_bunch)%particle(:)%state /= alive$ .and. beam%bunch(n_bunch)%particle(:)%state /= pre_born$)
 enddo
 if (n_lost /= 0) &
-  call out_io (s_blank$, r_name, &
-      "Total number of lost particles by the end of universe \I2\: \I5\.", &
+  call out_io (s_blank$, r_name, "Total number of lost particles by the end of universe \I2\: \I5\.", &
                                   i_array = [u%ix_uni, n_lost])
 
 tao_branch%track_state = ix_track
- 
+if (allocated(tao_branch%bunch_params_comb)) tao_branch%n_bunch_params_comb = ix_comb
+
 end subroutine tao_beam_track
 
 !------------------------------------------------------------------------------
@@ -502,7 +681,7 @@ no_beam = .false.
 
 n_bunch = s%global%bunch_to_plot
 p =>beam%bunch(n_bunch)%particle(:)
-all_lost = all(p%state /= alive$)
+all_lost = .not. any(p%state == alive$ .or. p%state == pre_born$)
 
 if (particle == photon$) then
   if (sum(p%field(1)**2) + sum(p%field(2)**2) == 0 .or. all_lost) no_beam = .true.
@@ -564,7 +743,6 @@ endif
 
 ! Not injecting from another branch.
 ! In model%tao_branch()%orb0 is saved the last computed orbit. 
-! This is important when using a common_lattice since tao_lat%tao_branch()%orbit(0) has been overwritten.
 
 orb_out => model%tao_branch(ix_branch)%orbit(0)
 
@@ -585,6 +763,10 @@ end subroutine tao_inject_particle
 !
 ! This will initialize the beam for a given lattice branch.
 !
+! Trying to inject a beam of one species into a branch with a different ref species
+! (example: electron bunch into photon branch) is problematical. To avoid problems, Tao
+! will set not inject (init_ok = False) if there is a mismatch.
+!
 ! Input:
 !   u         -- tao_universe_struct: Universe containing the lattice.
 !   model     -- tao_lattice_struct: Universe parameters.
@@ -594,6 +776,7 @@ end subroutine tao_inject_particle
 !   beam          -- beam_struct: Initial beam.
 !   init_ok       -- logical: Set False if there are problems. True otherwise.
 !-
+
 subroutine tao_inject_beam (u, model, ix_branch, beam, init_ok)
 
 use beam_utils
@@ -606,46 +789,46 @@ type (tao_lattice_struct), target :: model
 type (tao_model_branch_struct), pointer :: model_branch
 type (branch_struct), pointer :: branch
 type (beam_struct) :: beam
-type (ele_struct), pointer :: ele0, ele1
+type (ele_struct), pointer :: ele0
 type (coord_struct), pointer :: orbit
 type (tao_beam_branch_struct), pointer :: bb
 
 real(rp) v(6)
-integer i, j, n, iu, ios, n_in_file, n_in, ix_branch, ib0, ie0
+integer i, j, n, iu, ios, n_in_file, n_in, ix_branch, ib0, ie0, ie_start
 
 character(*), parameter :: r_name = "tao_inject_beam"
 character(100) line
 
 logical err, init_ok
 
-! If using beam info from a file then no init necessary.
+!
 
 init_ok = .false.
 
+model_branch => u%model_branch(ix_branch)
+bb => model_branch%beam
+branch => model%lat%branch(ix_branch)
+ie_start = bb%ix_track_start
+if (ie_start == not_set$) then
+  call out_io (s_error$, r_name, 'BEAM STARTING POSITION NOT PROPERLY SET. NO TRACKING DONE.')
+  return
+endif
+
+! If using beam info from a file then no init necessary.
+
 if (s%com%use_saved_beam_in_tracking) then
   init_ok = .true.
+  beam = model_branch%ele(ie_start)%beam
+  u%model_branch(ix_branch)%ele(ie_start)%beam = beam
   return
 endif
 
 ! if injecting into a branch then use the branch point as the starting distribution.
 
-model_branch => u%model_branch(ix_branch)
-branch => model%lat%branch(ix_branch)
-
-if (ix_branch > 0) then
-  bb => model_branch%beam
-  bb%ix_track_start = branch%ix_to_ele
-
+if (branch%ix_from_branch >= 0) then  ! Injecting from other branch
   ib0 = branch%ix_from_branch
   ie0 = branch%ix_from_ele
   ele0 => u%model%lat%branch(ib0)%ele(ie0)
-
-  if (branch%param%geometry == open$) then
-    bb%ix_track_end = branch%n_ele_track
-  else
-    bb%ix_track_end = bb%ix_track_start - 1
-    if (bb%ix_track_end == -1) bb%ix_track_end = branch%n_ele_track
-  endif
 
   if (.not. allocated (u%model_branch(ib0)%ele(ie0)%beam%bunch)) then
     call out_io (s_error$, r_name, 'CANNOT INJECT INTO BRANCH: ' // int_str(ix_branch) // &
@@ -657,47 +840,32 @@ if (ix_branch > 0) then
   ! species is not well defined. In this case, don't inject.
 
   beam = u%model_branch(ib0)%ele(ie0)%beam
+  u%model_branch(ix_branch)%ele(ie_start)%beam = beam
 
-  if (beam%bunch(1)%particle(1)%species == u%model%lat%branch(ix_branch)%param%particle) then
-    bb%track_start = branch%ele(bb%ix_track_start)%name
-    bb%track_end   = branch%ele(bb%ix_track_end)%name
-    init_ok = .true.
-  endif
+  if (beam%bunch(1)%particle(1)%species /= u%model%lat%branch(ix_branch)%param%particle) return
+  init_ok = .true.
 
   return
 endif
 
-! Init for main branch...
+! Init for a root branch...
 ! If init is via a call to init_beam_distribution: If the distribution is generated with the help of a random 
 ! number generator, a different distribution is generated each time init_beam_distribution is called. 
 ! This is a problem if, say, we are looking at changes to the beam transport due to changes in lattice parameters. 
 ! Of course if, for example, the beam_init structure is modified then we do want a distribution recalc.
 
-bb => u%model_branch(0)%beam
+bb => u%model_branch(ix_branch)%beam
 
-if (bb%beam_init%use_particle_start_for_center .and. any(bb%beam_init%center /= u%model%lat%particle_start%vec)) then
+if (bb%beam_init%use_particle_start .and. any(bb%beam_init%center /= u%model%lat%particle_start%vec)) then
   bb%beam_init%center = u%model%lat%particle_start%vec
+  bb%beam_init%spin   = u%model%lat%particle_start%spin
   bb%init_starting_distribution = .true.
 endif
 
-bb%ix_track_start = bb%ix_track_start
-if (bb%ix_track_start == not_set$) bb%ix_track_start = 0
-
-bb%ix_track_end = bb%ix_track_end
-if (bb%ix_track_end == not_set$) then
-  if (branch%param%geometry == open$) then
-    bb%ix_track_end = branch%n_ele_track
-  else
-    bb%ix_track_end = bb%ix_track_start - 1
-    if (bb%ix_track_end == -1) bb%ix_track_end = branch%n_ele_track
-  endif
-endif
-
 ele0 => branch%ele(bb%ix_track_start)
-ele1 => bb%ele_at_start
 
 if (bb%init_starting_distribution .or. u%beam%always_reinit) then
-  call init_beam_distribution (ele0, branch%param, bb%beam_init, beam, err, u%model%tao_branch(ix_branch)%modes)
+  call init_beam_distribution (ele0, branch%param, bb%beam_init, beam, err, u%model%tao_branch(ix_branch)%modes_ri)
   if (err) then
     call out_io (s_error$, r_name, 'BEAM_INIT INITIAL BEAM PROPERTIES NOT PROPERLY SET FOR UNIVERSE: ' // int_str(u%ix_uni))
     return
@@ -713,13 +881,13 @@ if (bb%init_starting_distribution .or. u%beam%always_reinit) then
   endif
 
   bb%init_starting_distribution = .false.
-  bb%ele_at_start = ele0
   bb%beam_at_start = beam
 
 else
   beam = bb%beam_at_start
 endif
 
+u%model_branch(ix_branch)%ele(ie_start)%beam = beam
 init_ok = .true.
 
 end subroutine tao_inject_beam

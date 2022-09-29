@@ -1,5 +1,5 @@
 !+
-! Subroutine tao_command (command_line, err, err_is_fatal)
+! Subroutine tao_command (command_line, err_flag, err_is_fatal)
 !
 ! Interface to all standard (non hook) tao commands. 
 ! This routine esentially breaks the command line into words
@@ -10,14 +10,14 @@
 !   command_line  -- character(*): command line
 !
 ! Output:
-!  err            -- logical: Set True on error. False otherwise.
+!  err_flag       -- logical: Set True on error. False otherwise.
 !  err_is_fatal   -- logical: Set True on non-recoverable error. False otherwise
 !-
 
-subroutine tao_command (command_line, err, err_is_fatal)
+subroutine tao_command (command_line, err_flag, err_is_fatal)
 
 use tao_set_mod, dummy2 => tao_command
-use tao_change_mod, only: tao_change_var, tao_change_ele, tao_dmodel_dvar_calc
+use tao_change_mod, only: tao_change_var, tao_change_ele, tao_dmodel_dvar_calc, tao_change_tune, tao_change_z_tune
 use tao_command_mod, only: tao_cmd_split, tao_re_execute, tao_next_switch
 use tao_data_and_eval_mod, only: tao_to_real
 use tao_misalign_mod, only: tao_misalign
@@ -42,32 +42,28 @@ real(rp) value1, value2, time
 character(*) :: command_line
 character(len(command_line)) cmd_line
 character(*), parameter :: r_name = 'tao_command'
-character(300) :: cmd_word(12)
-character(40) gang_str, switch, word, except
+character(1000) :: cmd_word(12)
+character(200) list, mask
+character(40) gang_str, switch, word, except, branch_str
 character(16) cmd_name, set_word, axis_name
 
-character(16) :: cmd_names(41) = [ &
-    'quit         ', 'exit         ', 'show         ', 'plot         ', 'place        ', &
-    'clip         ', 'scale        ', 'veto         ', 'use          ', 'restore      ', &
-    'run_optimizer', 'flatten      ', 'change       ', 'set          ', 'cut_ring     ', &
-    'call         ', 'ptc          ', 'alias        ', 'help         ', 'single_mode  ', &
-    're_execute   ', 'reinitialize ', 'x_scale      ', 'x_axis       ', 'derivative   ', &
-    'spawn        ', 'xy_scale     ', 'read         ', 'misalign     ', 'end_file     ', &
-    'pause        ', 'continue     ', 'wave         ', 'timer        ', 'write        ', &
-    'python       ', 'json         ', 'quiet        ', 'ls           ', 'taper        ', &
-    'clear        ']
-
+character(16) :: cmd_names(42) = [character(16):: &
+                      'alias', 'call', 'change', 'clear', 'clip', 'continue', 'cut_ring', 'derivative', &
+                      'end_file', 'exit', 'flatten', 'help', 'json', 'ls', 'misalign', 'pause', 'place', &
+                      'plot', 'ptc', 'python', 'quit', 're_execute', 'read', 'reinitialize', 'reset', &
+                      'restore', 'run_optimizer', 'scale', 'set', 'show', 'single_mode', 'spawn', 'taper', &
+                      'timer', 'use', 'veto', 'view', 'wave', 'write', 'x_axis', 'x_scale', 'xy_scale']
 character(16) :: cmd_names_old(6) = [&
     'x-scale      ', 'xy-scale     ', 'single-mode  ', 'x-axis       ', 'end-file     ', &
     'output       ']
 
 logical quit_tao, err, err_is_fatal, silent, gang, abort, err_flag, ok
-logical include_wall, update, exact, include_this, lord_set
+logical include_wall, update, exact, include_this, lord_set, listing
 
 ! blank line => nothing to do
 
 err_is_fatal = .false.
-err = .false.
+err_flag = .false.
 
 call string_trim (command_line, cmd_line, ix_line)
 if (ix_line == 0 .or. cmd_line(1:1) == '!') return
@@ -87,6 +83,11 @@ if (ix /= 0) cmd_line = cmd_line(:ix-1)        ! strip off comments
 
 ! match first word to a command name
 
+if (cmd_line(1:5) == 'quiet') then 
+  call out_io (s_warn$, r_name, 'The "quiet" command has been replaced by the "set global quiet = <action>" command.')
+  return
+endif
+
 call match_word (cmd_line, cmd_names, ix_cmd, .true., matched_name = cmd_name)
 
 if (ix_cmd == 0) then  ! Accept old-style names with "-" instead of "_".
@@ -101,7 +102,7 @@ if (ix_cmd == 0) then
   call tao_abort_command_file()
   return
 elseif (ix_cmd < 0) then
-  call out_io (s_error$, r_name, 'AMBIGUOUS COMMAND')
+  call out_io (s_error$, r_name, 'Ambiguous command (the "help" command will show a list of commands).')
   call tao_abort_command_file()
   return
 endif
@@ -127,7 +128,7 @@ select case (cmd_name)
 
 case ('alias')
 
-  call tao_cmd_split(cmd_line, 2, cmd_word, .false., err); if (err) return
+  call tao_cmd_split(cmd_line, 2, cmd_word, .false., err_flag); if (err_flag) return
   call tao_alias_cmd (cmd_word(1), cmd_word(2))
   return
 
@@ -136,7 +137,7 @@ case ('alias')
 
 case ('call')
 
-  call tao_cmd_split(cmd_line, 10, cmd_word, .true., err); if (err) goto 9000
+  call tao_cmd_split(cmd_line, 10, cmd_word, .true., err_flag); if (err_flag) goto 9000
   call tao_call_cmd (cmd_word(1), cmd_word(2:10))
   return
 
@@ -145,38 +146,58 @@ case ('call')
 
 case ('change')
 
-  call tao_cmd_split (cmd_line, 2, cmd_word, .false., err); if (err) goto 9000
+  call tao_cmd_split (cmd_line, 8, cmd_word, .false., err_flag); if (err_flag) goto 9000
 
   silent = .false.
   update = .false.
-  do
-    if (len_trim(cmd_word(1)) == 1) exit
+  mask = ''
+  branch_str = ''
+  listing = .false.
+  n = size(cmd_word)
 
-    if (index('-silent', trim(cmd_word(1))) == 1) then
+  do i = 2, 8
+    if (len_trim(cmd_word(i)) < 2) cycle
+
+    if (index('-silent', trim(cmd_word(i))) == 1) then
       silent = .true.
-      call tao_cmd_split (cmd_word(2), 2, cmd_word, .false., err); if (err) goto 9000
-    elseif (index('-update', trim(cmd_word(1))) == 1) then
+      cmd_word(i:n-1) = cmd_word(i+1:n)
+
+    elseif (index('-update', trim(cmd_word(i))) == 1) then
       update = .true.
-      call tao_cmd_split (cmd_word(2), 2, cmd_word, .false., err); if (err) goto 9000
-    else
-      exit
+      cmd_word(i:n-1) = cmd_word(i+1:n)
+
+    elseif (index('-listing', trim(cmd_word(i))) == 1) then
+      listing = .true.
+      cmd_word(i:n-1) = cmd_word(i+1:n)
+
+    elseif (index('-branch', trim(cmd_word(i))) == 1) then
+      branch_str = cmd_word(i+1)
+      cmd_word(i:n-2) = cmd_word(i+2:n)      
+
+    elseif (index('-mask', trim(cmd_word(i))) == 1) then
+      mask = cmd_word(i+1)
+      cmd_word(i:n-2) = cmd_word(i+2:n)      
     endif
   enddo
 
+  cmd_word(4) = cmd_word(4)//cmd_word(5)//cmd_word(6)//cmd_word(7)//cmd_word(8)
+
   if (index ('variable', trim(cmd_word(1))) == 1) then
-    call tao_cmd_split (cmd_word(2), 2, cmd_word, .false., err); if (err) goto 9000
-    call tao_change_var (cmd_word(1), cmd_word(2), silent)
+    call tao_change_var (cmd_word(2), cmd_word(3)//cmd_word(4), silent, err_flag)
+
   elseif (index('element', trim(cmd_word(1))) == 1) then
-    if (index('-update', trim(cmd_word(1))) == 1) then
-      update = .true.
-      call tao_cmd_split (cmd_word(2), 2, cmd_word, .false., err); if (err) goto 9000
-    endif
-    call tao_cmd_split (cmd_word(2), 3, cmd_word, .false., err); if (err) goto 9000
-    call tao_change_ele (cmd_word(1), cmd_word(2), cmd_word(3), update)
+    call tao_change_ele (cmd_word(2), cmd_word(3), cmd_word(4), update, err_flag)
+
+  elseif (index('tune', trim(cmd_word(1))) == 1) then
+    call tao_change_tune (branch_str, mask, listing, cmd_word(2), cmd_word(3)//cmd_word(4), err_flag)
+
+  elseif (index('z_tune', trim(cmd_word(1))) == 1) then
+    call tao_change_z_tune (branch_str, cmd_word(2)//cmd_word(3)//cmd_word(4), err_flag)
+
   elseif (index(trim(cmd_word(1)), 'particle_start') /= 0) then     ! Could be "2@particle_start"
     word = cmd_word(1)
-    call tao_cmd_split (cmd_word(2), 2, cmd_word, .false., err); if (err) goto 9000
-    call tao_change_ele (word, cmd_word(1), cmd_word(2), .false.)
+    call tao_change_ele (word, cmd_word(2), cmd_word(3)//cmd_word(4), .false., err_flag)
+
   else
     call out_io (s_error$, r_name, 'Change who? (should be: "element", "particle_start", or "variable")')
   endif
@@ -193,7 +214,7 @@ case ('clear')
 
 case ('clip')
 
-  call tao_cmd_split (cmd_line, 4, cmd_word, .true., err); if (err) return
+  call tao_cmd_split (cmd_line, 4, cmd_word, .true., err_flag); if (err_flag) return
 
   gang = .false.
   if (index('-gang', trim(cmd_word(1))) == 1 .and. len_trim(cmd_word(1)) > 1) then
@@ -204,9 +225,9 @@ case ('clip')
   if (cmd_word(2) == ' ') then
     call tao_clip_cmd (gang, cmd_word(1), 0.0_rp, 0.0_rp) 
   else
-    call tao_to_real (cmd_word(2), value1, err);  if (err) return
+    call tao_to_real (cmd_word(2), value1, err_flag);  if (err_flag) return
     if (cmd_word(3) /= ' ') then
-      call tao_to_real (cmd_word(3), value2, err);  if (err) return
+      call tao_to_real (cmd_word(3), value2, err_flag);  if (err_flag) return
     else
       value2 = value1
       value1 = -value1
@@ -236,7 +257,14 @@ case ('cut_ring')
   u => tao_pointer_to_universe(-1)
   lat => u%model%lat
 
-  lat%param%geometry = open$
+  if (lat%param%geometry == closed$) then
+    lat%param%geometry = open$
+  else
+    lat%param%geometry = closed$
+  endif
+
+  call out_io (s_info$, r_name, 'The lattice geometry is now: ' // geometry_name(lat%param%geometry))
+
   u%calc%lattice = .true.
   u%model%lat%particle_start%vec = 0
   call tao_lattice_calc (ok)
@@ -288,14 +316,14 @@ case ('exit', 'quit')
   call out_io (s_dinfo$, r_name, "Stopping.")
   !MPI !Finalize MPI if it is on
   !MPI if (s%mpi%on) call tao_mpi_finalize()
-  stop
+  err_is_fatal = .true. ! So Tao will stop. 
  
 !--------------------------------
 ! HELP
 
 case ('help')
 
-  call tao_cmd_split (cmd_line, 2, cmd_word, .true., err); if (err) return
+  call tao_cmd_split (cmd_line, 2, cmd_word, .true., err_flag); if (err_flag) return
   call tao_help (cmd_word(1), cmd_word(2))
   return
 
@@ -304,7 +332,6 @@ case ('help')
 
 case ('ls')
   call system_command ('ls ' // cmd_line, err)
-  if (err) call tao_abort_command_file()
   return
 
 
@@ -323,7 +350,7 @@ case ('json')
 
 case ('misalign')
 
-  call tao_cmd_split (cmd_line, 5, cmd_word, .true., err); if (err) goto 9000
+  call tao_cmd_split (cmd_line, 5, cmd_word, .true., err_flag); if (err_flag) goto 9000
   call tao_misalign (cmd_word(1), cmd_word(2), cmd_word(3), cmd_word(4), cmd_word(5))
 
 !--------------------------------
@@ -332,7 +359,7 @@ case ('misalign')
 case ('pause')
 
   time = 0
-  call tao_cmd_split (cmd_line, 1, cmd_word, .true., err); if (err) return
+  call tao_cmd_split (cmd_line, 1, cmd_word, .true., err_flag); if (err_flag) return
   if (cmd_word(1) /= '') then
     read (cmd_word(1), *, iostat = ios) time
     if (ios /= 0) then
@@ -349,7 +376,7 @@ case ('pause')
 
 case ('place')
 
-  call tao_cmd_split (cmd_line, 3, cmd_word, .true., err); if (err) return
+  call tao_cmd_split (cmd_line, 3, cmd_word, .true., err_flag); if (err_flag) return
 
   if (index('-no_buffer', trim(cmd_word(1))) == 1) then
     call tao_place_cmd (cmd_word(2), cmd_word(3), .true.)
@@ -376,7 +403,7 @@ case ('plot')
 
 case ('ptc')
 
-  call tao_cmd_split (cmd_line, 2, cmd_word, .false., err); if (err) goto 9000
+  call tao_cmd_split (cmd_line, 2, cmd_word, .false., err_flag); if (err_flag) goto 9000
 
   call tao_ptc_cmd (cmd_word(1), cmd_word(2))
   return
@@ -390,21 +417,11 @@ case ('python')
   return
 
 !--------------------------------
-! QUIET
-
-case ('quiet')
-
-if (s%com%cmd_file_level == 0) then 
-  call out_io (s_error$, r_name, 'The "quiet" command has been replaced by the "set global quiet = <action>" command.')
-  return
-endif
-
-!--------------------------------
 ! RE_EXECUTE
 
 case ('re_execute')
 
-  call tao_re_execute (cmd_line, err)
+  call tao_re_execute (cmd_line, err_flag)
   return
 
 !--------------------------------
@@ -413,7 +430,7 @@ case ('re_execute')
 case ('read')
 
   silent = .false.
-  call tao_cmd_split (cmd_line, 5, cmd_word, .true., err); if (err) goto 9000
+  call tao_cmd_split (cmd_line, 5, cmd_word, .true., err_flag); if (err_flag) goto 9000
   word = ''
   do i = 1, 5
     if (cmd_word(i) == '') exit
@@ -431,11 +448,18 @@ case ('read')
   call tao_read_cmd (cmd_word(1), word, cmd_word(2), silent)
 
 !--------------------------------
+! RESET
+! This is a private, undocumented command used when debugging.
+
+case ('reset')
+  call system_command ('reset', err_flag)
+
+!--------------------------------
 ! RESTORE, USE, VETO
 
 case ('restore', 'use', 'veto')
 
-  call tao_cmd_split(cmd_line, 2, cmd_word, .true., err);  if (err) goto 9000
+  call tao_cmd_split(cmd_line, 2, cmd_word, .true., err_flag);  if (err_flag) goto 9000
   
   call match_word (cmd_word(1), [character(8) :: "data", "variable"], which, .true., matched_name = switch)
 
@@ -454,7 +478,7 @@ case ('restore', 'use', 'veto')
 
 case ('reinitialize')
 
-  call tao_cmd_split(cmd_line, 2, cmd_word, .false., err);  if (err) goto 9000
+  call tao_cmd_split(cmd_line, 2, cmd_word, .false., err_flag);  if (err_flag) goto 9000
 
   call match_word (cmd_word(1), ['data', 'tao ', 'beam'], ix, .true., matched_name=word)
 
@@ -470,10 +494,10 @@ case ('reinitialize')
     s%u(:)%calc%lattice = .true.
 
   case ('tao') 
-    call tao_parse_command_args (err, cmd_word(2));  if (err) goto 9000
+    call tao_parse_command_args (err, cmd_word(2));  if (err_flag) goto 9000
 
     if (s%init%init_file_arg /= '') call out_io (s_info$, r_name, 'Reinitializing with: ' // s%init%init_file_arg)
-    call tao_init (err_is_fatal)
+    call tao_init (err_flag)
     return
 
   case default
@@ -487,7 +511,7 @@ case ('reinitialize')
 
 case ('run_optimizer', 'flatten')
 
-  call tao_cmd_split (cmd_line, 1, cmd_word, .true., err); if (err) goto 9000
+  call tao_cmd_split (cmd_line, 1, cmd_word, .true., err_flag); if (err_flag) goto 9000
   call tao_run_cmd (cmd_word(1), abort)
 
 !--------------------------------
@@ -495,7 +519,7 @@ case ('run_optimizer', 'flatten')
 
 case ('scale')
 
-  call tao_cmd_split (cmd_line, 7, cmd_word, .true., err); if (err) return
+  call tao_cmd_split (cmd_line, 7, cmd_word, .true., err_flag); if (err_flag) return
 
   axis_name = ''
   gang_str = ''
@@ -521,9 +545,9 @@ case ('scale')
   if (cmd_word(2) == ' ') then
     call tao_scale_cmd (cmd_word(1), 0.0_rp, 0.0_rp, axis_name, include_wall, gang_str)
   else
-    call tao_to_real (cmd_word(2), value1, err);  if (err) return
+    call tao_to_real (cmd_word(2), value1, err_flag);  if (err_flag) return
     if (cmd_word(3) /= ' ') then
-      call tao_to_real (cmd_word(3), value2, err);  if (err) return
+      call tao_to_real (cmd_word(3), value2, err_flag);  if (err_flag) return
     else
       value2 = value1
       value1 = -value1
@@ -538,16 +562,29 @@ case ('set')
   update = .false.
   lord_set = .true.
   set_word = ''
+  branch_str = ''
+  mask = ''
+  listing = .false.
 
   do
-    if (cmd_line(1:1) == '-') then
-      call tao_next_switch (cmd_line, [character(20) :: '-update', '-lord_no_set'], .true., switch, err, ix)
-      if (err) return
+    ! "-1" is a universe index and not a switch.
+    if (cmd_line(1:1) == '-' .and. cmd_line(1:2) /= '-1') then
+      call tao_next_switch (cmd_line, [character(20) :: '-update', '-lord_no_set', '-mask', '-branch', '-listing'], &
+                                                                                              .true., switch, err_flag, ix)
+      if (err_flag) return
       select case (switch)
       case ('-update')
         update = .true.
+      case ('-listing')
+        listing = .true.
       case ('-lord_no_set')
         lord_set = .false.
+      case ('-branch')
+        branch_str = cmd_line(:ix)
+        call string_trim(cmd_line(ix+1:), cmd_line, ix)
+      case ('-mask')
+        mask = cmd_line(:ix)
+        call string_trim(cmd_line(ix+1:), cmd_line, ix)
       end select
       cycle
     endif
@@ -558,20 +595,25 @@ case ('set')
       'universe', 'curve', 'graph', 'beam_init', 'wave', 'plot', 'bmad_com', 'element', 'opti_de_param', &
       'csr_param', 'floor_plan', 'lat_layout', 'geodesic_lm', 'default', 'key', 'particle_start', &
       'plot_page', 'ran_state', 'symbolic_number', 'beam', 'beam_start', 'dynamic_aperture', &
-      'global', 'region', 'calculate'], .true., switch, err, ix) 
-    if (err) return
+      'global', 'region', 'calculate', 'space_charge_com', 'ptc_com', 'tune', 'z_tune'], .true., switch, err_flag, ix) 
+    if (err_flag) return
     set_word = switch
   enddo
 
   select case (set_word)
+  case ('csr_param')
+    call out_io (s_warn$, r_name, '"csr_param" structure is now called "space_charge_com"')
+    goto 9000
   case ('ran_state'); n_word = 2; n_eq = 1
-  case ('beam', 'beam_init', 'bmad_com', 'csr_param', 'data', 'global', 'lattice', 'default', &
+  case ('beam', 'beam_init', 'bmad_com', 'space_charge_com', 'data', 'global', 'lattice', 'default', &
         'opti_de_param', 'wave', 'floor_plan', 'lat_layout', 'geodesic_lm', 'key', 'symbolic_number', &
-        'var', 'beam_start', 'particle_start', 'dynamic_aperture'); n_word = 3; n_eq = 2
+        'var', 'beam_start', 'particle_start', 'dynamic_aperture', 'ptc_com'); n_word = 3; n_eq = 2
   case ('universe'); n_word = 4; n_eq = 3
   case ('plot_page'); n_word = 4; n_eq = 2
   case ('branch', 'curve', 'element', 'graph', 'plot', 'region'); n_word = 4; n_eq = 3
   case ('calculate'); n_word = 1; n_eq = 0
+  case ('tune'); n_word = 7; n_eq = 0
+  case ('z_tune'); n_word = 6; n_eq = 0
   case default
     call out_io (s_error$, r_name, 'SET WHAT? (MUST BE ON OF "branch", "data", "var", ...etc.')
     goto 9000
@@ -579,7 +621,26 @@ case ('set')
 
   ! Split command line into words. Translate "set ele [1,2]@q[k1]" -> "set ele [1,2]@q k1"
 
+  n = size(cmd_word)
   call tao_cmd_split (cmd_line, n_word, cmd_word, .false., err, '=')
+
+  if (set_word == 'tune' .or. set_word == 'z_tune') then
+    j = 1
+    do i = 1, n_word
+      if (index('-mask', cmd_word(i)) == 1 .and. len_trim(cmd_word(i)) > 1) then
+        mask = cmd_word(i+1)
+        cmd_word(i:n-2) = cmd_word(i+2:n)
+      elseif (index('-branch', cmd_word(i)) == 1 .and. len_trim(cmd_word(i)) > 1) then
+        branch_str= cmd_word(i+1)
+        cmd_word(i:n-2) = cmd_word(i+2:n)
+      elseif (index('-listing', cmd_word(i)) == 1 .and. len_trim(cmd_word(i)) > 1) then
+        listing = .true.
+        cmd_word(i:n-1) = cmd_word(i+1:n)
+      else
+        j = j + 1
+      endif
+    enddo
+  endif
 
   if  (set_word == 'element' .and. index('-update', trim(cmd_word(1))) == 1 .and. len_trim(cmd_word(1)) > 1) then
     update = .true.
@@ -615,9 +676,9 @@ case ('set')
 
   select case (set_word)
   case ('beam')
-    call tao_set_beam_cmd (cmd_word(1), cmd_word(3))
+    call tao_set_beam_cmd (cmd_word(1), cmd_word(3), branch_str)
   case ('beam_init')
-    call tao_set_beam_init_cmd (cmd_word(1), cmd_word(3))
+    call tao_set_beam_init_cmd (cmd_word(1), cmd_word(3), branch_str)
   case ('beam_start', 'particle_start')
     if (set_word == 'beam_start') call out_io (s_warn$, r_name, 'Note: "beam_start" is now named "particle_start".')
     call tao_set_particle_start_cmd (cmd_word(1), cmd_word(3))
@@ -627,8 +688,6 @@ case ('set')
     call tao_set_branch_cmd (cmd_word(1), cmd_word(2), cmd_word(4)) 
   case ('calculate')
     call tao_set_calculate_cmd (cmd_word(1))
-  case ('csr_param')
-    call tao_set_csr_param_cmd (cmd_word(1), cmd_word(3))
   case ('curve')
     call tao_set_curve_cmd (cmd_word(1), cmd_word(2), cmd_word(4)) 
   case ('data')
@@ -639,6 +698,8 @@ case ('set')
     call tao_set_dynamic_aperture_cmd (cmd_word(1), cmd_word(3))
   case ('element')
     call tao_set_elements_cmd (cmd_word(1), cmd_word(2), cmd_word(4), update, lord_set)
+  case ('floor_plan')
+    call tao_set_drawing_cmd (s%plot_page%floor_plan, cmd_word(1), cmd_word(3))
   case ('geodesic_lm')
     call tao_set_geodesic_lm_cmd (cmd_word(1), cmd_word(3))
   case ('global')
@@ -647,6 +708,8 @@ case ('set')
     call tao_set_graph_cmd (cmd_word(1), cmd_word(2), cmd_word(4))
   case ('key')
     call tao_set_key_cmd (cmd_word(1), cmd_word(3))    
+  case ('lat_layout')
+    call tao_set_drawing_cmd (s%plot_page%lat_layout, cmd_word(1), cmd_word(3))
   case ('lattice')
     call tao_set_lattice_cmd (cmd_word(1), cmd_word(3))
   case ('opti_de_param')
@@ -657,22 +720,28 @@ case ('set')
     call tao_set_plot_page_cmd (cmd_word(1), cmd_word(3), cmd_word(4))
   case ('ran_state')
     call tao_set_ran_state_cmd (cmd_word(2))
+  case ('ptc_com')
+    call tao_set_ptc_com_cmd (cmd_word(1), cmd_word(3))
   case ('region')
     call tao_set_region_cmd (cmd_word(1), cmd_word(2), cmd_word(4))
+  case ('space_charge_com')
+    call tao_set_space_charge_com_cmd (cmd_word(1), cmd_word(3))
   case ('symbolic_number')
     call tao_set_symbolic_number_cmd(cmd_word(1), cmd_word(3))
-  case ('floor_plan')
-    call tao_set_drawing_cmd (s%plot_page%floor_plan, cmd_word(1), cmd_word(3))
-  case ('lat_layout')
-    call tao_set_drawing_cmd (s%plot_page%lat_layout, cmd_word(1), cmd_word(3))
+  case ('tune')
+    if (cmd_word(1) == '=') cmd_word(1:2) = cmd_word(2:3)
+    call tao_set_tune_cmd (branch_str, mask, listing, cmd_word(1), cmd_word(2), .false.)
   case ('universe')    
     call tao_set_universe_cmd (cmd_word(1), cmd_word(2), cmd_word(4))
   case ('var')
     call tao_set_var_cmd (cmd_word(1), cmd_word(3))
   case ('wave')
-    call tao_set_wave_cmd (cmd_word(1), cmd_word(3), err);  if (err) goto 9000
+    call tao_set_wave_cmd (cmd_word(1), cmd_word(3), err_flag);  if (err_flag) goto 9000
     call tao_cmd_end_calc
     call tao_show_cmd ('wave')
+  case ('z_tune')
+    if (cmd_word(1) == '=') cmd_word(1:2) = cmd_word(2:3)
+    call tao_set_z_tune_cmd (branch_str, cmd_word(1), .false.)
   end select
 
 !--------------------------------
@@ -702,8 +771,8 @@ case ('single_mode')
 
 case ('spawn')
 
-  call system_command (cmd_line, err)
-  if (err) call tao_abort_command_file()
+  call system_command (cmd_line, err_flag)
+  if (err_flag) call tao_abort_command_file()
   return
 
 !--------------------------------
@@ -714,7 +783,7 @@ case ('taper')
   except = ''
   word = ''
 
-  call tao_cmd_split (cmd_line, 4, cmd_word, .true., err); if (err) return
+  call tao_cmd_split (cmd_line, 4, cmd_word, .true., err_flag); if (err_flag) return
 
   i = 0
   do
@@ -748,12 +817,20 @@ case ('timer')
   return
 
 !--------------------------------
-! WAVE
+! view
+
+case ('view')
+  call tao_set_default_cmd ('universe', cmd_line)
+  call tao_cmd_end_calc
+  return 
+
+!--------------------------------
+! wave
 
 case ('wave')
 
-  call tao_cmd_split (cmd_line, 2, cmd_word, .true., err); if (err) return
-  call tao_wave_cmd (cmd_word(1), cmd_word(2), err); if (err) return
+  call tao_cmd_split (cmd_line, 2, cmd_word, .true., err_flag); if (err_flag) return
+  call tao_wave_cmd (cmd_word(1), cmd_word(2), err_flag); if (err_flag) return
   call tao_cmd_end_calc
   call tao_show_cmd ('wave')
   return
@@ -771,7 +848,7 @@ case ('write')
 
 case ('x_axis')
 
-  call tao_cmd_split (cmd_line, 2, cmd_word, .true., err); if (err) return
+  call tao_cmd_split (cmd_line, 2, cmd_word, .true., err_flag); if (err_flag) return
   call tao_x_axis_cmd (cmd_word(1), cmd_word(2))
 
 !--------------------------------
@@ -779,7 +856,7 @@ case ('x_axis')
 
 case ('x_scale')
 
-  call tao_cmd_split (cmd_line, 5, cmd_word, .true., err); if (err) return
+  call tao_cmd_split (cmd_line, 5, cmd_word, .true., err_flag); if (err_flag) return
 
   gang_str = ''
   include_wall = .false.
@@ -804,8 +881,8 @@ case ('x_scale')
   if (cmd_word(2) == ' ') then
     call tao_x_scale_cmd (cmd_word(1), 0.0_rp, 0.0_rp, err, include_wall, gang_str)
   else
-    call tao_to_real (cmd_word(2), value1, err); if (err) return
-    call tao_to_real (cmd_word(3), value2, err); if (err) return
+    call tao_to_real (cmd_word(2), value1, err_flag); if (err_flag) return
+    call tao_to_real (cmd_word(3), value2, err_flag); if (err_flag) return
     call tao_x_scale_cmd (cmd_word(1), value1, value2, err, include_wall, gang_str, exact)
   endif
 
@@ -814,7 +891,7 @@ case ('x_scale')
 
 case ('xy_scale')
 
-  call tao_cmd_split (cmd_line, 5, cmd_word, .true., err); if (err) return
+  call tao_cmd_split (cmd_line, 5, cmd_word, .true., err_flag); if (err_flag) return
 
   include_wall = .false.
   exact = .false.
@@ -838,9 +915,9 @@ case ('xy_scale')
     call tao_x_scale_cmd (cmd_word(1), 0.0_rp, 0.0_rp, err, include_wall = include_wall)
     call tao_scale_cmd (cmd_word(1), 0.0_rp, 0.0_rp, include_wall = include_wall) 
   else
-    call tao_to_real (cmd_word(2), value1, err);  if (err) return
+    call tao_to_real (cmd_word(2), value1, err_flag);  if (err_flag) return
     if (cmd_word(3) /= ' ') then
-      call tao_to_real (cmd_word(3), value2, err);  if (err) return
+      call tao_to_real (cmd_word(3), value2, err_flag);  if (err_flag) return
     else
       value2 = value1
       value1 = -value1

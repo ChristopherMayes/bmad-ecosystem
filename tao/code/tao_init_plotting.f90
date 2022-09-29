@@ -403,7 +403,7 @@ do  ! Loop over plot files
   if (ix == 0) exit
   plot_file = plot_file_array(1:ix)
   plot_file_array = plot_file_array(ix+1:)
-  call out_io (s_blank$, r_name, '*Init: Opening Plotting File: ' // plot_file)
+  call out_io (s_blank$, r_name, 'Init: Opening another plotting file: ' // plot_file)
   call tao_open_file (plot_file, iu, full_file_name, s_fatal$)
 
   do   ! Loop over templates in a file
@@ -492,12 +492,12 @@ do  ! Loop over plot files
       graph_name = trim(plot%name) // '.' // graph%name
       call out_io (s_blank$, r_name, 'Init: Read tao_template_graph namelist: ' // graph_name)
       if (graph_index /= i_graph) then
-        call out_io (s_fatal$, r_name, &
+        call out_io (s_error$, r_name, &
               'BAD "GRAPH_INDEX" FOR PLOT: ' // quote(plot%name), &
               'LOOKING FOR GRAPH_INDEX: \I0\ ', &
               'BUT TAO_TEMPLATE_GRAPH HAD GRAPH_INDEX: \I0\ ', 'IN FILE: ' // plot_file, &
               i_array = [i_graph, graph_index] )
-        call err_exit
+        cycle
       endif
       grph   => plt%graph(i_graph)
       grph%p => plt
@@ -553,7 +553,7 @@ do  ! Loop over plot files
 
       call qp_calc_axis_places (grph%y)
 
-      if (.not. s%com%common_lattice .and. grph%ix_universe == 0) then
+      if (grph%ix_universe == 0) then
         call out_io (s_error$, r_name, &
             '**********************************************************', &
             '***** SYNTAX CHANGE: GRAPH%IX_UNIVERSE = 0           *****', &
@@ -664,6 +664,21 @@ do  ! Loop over plot files
           crv%why_invalid = 'FLOOR_PLAN GRAPHS DO NOT HAVE ASSOCIATED CURVES.'
         endif
 
+        ! multi_turn
+
+        if (crv%n_turn < 0 .and. &
+              (crv%data_source == 'multi_turn_orbit' .or. crv%data_source == 'rel_multi_turn_orbit')) then
+          call out_io (s_warn$, r_name, 'Curves with %data_source set to "multi_turn_orbit" must now explicity set', &
+                                        'the curve''s %n_turn component. In plot: ' // plot%name)
+        endif
+
+        if (crv%n_turn > 0 .and. &
+              .not. (crv%data_source == 'multi_turn_orbit' .or. crv%data_source == 'rel_multi_turn_orbit')) then
+          call out_io (s_warn$, r_name, 'Curve has %n_turn component set positive but %data_source is not set to', &
+                                        '"multi_turn_orbit" or "rel_multi_turn_orbit". Multi-turn tracking will', &
+                                        '*not* be done for this curve in plot: ' // plot%name)
+        endif
+
         ! Default data type
 
         if (crv%data_type == '') then
@@ -711,7 +726,7 @@ do  ! Loop over plot files
 
         ! Enable the radiation integrals calculation if needed.
 
-        if (.not. s%com%common_lattice .and. crv%ix_universe == 0) then
+        if (crv%ix_universe == 0) then
           call out_io (s_error$, r_name, &
             '**********************************************************', &
             '***** SYNTAX CHANGE: CURVE%IX_UNIVERSE = 0           *****', &

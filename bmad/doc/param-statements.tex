@@ -14,15 +14,12 @@ and \vn{ptc_com} (\sref{s:bmad.ptc.com}).
 
 
 \index{lattice}\index{geometry}\index{photon_type}\index{live_branch}
-\index{taylor_order}\index{e_tot}
-\index{p0c}\index{ran_seed}\index{absolute_time_tracking}
-\index{n_part}\index{no_end_marker}\index{high_energy_space_charge_on}
-\index{ptc_exact_model}\index{ptc_exact_misalign}
+\index{taylor_order}\index{e_tot}\index{p0c}\index{ran_seed}
+\index{n_part}\index{no_end_marker}
 \vn{Parameter} statements are used to set a number of global variables.  If multiple branches are
 present (\sref{s:branch.def}), these variables pertain to the \vn{root} branch. The variables that
 can be set by \vn{parameter} are
 \begin{example}
-  parameter[absolute_time_tracking]   = <Logical>   ! Absolute time used for RF clock?
   parameter[custom_attributeN]        = <string>    ! Defining custom attributes (\sref{s:cust.att}).
   parameter[default_tracking_species] = <Switch>    ! Default type of tracked particle. 
                                                     !    Default is ref_particle.
@@ -40,7 +37,6 @@ can be set by \vn{parameter} are
   parameter[photon_type]              = <Switch>    ! Incoherent or coherent photons?
   parameter[ran_seed]                 = <Integer>   ! Random number generator init.
   parameter[taylor_order]             = <Integer>   ! Default: 3
-  parameter[high_energy_space_charge_on] = <logical>
 \end{example}
 
 \noindent
@@ -54,19 +50,10 @@ Examples
 
   \begin{description}
 %
-  \index{absolute_time_tracking}\index{lcavity}\index{rfcavity}
-  \item[{parameter[absolute_time_tracking]}] \Newline
-The \vn{absolute_time_tracking} switch sets whether the clock for the \vn{lcavity} and
-\vn{rfcavity} elements is tied to the reference particle or to uses the absolute time
-(\sref{s:rf.time}). A value of \vn{False} (the default) mandates relative time and a value
-of \vn{True} mandates absolute time. The exception is that for an \vn{e_gun} element
-(\sref{s:e.gun}), absolute time tracking is always used in order to be able to avoid
-problems with a zero reference momentum at the beginning of the element.
-%
   \index{custom_attributeN}
   \item[{parameter[custom_attributeN]}] \Newline
-Here \vn{N} is an integer between 1 and 40.
-For more information on defining custom attributes, see \sref{s:cust.att}.
+Here \vn{N} is an integer between 1 and 40.  For more information on defining custom attributes, see
+\sref{s:cust.att}.
 %
   \index{machine}
 Name of the machine the lattice simulates. Example: "LHC".
@@ -134,12 +121,6 @@ convenient to only use one period in a simulation. Since \bmad ignores closure i
 coordinate sense, it is up to the lattice designer to ensure that a lattice is truly geometrically
 closed if that is desired.
 %
-\item[{high_energy_space_charge_on}] \Newline
-Toggle to turn on or off the ultra-relativistic space charge effect in particle tracking
-(\sref{s:he.space.charge}). Computationally, this is separate from the lower energy space charge and
-CSR calculation (\sref{s:csr}). Default is \vn{False}. Notice that including the high energy space
-charge can be done on a branch-by-branch basis (\sref{s:beginning}).
-%
   \index{lattice}
   \item[{parameter[lattice]}] \Newline
 Used to set the lattice name. The \vn{lattice} name is stored by \bmad for use by a program but it
@@ -147,9 +128,11 @@ does not otherwise effect any \bmad routines.
 %
   \index{n_part}\index{beambeam}\index{lcavity}
   \item[{parameter[n_part]}] \Newline
-The \vn{parameter[n_part]} is the number of particle in a bunch.  it is used with \vn{BeamBeam}
-elements and is used to calculate the change in energy through an \vn{Lcavity}. See~\sref{s:lcav}
-for more details.
+The \vn{parameter[n_part]} is the number of particle in a bunch. This parameter is used in a number
+of calculations, for example, with intrabeam scattering and to calculate the change in energy
+through an \vn{Lcavity} (\sref{s:lcav}). Historically, this parameter has been used to set the
+number of strong beam particle with \vn{BeamBeam} elements but it is strongly recommended to use
+the \vn{beambeam} element's \vn{n_particle} parameter instead.
 %
   \index{no_end_marker}\index{end element}
   \item[{parameter[no_end_marker]}] \Newline
@@ -180,19 +163,6 @@ settings are:
 \end{example}
 The general rule is use incoherent tracking except when there is a \vn{diffraction_plate} element in
 the lattice.
-%
-  \index{ptc_exact_model}\index{exact_misalign}
-  \item[{parameter[ptc_exact_model]}] \Newline
-Deprecated. Replaced by \vn{ptc_com[exact_model]} (\sref{s:bmad.ptc.com}).
-
-The \vn{ptc_exact_model} and \vn{ptc_exact_misalign} switches affect tracking using the \vn{PTC}
-library. See \sref{s:integ} for more details.
-%
-  \index{ptc_max_fringe_order}
-  \item[{parameter[ptc_max_fringe_order]}] \Newline
-When using PTC tracking (\sref{s:ptc.intro}), the \vn{parameter[ptc_max_fringe_order]} determines
-the maximum order of the calculated fringe fields. The default is 2 which means that fringe fields
-due to a quadrupolar field. These fields are 3\Rd order in the transverse coordinates.
 %
   \index{ran_seed}
   \item[{parameter[ran_seed]}] \Newline
@@ -308,21 +278,22 @@ are the same as \vn{parameter[particle]}.
 For non--circular lattices, the \vn{beginning} statement can be used to set the Twiss parameters and
 beam energy at the beginning of the first lattice branch.
 \begin{example}
-  beginning[alpha_a]  = <Real>  ! "a" mode alpha
-  beginning[alpha_b]  = <Real>  ! "b" mode alpha
-  beginning[beta_a]   = <Real>  ! "a" mode beta
-  beginning[beta_b]   = <Real>  ! "b" mode beta
-  beginning[cmat_ij]  = <Real>  ! C coupling matrix. i, j = \{``1'', or ``2''\} 
-  beginning[e_tot]    = <Real>  ! Reference total energy in eV.
-  beginning[eta_x]    = <Real>  ! x-axis dispersion
-  beginning[eta_y]    = <Real>  ! y-axis dispersion
-  beginning[etap_x]   = <Real>  ! x-axis dispersion derivative.
-  beginning[etap_y]   = <Real>  ! y-axis dispersion derivative.
-  beginning[p0c]      = <Real>  ! Reference momentum in eV.
-  beginning[phi_a]    = <Real>  ! "a" mode phase.
-  beginning[phi_b]    = <Real>  ! "b" mode phase.
-  beginning[ref_time] = <Real>  ! Starting reference time.
-  beginning[s]        = <Real>  ! Longitudinal starting position.
+  beginning[alpha_a]   = <Real>  ! "a" mode alpha
+  beginning[alpha_b]   = <Real>  ! "b" mode alpha
+  beginning[beta_a]    = <Real>  ! "a" mode beta
+  beginning[beta_b]    = <Real>  ! "b" mode beta
+  beginning[cmat_ij]   = <Real>  ! C coupling matrix. i, j = \{``1'', or ``2''\} 
+  beginning[mode_flip] = <logic> ! Set the mode flip status (\sref{s:coupling}). Default is False.
+  beginning[e_tot]     = <Real>  ! Reference total energy in eV.
+  beginning[eta_x]     = <Real>  ! x-axis dispersion
+  beginning[eta_y]     = <Real>  ! y-axis dispersion
+  beginning[etap_x]    = <Real>  ! x-axis dispersion derivative.
+  beginning[etap_y]    = <Real>  ! y-axis dispersion derivative.
+  beginning[p0c]       = <Real>  ! Reference momentum in eV.
+  beginning[phi_a]     = <Real>  ! "a" mode phase.
+  beginning[phi_b]     = <Real>  ! "b" mode phase.
+  beginning[ref_time]  = <Real>  ! Starting reference time.
+  beginning[s]         = <Real>  ! Longitudinal starting position.
 \end{example}
 \index{e_tot}
 The \vn{gamma_a}, \vn{gamma_b}, and \vn{gamma_c} (the coupling gamma factor) will be kept consistent

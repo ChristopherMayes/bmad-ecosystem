@@ -13,13 +13,10 @@ For a listing of element attributes for each type of element, see Chapter~\sref{
 \index{dependent attribute}
 For convenience, \bmad computes the values of some attributes based upon the values of other
 attributes. Some of these dependent variables are listed in Table~\ref{t:dependent}. Also shown in
-Table~\ref{t:dependent} are the independent variables they are calculated from.  In the table
-\vn{n_part} and \vn{l_lattice} (lattice length) are lattice attributes, not element attributes. The
-first two are set by the \vn{parameter} statement (See \sref{s:param}). \vn{l_lattice} is calculated
-when the lattice is read in.
+Table~\ref{t:dependent} are the independent variables they are calculated from.
 
 \index{bbi_constant}\index{charge}\index{sig_x}\index{sig_y}
-\index{e_tot}\index{n_part}\index{e_field}\index{voltage}
+\index{e_tot}\index{e_field}\index{voltage}
 \index{hkick}\index{vkick}\index{gap}\index{l}
 \index{e_tot}\index{e_loss}\index{delta_e}\index{gradient}
 \index{l}\index{rho}\index{angle}\index{l_chord}
@@ -31,7 +28,7 @@ when the lattice is read in.
 \begin{tabular}{lll} \toprule
  {\em Element}                & {\em Independent Variables}    & {\em Dependent Variables}          \\ \midrule
  All elements                 & \vn{ds_step}                   & \vn{num_steps}                     \\
- \vn{BeamBeam}                & \vn{charge}, \vn{sig_x}, \vn{sig_y}, \vn{e_tot}, \vn{n_part}
+ \vn{BeamBeam}                & \vn{charge}, \vn{sig_x}, \vn{sig_y}, \vn{e_tot}
                                                                & \vn{bbi_constant}                  \\
  \vn{Elseparator}             & \vn{hkick}, \vn{vkick}, \vn{gap}, \vn{l}, \vn{e_tot}      
                                                                & \vn{e_field}, \vn{voltage}         \\
@@ -80,20 +77,20 @@ will never be set by the bookkeeping routine.
 \end{table}
 
 %-----------------------------------------------------------------
-\section{Field_Master}
+\section{Field_Master and Normalized Vs. Unnormalized Field Strengths}
 \label{s:field.master}
 \index{field_master}
 
 The \vn{field_master} attribute of an element sets whether the element's normalized (normalized by
 the reference energy) field strengths or the unnormalized strengths are the independent variables
-(\sref{s:depend}).  The setting of \vn{field_master} also sets whether an element's magnetic
-multipoles (\sref{s:multip}) are interpreted as normalized or unnormalized (electric multipoles are
-always treated as unnormalized).
+(\sref{s:depend}). See \sref{s:mag.field} for details as to how they are related. The setting of
+\vn{field_master} also sets whether an element's magnetic multipoles (\sref{s:multip}) are
+interpreted as normalized or unnormalized (electric multipoles are always treated as unnormalized).
 
 Table~\ref{t:dep.field} shows some normalized and unnormalized field strength attributes.  The
 default value of \vn{field_master} for an element is False if there are no field values set in the
-lattice file for that element. If normalized field values are present then the default is also False
-and if there are unnormalized field values present then the default is True.
+lattice file for that element. If normalized field values are present then the default is also False.
+If there are unnormalized field values present then the default is True.
 
 For example:
 \begin{example}
@@ -122,7 +119,7 @@ permitted. For example:
 \begin{tabular}{lll} \toprule
   {\em Element}              & {\em Normalized} & {\em Unnormalized}   \\ \midrule
   \vn{Sbend}, \vn{Rbend}     & \vn{g}           &  \vn{b_field}        \\
-  \vn{Sbend}, \vn{Rbend}     & \vn{dg}       &  \vn{db_field}    \\
+  \vn{Sbend}, \vn{Rbend}     & \vn{dg}          &  \vn{db_field}       \\
   \vn{Solenoid, Sol_quad}    & \vn{ks}          &  \vn{bs_field}       \\
   \vn{Quadrupole, Sol_quad, Sbend, Rbend}            
                              & \vn{k1}          &  \vn{b1_gradient}    \\
@@ -270,8 +267,8 @@ For example:
 \begin{example}
   ov: overlay = \{q1[k1]:\{-0.12, 0.23, 0.53\}, q2[tilt]:\{0.37, 0.12, 0.92\}\}, 
                           var = {time}, x_knot = \{0.0, 0.7, 1.0\}
-  ov[x_knot(3)] = 2.0          ! Changes from 1.0 to 2.0
-  ov[slave(2)%y_knot(2) = 0.2  ! Changes q2[tilt] y_knot(2) from 0.12 to 0.2
+  ov[x_knot(3)] = 2.0           ! Changes from 1.0 to 2.0
+  ov[slave(2)%y_knot(2)] = 0.2  ! Changes q2[tilt] y_knot(2) from 0.12 to 0.2
 \end{example}
 
 If the \vn{gang} attribute is \vn{True} (which is the default) a \vn{controller} will control all
@@ -305,10 +302,16 @@ The syntax for specifying an attribute \vn{attrib} of element \vn{ele} to be con
 attribute will be taken to be the name of the first variable. Example:
 \begin{example}
   ov1: overlay = \{sex1:-tan(k2)^b\}, var = \{k2, b\}
+  ov2: overlay = \{sex1[k2]: -tan(k2)^b\}, var = \{k2, b\} ! Equivalent to ov1.
 \end{example}
 In this example, the controlled attribute of element \vn{sex1} is \vn{k2}.  Except in cases where
 this default attribute syntax is used, the names of the variables are arbitrary and do not have to
-correspond to the name of any actual attribute.
+correspond to the name of any actual attribute. If the slave attribute name is set to ``\vn{*}'', 
+multiple slaves will be generated, one for each variable. Example:
+\begin{example}
+  zz1: overlay = \{sb0[*]\}, var = \{g, e1\}   
+  zz2: overlay = \{sb0[g]:g, sb0[e1]:e1\}, var = \{g, e1\} ! Equivalent to zz1.
+\end{example}
 
 The arithmetic expressions used to evaluate controlled attribute value changes may be a constant. In
 this case, the actual expression used is this constant times the first variable. If the expression
@@ -951,6 +954,7 @@ the following elements who have a default of \vn{surface}:
 \index{diffraction_plate}\index{sample}
 \begin{example}
   crystal
+  detector
   diffraction_plate
   mask
   mirror
@@ -2729,7 +2733,7 @@ The field, when \vn{field_calc} (\sref{s:integ}) is set to \vn{bmad_standard}, n
 the element boundary and so a \vn{bmad_standard} field will never overlap another element.
 
 %-----------------------------------------------------------------
-\section{Automatic Scaling of Accelerating Fields}
+\section{Automatic Phase and Amplitude Scaling of RF Fields}
 \label{s:autoscale}
 \index{automatic field scaling|hyperbf}
 
@@ -3209,7 +3213,7 @@ to define the symmetry of the fringe fields. Possible settings are:
   x_invariant
   multipole_symmetry
 \end{example}
-\index{ptc_max_fringe_order}
+\index{max_fringe_order}
 The difference between \vn{x_invariant} and \vn{multipole_symmetry} is that with
 \vn{multipole_symmetry} the fringe field for an $n$\Th order multipole is assumed to have the same
 rotational symmetry as the multipole. With this assumption, the fringe field has $n+1$\St order
@@ -3220,7 +3224,7 @@ book\cite{b:forest} for more details. Which setting of \vn{ptc_fringe_geometry} 
 depends upon how the dipole under consideration is constructed. The two settings of
 \vn{ptc_fringe_geometry} represent two points of a continuum of possible fringe field geometries.
 
-Additionally, when using PTC tracking (\sref{s:ptc.intro}), the \vn{parameter[ptc_max_fringe_order]}
+Additionally, when using PTC tracking (\sref{s:ptc.intro}), the \vn{ptc_com[max_fringe_order]}
 (\sref{s:param}) determines the maximum order of the calculated fringe fields.
 
 Example:

@@ -41,7 +41,7 @@ character(100) line
 
 logical err, xxx
 
-namelist / tao_params / global, bmad_com, csr_param, opti_de_param, &
+namelist / tao_params / global, bmad_com, space_charge_com, opti_de_param, &
           n_data_max, n_var_max, n_d2_data_max, n_v1_var_max
   
 !-----------------------------------------------------------------------
@@ -160,41 +160,66 @@ use tao_input_struct
 type (tao_universe_struct), pointer :: u
 type (beam_init_struct) beam_init
 type (tao_beam_branch_struct), pointer :: bb
+type (branch_struct), pointer :: branch
 
-integer i, k, iu, ios, ib, n_uni
-integer n, iostat, ix_universe, ix_branch
+real(rp) comb_ds_step
+
+integer i, k, iu, ios, ib, n_uni, ib0, ie0
+integer n, iostat, ix_universe
 
 character(*) init_file
 character(40) track_start, track_end, beam_track_start, beam_track_end
 character(200) file_name
 character(200) beam0_file, beam_init_file_name, beam_position0_file    ! Very old style syntax
-character(200) beam_saved_at, beam_track_data_file, beam_dump_at, beam_dump_file
-character(200) saved_at, track_data_file, dump_at, dump_file
+character(200) beam_saved_at, beam_dump_at, beam_dump_file
+character(200) saved_at, dump_at, dump_file
 character(*), parameter :: r_name = 'tao_init_beams'
 
 logical err, always_reinit
 
-namelist / tao_beam_init / ix_universe, ix_branch, beam_init, always_reinit, &
+namelist / tao_beam_init / ix_universe, beam_init, always_reinit, &
             beam0_file, beam_init_file_name, beam_position0_file, &
-            beam_track_start, beam_track_end, beam_saved_at, beam_track_data_file, beam_dump_at, beam_dump_file, &
-            track_start, track_end, saved_at, track_data_file, dump_at, dump_file
+            beam_track_start, beam_track_end, beam_saved_at, beam_dump_at, beam_dump_file, &
+            track_start, track_end, saved_at, dump_at, dump_file, comb_ds_step
 
 !-----------------------------------------------------------------------
 ! Init Beams
+! Some init that will be needed with lat sigma tracking
 
 call tao_hook_init_beam ()
 
 do i = lbound(s%u, 1), ubound(s%u, 1)
-  bb => s%u(i)%model_branch(0)%beam
-  bb%beam_init = beam_init_struct()
-  bb%beam_init%file_name = ''
-  bb%beam_init%position_file = s%init%beam_init_position_file_arg
-  bb%track_start    = ''
-  bb%track_end      = ''
-  bb%ix_track_start = not_set$
-  bb%ix_track_end   = not_set$
-  s%u(i)%beam%track_data_file = s%init%beam_track_data_file_arg
-  s%u(i)%beam%track_beam_in_universe = .false.
+  u => s%u(i)
+  do ib = 0, ubound(u%model%lat%branch, 1)
+    branch => u%model%lat%branch(ib)
+    bb => u%model_branch(ib)%beam
+
+    u%model_branch(ib)%ele%save_beam_internally = .false.
+    u%model_branch(ib)%ele%save_beam_to_file = .false.
+
+    if (branch%ix_from_branch < 0) then  ! Root branch
+      bb%beam_init = beam_init_struct()
+      bb%beam_init%position_file = s%init%beam_init_position_file_arg
+      bb%track_start    = ''
+      bb%track_end      = ''
+      bb%ix_track_start = 0
+      bb%ix_track_end   = branch%n_ele_track
+    else                                ! Branch injected into
+      bb%ix_track_start = branch%ix_to_ele 
+
+      if (branch%param%geometry == open$) then
+        bb%ix_track_end = branch%n_ele_track
+      else
+        bb%ix_track_end = bb%ix_track_start - 1
+        if (bb%ix_track_end == -1) bb%ix_track_end = branch%n_ele_track
+      endif
+
+      bb%track_start = branch%ele(bb%ix_track_start)%name
+      bb%track_end   = branch%ele(bb%ix_track_end)%name
+    endif
+  enddo
+
+  u%beam%track_beam_in_universe = .false.
 enddo
 
 if (.not. s%com%init_beam .or. init_file == '') return
@@ -212,7 +237,6 @@ do
   ! defaults
   ix_universe = -1
   always_reinit = .false.
-  ix_branch = 0
   beam_init = beam_init_struct()
 
   beam0_file = ''             ! Very old style
@@ -224,14 +248,13 @@ do
   beam_dump_file = ''         ! Old style
   beam_track_start = ''       ! Old style
   beam_track_end = ''         ! Old style
-  beam_track_data_file = ''   ! Old style
 
   saved_at = ''
   dump_at = ''
   dump_file = ''
   track_start = ''
   track_end = ''
-  track_data_file = ''
+  comb_ds_step = -1
 
   ! Read beam parameters
 
@@ -281,11 +304,9 @@ do
   if (beam_dump_file /= '')       dump_file       = beam_dump_file
   if (beam_track_start /= '')     track_start     = beam_track_start
   if (beam_track_end /= '')       track_end       = beam_track_end
-  if (beam_track_data_file /= '') track_data_file = beam_track_data_file
 
   !
 
-  if (s%init%beam_track_data_file_arg /= '')    track_data_file = s%init%beam_track_data_file_arg  ! From the command line
   if (s%init%beam_init_position_file_arg /= '') beam_init%position_file = s%init%beam_init_position_file_arg
 
   if (beam_init%sig_e /= 0 .and. beam_init%sig_pz /= 0) then   ! sig_e is superceeded by sig_pz
@@ -298,7 +319,7 @@ do
   call out_io (s_blank$, r_name, 'Init: Read tao_beam_init namelist for universe \i3\ ', ix_universe)
   if (ix_universe == -1) then
     do i = lbound(s%u, 1), ubound(s%u, 1)
-      s%u(i)%beam = tao_beam_uni_struct(track_data_file, saved_at, dump_file, dump_at, .true., always_reinit)
+      s%u(i)%beam = tao_beam_uni_struct(saved_at, dump_file, dump_at, comb_ds_step, .true., always_reinit)
       call tao_init_beam_in_universe(s%u(i), beam_init, track_start, track_end)
     enddo
   else
@@ -306,7 +327,7 @@ do
       call out_io (s_error$, r_name, 'BAD IX_UNIVERSE IN TAO_BEAM_INIT NAMELIST: \i0\ ', ix_universe)
       return
     endif
-    s%u(ix_universe)%beam = tao_beam_uni_struct(track_data_file, saved_at, dump_file, dump_at, .true., always_reinit)
+    s%u(ix_universe)%beam = tao_beam_uni_struct(saved_at, dump_file, dump_at, comb_ds_step, .true., always_reinit)
     call tao_init_beam_in_universe(s%u(ix_universe), beam_init, track_start, track_end)
   endif
 
@@ -324,82 +345,66 @@ end subroutine tao_init_beams
 
 subroutine tao_init_beam_in_universe (u, beam_init, track_start, track_end)
 
-use beam_file_io
-
 type (tao_universe_struct), target :: u
 type (beam_init_struct) beam_init
-type (ele_pointer_struct), allocatable, target :: eles(:)
 type (ele_struct), pointer :: ele
+type (ele_pointer_struct), allocatable, target :: eles(:)
 type (branch_struct), pointer :: branch
 type (tao_beam_branch_struct), pointer :: bb
 
-real(rp) v(6), bunch_charge, gamma
-integer i, j, k, ix, iu, n_part, ix_class, n_bunch, n_particle, n_loc
+integer k, n_loc
 
 logical always_reinit, err
 
 character(*) track_start, track_end
-character(60) at, class, ele_name, line
 character(*), parameter :: r_name = 'tao_init_beam_in_universe'
 
-! Set tracking start/stop
+! Set tracking start
 
 u%beam%track_beam_in_universe = .true.
-bb => u%model_branch(0)%beam
-bb%track_start = track_start
-bb%track_end   = track_end
-bb%beam_init = beam_init
 
-if (track_start /= '') then
-  call lat_ele_locator (track_start, u%design%lat, eles, n_loc, err)
-  if (err .or. n_loc == 0) then
-    call out_io (s_error$, r_name, 'TRACK_START ELEMENT NOT FOUND: ' // track_start, &
-                                   'WILL NOT TRACK A BEAM.')
-    s%global%track_type = 'single'
-    return
-  endif
-  if (n_loc > 1) then
-    call out_io (s_error$, r_name, 'MULTIPLE TRACK_START ELEMENTS FOUND: ' // track_start, &
-                                   'WILL NOT TRACK A BEAM.')
-    s%global%track_type = 'single'
-    return
-  endif
-  bb%ix_track_start = eles(1)%ele%ix_ele
+if (track_start == '') then
+  ele => u%model%lat%branch(0)%ele(0)
+else
+  ele => tao_beam_track_endpoint (track_start, u%model%lat, '', 'TRACK_START')
+  if (.not. associated(ele)) return
 endif
 
-if (track_end /= '') then
-  call lat_ele_locator (track_end, u%design%lat, eles, n_loc, err)
-  if (err .or. n_loc == 0) then
-    call out_io (s_error$, r_name, 'TRACK_END ELEMENT NOT FOUND: ' // track_end, &
-                                   'WILL NOT TRACK A BEAM.')
-    s%global%track_type = 'single'
-    return
+bb => u%model_branch(ele%ix_branch)%beam
+bb%ix_track_start = ele%ix_ele
+bb%beam_init = beam_init
+bb%track_start = track_start
+
+! Tracking stop
+
+bb%track_end = track_end
+branch => u%model%lat%branch(ele%ix_branch)
+
+if (track_end == '') then
+  if (branch%param%geometry == open$) then
+    bb%ix_track_end = branch%n_ele_track
+  else
+    bb%ix_track_end = max(0, bb%ix_track_start-1)
   endif
-  if (n_loc > 1) then
-    call out_io (s_error$, r_name, 'MULTIPLE TRACK_END ELEMENTS FOUND: ' // track_end, &
-                                   'WILL NOT TRACK A BEAM.')
-    s%global%track_type = 'single'
-    return
-  endif
-  bb%ix_track_end = eles(1)%ele%ix_ele
+
+else
+  bb%ix_track_end = not_set$
+  ele => tao_beam_track_endpoint (track_end, u%model%lat, int_str(ele%ix_branch), 'TRACK_END')
+  if (.not. associated(ele)) return
+  bb%ix_track_end = ele%ix_ele
 endif
 
 ! Find where to save the beam at.
 ! Note: Beam will automatically be saved at fork elements and at the ends of the beam tracking.
 
-do i = 0, ubound(u%model%lat%branch, 1)
-  branch => u%design%lat%branch(i)
-  u%model_branch(i)%ele%save_beam_internally = .false.
-  u%model_branch(i)%ele%save_beam_to_file = .false.
-enddo
-
 if (u%beam%saved_at /= '') then
   call tao_locate_elements (u%beam%saved_at, u%ix_uni, eles, err, ignore_blank = .false.)
   if (err) then
-    call out_io (s_error$, r_name, 'BAD "saved_at" ELEMENT: ' // u%beam%saved_at)
+    call out_io (s_warn$, r_name, 'BAD "saved_at" ELEMENT: ' // u%beam%saved_at)
   else
     do k = 1, size(eles)
       ele => eles(k)%ele
+      if (ele%lord_status == super_lord$) ele => pointer_to_slave(ele, ele%n_lord)
       u%model_branch(ele%ix_branch)%ele(ele%ix_ele)%save_beam_internally = .true.
     enddo
   endif
@@ -408,23 +413,15 @@ endif
 if (u%beam%dump_at /= '') then
   call tao_locate_elements (u%beam%dump_at, u%ix_uni, eles, err, ignore_blank = .false.)
   if (err) then
-    call out_io (s_error$, r_name, 'BAD "dump_at" ELEMENT: ' // u%beam%dump_at)
+    call out_io (s_warn$, r_name, 'BAD "dump_at" ELEMENT: ' // u%beam%dump_at)
   else
     do k = 1, size(eles)
       ele => eles(k)%ele
+      if (ele%lord_status == super_lord$) ele => pointer_to_slave(ele, ele%n_lord)
       u%model_branch(ele%ix_branch)%ele(ele%ix_ele)%save_beam_to_file = .true.
     enddo
   endif
 endif
-
-! If track_data_file is set, read in the beam tracking data.
-
-if (u%beam%track_data_file /= '') then
-  call out_io (s_fatal$, r_name, 'track_data_file not yet implemented. Please contact David Sagan...')
-  stop
-endif
-
-if (allocated(eles)) deallocate (eles)
 
 end subroutine tao_init_beam_in_universe
 

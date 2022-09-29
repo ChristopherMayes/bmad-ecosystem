@@ -19,9 +19,10 @@ DELTA0_zhe=>DELTA0,SPIN0_zhe=>SPIN0,MODULATION0_zhe=>MODULATION0,only_2d0_zhe=>o
 INTERNAL_STATE_zhe=>INTERNAL_STATE,ALLOC_TREE_zhe=>ALLOC_TREE
 
   IMPLICIT NONE
+
   public
  private ety2,etdiv,ety,etyt,checksympn
-
+!integer,private,parameter::nmaxn=1000
   integer,private::nd2par,nd2part,nd2partt
   integer,private,target ::pos_of_delta  
 
@@ -48,6 +49,7 @@ INTERNAL_STATE_zhe=>INTERNAL_STATE,ALLOC_TREE_zhe=>ALLOC_TREE
   private liebraquaternion,pow_tpsaMAP,c_concat_quaternion_ray,matrix_to_quaternion_in_c_damap,iexp_ad
   private EQUALql_cmap,EQUALcmap_ql,EQUAL_complex_quaternion_c_quaternion,EQUAL_c_quaternion_complex_quaternion
   private NO,ND,ND2,NP,NDPT,NV,ndptb,rf
+  private c_concat_c_uni_ray,c_concat_c_uni_rays
   integer, target :: NP,NO,ND,ND2,NV,NDPT,ndptb,rf
   private nd_used
   integer nd_used
@@ -88,7 +90,8 @@ private equal_real8_cmap,equal_cmap_real8,EQUAL_c_map_RAY8,EQUAL_RAY8_c_map,c_ad
 private c_sub_vf,c_spinor_sub_spinor,matmult_33,EQUALq_i
 private c_IdentityEQUALfactored,c_log_spinmatrix,c_concat_c_ray,equalc_ray_r6,equalc_r6_ray
 private dotc_spinor,c_spinor_spinor,c_read_spinmatrix,c_read_map,c_concat_spinmatrix_ray
- 
+private GETdiff_universal
+
 integer,private,parameter::ndd=6
 private c_concat_vector_field_ray,CUTORDERVEC,kill_c_vector_field_fourier,alloc_c_vector_field_fourier
 private complex_mul_vec,equal_c_vector_field_fourier,c_IdentityEQUALVECfourier
@@ -123,25 +126,21 @@ character(24)  formatlf(6)
 logical :: inside_normal=.false.,bmad_automatic=.false.,spin_automatic=.false.
 real(dp) :: Eigenvalues_off_unit_circle = 1.0_dp
 real(dp) :: eps_Eigenvalues_off_unit_circle =1.d-10
+!private in1,in2,in3,in4,in5,in6,posin,sigdis,sigdis0,dfac ,pascal,mono_order
+integer, pointer :: in1(:)=>null(),in2(:)=>null(),in3(:)=>null(),in4(:)=>null(),in5(:)=>null(),in6(:)=>null()
+integer, pointer ::   posin(:) => null()
+integer(2), pointer :: hash(:,:,:,:,:,:) => null(),pascal(:,:) => null(),mono_order(:)=>null()
+real(dpn), pointer :: sigdis(:)=> null(),sigdis0(:)=> null(),dfac(:)=> null(),vsol(:)=> null()
 integer i_alloc
+integer, private :: nmono
+integer  nmono_from_moment
+real(dp), private  :: tiny =1e-20_dp
     logical :: sagan_gen =.false.
-
-type c_linear_map
- complex(dp) mat(6,6)
- complex(dp)  q(0:3,0:6) 
-end type c_linear_map
-
-type c_lattice_function
- real(dp) :: E(3,6,6) =0 ,K(3,6,6) =0,B(3,6,6) =0
- real(dp) :: H(3,6,6) = 0
- real(dp) :: S(1:3,1:3,0:6) =0
- real(dp) ::phase(3) =0 ,damping(3) =0 , spin(2) =0,fix(6) =0
- type(fibre), pointer :: f => null()
- type(integration_node), pointer :: t => null()
- logical :: symplectic = .true.
-!!!!  radiation quantity
- real(dp) :: sigmas(6,6)
-end type c_lattice_function 
+integer mf_,n1_,n2_
+logical :: do_damping=.false.,do_spin=.false.,use_radiation_inverse = .true.
+logical :: force_spin_input_normal=.false.
+private c_clean_linear_map
+private c_fill_uni_r,c_null_uni,c_fill_uni,c_refill_uni
 
 type(c_linear_map) q_phasor,qi_phasor
 
@@ -238,6 +237,14 @@ type(c_linear_map) q_phasor,qi_phasor
       MODULE PROCEDURE copy_tree_into_tree_zhe
   end  INTERFACE
 
+     ! UNIVERSAL_TAYLOR
+
+  INTERFACE assignment (=)
+     MODULE PROCEDURE c_fill_uni_r
+     MODULE PROCEDURE c_null_uni
+     MODULE PROCEDURE c_fill_uni  ! new sagan
+     MODULE PROCEDURE c_refill_uni
+  end  INTERFACE
 
   INTERFACE OPERATOR (+)
      MODULE PROCEDURE unaryADD  !@2 This is a unary operation
@@ -332,12 +339,15 @@ type(c_linear_map) q_phasor,qi_phasor
  !    MODULE PROCEDURE c_spinor_spinmatrix    !# spinor.L   spinmatrix
      MODULE PROCEDURE c_vector_field_quaternion  !# (f.grad + q)quaternion
                                                  !  bra_v_q(f,quaternion) = f.grad quaternion
-!    uses  map_mul_vec 
+     !!  uses map_mul_vec for the orbital part 
      MODULE PROCEDURE map_mul_vec_q  !   c_damap * c_vector_field means "transform field by map" 
   END INTERFACE
 
   INTERFACE OPERATOR (.o.) 
   !
+
+     module procedure c_concat_c_uni_ray    !# c__universal_taylor .o. c_ray  
+     module procedure c_concat_c_uni_rays    !# c__universal_taylor(:) .o. c_ray  
      module procedure c_concat_c_ray    !# c_taylor .o. c_ray  
      module procedure c_concat_map_ray  !# c_ray= c_damap .o. c_ray
      module procedure c_trxtaylor_da   !# c_taylor= c_taylor .o. c_damap
@@ -401,6 +411,7 @@ type(c_linear_map) q_phasor,qi_phasor
 
   INTERFACE OPERATOR (.d.)
      MODULE PROCEDURE getdiff    !@1 takes derivatives
+     MODULE PROCEDURE GETdiff_universal !@1 takes derivatives of c_universal_taylor
   END INTERFACE
 
   INTERFACE OPERATOR (.i.)
@@ -505,6 +516,7 @@ type(c_linear_map) q_phasor,qi_phasor
 
   INTERFACE clean
 !     MODULE PROCEDURE c_clean
+     MODULE PROCEDURE  c_clean_linear_map
      MODULE PROCEDURE c_clean_spinor
      MODULE PROCEDURE c_clean_taylor
      MODULE PROCEDURE c_clean_spinmatrix
@@ -693,6 +705,7 @@ type(c_linear_map) q_phasor,qi_phasor
        MODULE PROCEDURE c_pri_quaternion
       MODULE PROCEDURE DAPRINTTAYLORS
       MODULE PROCEDURE c_pri_c_ray
+      MODULE PROCEDURE print_vector_field_fourier
     END INTERFACE
 
     INTERFACE print
@@ -707,6 +720,10 @@ type(c_linear_map) q_phasor,qi_phasor
        MODULE PROCEDURE c_pri_quaternion
        MODULE PROCEDURE print_ql
       MODULE PROCEDURE c_pri_c_ray
+  !    MODULE PROCEDURE c_printunitaylor
+      MODULE PROCEDURE c_printunitaylors
+      MODULE PROCEDURE c_printunitaylor_old
+      MODULE PROCEDURE print_vector_field_fourier
     END INTERFACE
 
 
@@ -792,7 +809,15 @@ type(c_linear_map) q_phasor,qi_phasor
      MODULE PROCEDURE c_AVERAGE   !2000.12.25
   END INTERFACE
 
+  INTERFACE alloc
+     MODULE PROCEDURE c_alloc_u
+     MODULE PROCEDURE c_alloc_us
+  END INTERFACE
 
+  INTERFACE KILL
+     MODULE PROCEDURE c_kill_uni
+     MODULE PROCEDURE c_kill_unis
+  END INTERFACE
 
 
 CONTAINS
@@ -955,6 +980,8 @@ end subroutine c_get_indices
     !       scdadd%x(i)=s1%m%v(i)+s2%x(i)
     scdadd%AC(i)%om=s2%AC(i)%om
     scdadd%AC(i)%t=s2%AC(i)%t
+    scdadd%AC(i)%f=s2%AC(i)%f
+    scdadd%AC(i)%phase=s2%AC(i)%phase
     master=localmaster
 enddo
     !    endif
@@ -1076,6 +1103,8 @@ do i=1,daddsc%nac
     !       scdadd%x(i)=s1%m%v(i)+s2%x(i)
     daddsc%AC(i)%om=s2%AC(i)%om
     daddsc%AC(i)%t=s2%AC(i)%t
+    daddsc%AC(i)%f=s2%AC(i)%f
+    daddsc%AC(i)%phase=s2%AC(i)%phase
     master=localmaster
     !    endif
 enddo
@@ -1640,6 +1669,9 @@ enddo
     enddo
     s1%x0=0.0_dp
     s1%tpsa=use_tpsa
+    if(associated(s1%m))  deallocate(s1%M)
+!    if(associated(s1%db)) deallocate(s1%db)
+    if(associated(s1%cm)) deallocate(s1%cM)
   END SUBROUTINE alloc_c_damap
 
   SUBROUTINE  alloc_c_damaps(S1)
@@ -1838,6 +1870,9 @@ enddo
     do i=1,3
       s1%sm(i,i)=1.0_dp
     enddo
+!    if(associated(s1%db)) deallocate(s1%db)
+    if(associated(s1%m)) deallocate(s1%m)
+    if(associated(s1%cm)) deallocate(s1%cm)
   END SUBROUTINE kill_c_damap
 
   SUBROUTINE  kill_c_damaps(S1)
@@ -3220,6 +3255,82 @@ endif
 
   END FUNCTION c_logc
 
+
+
+! inspired by Mr. LU Yao
+subroutine get_log(one_turn_map,vflog,n)
+implicit none
+type(c_damap),intent(in):: one_turn_map
+type(c_vector_field),intent(inout):: vflog
+integer i,j,n,m
+integer, parameter :: nt=5
+real(dp) k1,k0
+type(c_damap) id,rot
+type(c_vector_field)  vtt  ,vt
+logical  descent
+real(dp), allocatable :: b(:)
+
+allocate(b(n))
+b=0
+
+call alloc(vt)
+call alloc(vtt)
+call alloc(id,rot)
+
+vflog=0
+vt=0
+ 
+id=one_turn_map
+rot=one_turn_map
+
+ 
+id=1
+do i=1,n
+
+ do j=1,id%n
+  vt%v(j)=rot%v(j) - ID%v(j)
+  vtt%v(j)=-0.5d0*(vt*vt%v(j))
+ enddo
+ vt=vt+vtt
+vtt=0.5_dp*(vflog.lb.vt)
+vtt=vtt+vt
+!vflog=vflog+vt
+vflog=vflog+vtt
+
+ 
+rot=exp(-vflog,one_turn_map)
+
+call c_full_norm_vector_field(vtt,k1)
+
+if(i==1) then
+  k0=k1/100
+endif
+
+!call c_full_norm_damap(rot,k1)
+ b(i)=k1
+ 
+ if(i>=nt+1) then
+   descent=.true.
+   do m=i-nt,i-1
+    descent=descent.and.(b(m)>b(m+1))
+   enddo
+  if(k1<=k0.and.(.not.descent)) goto 1
+ endif
+ 
+enddo
+
+write(6,*) " did not converged in", n, "steps",k1
+n=-n
+1 continue
+ 
+deallocate(b)
+
+call kill(vt)
+call kill(vtt)
+call kill(id,rot)
+
+end subroutine get_log
+
   FUNCTION FULL_ABST( S1 )
 !#general: manipulation
 !# This routine computes the norm of the c_taylor s1.
@@ -4505,6 +4616,52 @@ endif
 
   END FUNCTION GETdiff
 
+  FUNCTION GETdiff_universal( S1, S2 )
+    implicit none
+    TYPE (c_taylor) GETdiff_universal
+    TYPE (c_universal_taylor), INTENT (IN) :: S1
+    INTEGER, INTENT (IN) ::  S2
+    integer localmaster,i
+    integer, allocatable :: J(:)
+
+    IF(.NOT.C_STABLE_DA) then
+     GETdiff_universal%i=0
+     RETURN
+    endif
+
+     allocate(J(s1%nv))
+    
+     localmaster=c_master
+    
+
+    !    call check(s1)
+    call ass(GETdiff_universal)
+    c_temp=0.0_dp
+    ! if(old) then
+  !  CALL c_dader(S2,S1%I,c_temp%i)
+    do i=1,s1%n
+     if(s2<=s1%nv) then
+     if(s1%j(i,s2)>0) then
+       j=s1%j(i,:)
+       j(s2)=j(s2)-1
+       c_temp=c_temp+((s1%j(i,s2)*s1%c(i)).cmono.j)
+     endif
+    endif
+    enddo
+
+    GETdiff_universal=c_temp
+    !    else
+    !       CALL NEWdader(S2,S1%J,TEMPL)
+    !       call NEWc_dacop(tempL,GETdiff%J)
+    !    endif
+ 
+ 
+    c_master=localmaster
+    deallocate(J)
+  END FUNCTION GETdiff_universal
+
+
+
   FUNCTION GETINTegrate( S1, S2 )
     implicit none
     TYPE (c_taylor) GETINTegrate
@@ -4615,6 +4772,7 @@ endif
     c_master=localmaster
 
   END FUNCTION getpb
+
 
     FUNCTION cgetpb( S1, s1p,S2 )  
     implicit none
@@ -4763,7 +4921,53 @@ endif
      if(complex_extra_order==1.and.special_extra_order_1) getvectorfield=getvectorfield.cut.no
 
       END FUNCTION getvectorfield 
+ 
+
+    FUNCTION getvectorfield_universal( S1 )  
+    implicit none
+    TYPE (c_vector_field) getvectorfield_universal
+    TYPE (c_universal_taylor), INTENT (IN) :: S1
+ 
+    integer localmaster ,i 
+    localmaster=master
     
+    getvectorfield_universal%n=nd2
+    call c_ass_vector_field(getvectorfield_universal)
+
+   getvectorfield_universal=0
+ 
+     do i=1,nd-rf
+      getvectorfield_universal%v(2*i-1) = -(s1.d.(2*i))
+      getvectorfield_universal%v(2*i) =  s1.d.(2*i-1)
+     enddo
+ 
+     c_master=localmaster
+     if(complex_extra_order==1.and.special_extra_order_1) getvectorfield_universal=getvectorfield_universal.cut.no
+    END FUNCTION getvectorfield_universal 
+    
+    FUNCTION cgetvectorfield_universal( S1 )  
+    implicit none
+    TYPE (c_vector_field) cgetvectorfield_universal
+    TYPE (c_universal_taylor), INTENT (IN) :: S1
+ 
+    integer localmaster ,i 
+    localmaster=master
+    
+    cgetvectorfield_universal%n=nd2
+    call c_ass_vector_field(cgetvectorfield_universal)
+
+   cgetvectorfield_universal=0
+ 
+     do i=1,nd-rf
+      cgetvectorfield_universal%v(2*i-1)= -n_cai*(s1.d.(2*i))
+      cgetvectorfield_universal%v(2*i)=  n_cai*(s1.d.(2*i-1))
+     enddo
+ 
+     c_master=localmaster
+     if(complex_extra_order==1.and.special_extra_order_1) cgetvectorfield_universal=cgetvectorfield_universal.cut.no
+    END FUNCTION cgetvectorfield_universal 
+    
+   
     FUNCTION cgetvectorfield( S1 )  
     implicit none
     TYPE (c_vector_field) cgetvectorfield
@@ -5727,6 +5931,79 @@ endif
 
   end SUBROUTINE  compute_lattice_functions
 
+  SUBROUTINE  d_compute_lattice_functions(a,f,a_l,a_li)
+    implicit none
+    type(d_lattice_function) f
+    type(c_linear_map) m
+    type(c_linear_map) mi
+    type(c_linear_map) q
+    type(c_damap),intent(in) :: a
+    type(c_linear_map),optional, intent(inout):: a_l,a_li
+    integer i,j
+ 
+    m=a
+
+     if(do_damping.and.use_radiation_inverse) then
+       mi=m**(-1)
+     else
+       mi=inv_c_linear_map_symplectic(m)     
+     endif
+ 
+ 
+     if(present(a_l))  a_l =m
+     if(present(a_li)) a_li=mi
+ 
+    f%e=0
+    f%h=0
+    f%spin_lat=0
+
+ !!!!    computing the de Moivre Lattice Functions  !!!!
+ !!!!  equivalent to Ripken ones
+
+!!!!  Coefficient of vector field matrices  B**2=-H
+  !   do i = 1,3
+  !    f%B(i,:,:)=matmul(matmul(m%mat,jp_mat(i,:,:)),mi%mat)
+  !   enddo
+
+!!!! coefficient of invariants
+   !   do i = 1,3
+   !   f%K(i,:,:)= -matmul(jt_mat,f%B(i,:,:))
+   !  enddo
+!!!! coefficient of moments
+ 
+     do i = 1,3
+      f%E(i,:,:)=matmul(matmul(m%mat,jp_mat(i,:,:)),mi%mat)
+     enddo
+     do i = 1,3
+      f%E(i,:,:)= -matmul(f%E(i,:,:),jt_mat)
+     enddo
+ 
+!!!!  Dispersive quantities containing zeta and eta for example
+     do i = 1,3
+      f%H(i,:,:)=matmul(matmul(m%mat,ip_mat(i,:,:)),mi%mat)
+      enddo
+
+!!!!    computing the n vector using quaternion
+  if(do_spin) then
+     do i = 1,3
+       q=i
+       q=m*q*mi
+       do j=1,3
+        f%Spin_lat(i,j,0:6)=q%q(j,0:6)
+       enddo
+     enddo
+  else
+  f%Spin_lat=0
+  f%spin=0
+  endif
+ ! if(.not.do_damping) d_damping=0
+ !     f%phase=d_phase
+ !     f%damping=d_damping
+ !     f%spin=d_spin_tune
+ !     f%fixa=d_probe_a%x
+ !     f%fixb=d_probe_b%x
+
+  end SUBROUTINE  d_compute_lattice_functions
 !type c_lattice_function
 ! real(dp) E(3,6,6),K(3,6,6),B(3,6,6)
 ! real(dp) H(3,6,6)
@@ -7408,15 +7685,16 @@ endif
 
      if(present(dospin)) dos=dospin
 
-    write(mfi,*) "  "
+    write(mfi,*) " tpsa status ",s1%tpsa
     if(s1%tpsa) then
      write(mfi,*) s1%n, " Dimensional TPSA map around z=0 "
     else
      write(mfi,*) s1%n, " Dimensional DA map (around chosen orbit in map%x0) "
     endif
     do i=1,s1%n
+     if(s1%tpsa) write(6,*) s1%x0(i)
      call c_pri(s1%v(i),mfile,prec)
-    enddo
+     enddo
     
 if(dos) then
         call c_full_norm_spin(s1%s,k,norm)
@@ -7605,7 +7883,7 @@ endif
     implicit none
         INTEGER,OPTIONAL,INTENT(IN)::MFILE
     REAL(DP),OPTIONAL,INTENT(INOUT)::DEPS
-    type (c_factored_lie),INTENT(IN)::S1
+    type (c_factored_lie),INTENT(INout)::S1
     integer i,mfi
      mfi=6
      if(present(mfile)) mfi=mfile
@@ -8436,6 +8714,32 @@ end   SUBROUTINE  c_clean_yu_w
   END SUBROUTINE c_clean_taylor
 
 
+ 
+
+  SUBROUTINE  c_clean_linear_map(S1,S2,prec)
+    implicit none
+    type (c_linear_map),INTENT(INOUT)::S2
+    type (c_linear_map), intent(INOUT):: s1
+    real(dp) prec
+    INTEGER i,j 
+
+     s2=s1
+
+     do i=1,6
+      do j=1,6
+        s2%mat(i,j)=c_clean(s2%mat(i,j),prec)
+      enddo
+     enddo
+
+
+     do i=0,3
+      do j=0,6
+        s2%q(i,j)=c_clean(s2%q(i,j),prec)
+      enddo
+     enddo
+ 
+  END SUBROUTINE c_clean_linear_map
+
   SUBROUTINE  c_clean_spinmatrix(S1,S2,prec,r) ! spin routine
     implicit none
     type (c_spinmatrix),INTENT(INOUT)::S2
@@ -8500,6 +8804,27 @@ end   SUBROUTINE  c_clean_yu_w
 
   END SUBROUTINE c_clean_damap
 
+  SUBROUTINE  c_clean_cm(S1,S2,prec)
+    implicit none
+    type (c_damap),INTENT(INOUT)::S2
+    type (c_damap), intent(INOUT):: s1
+    real(dp) prec,a,b
+    integer i,j,n
+
+    n=size(s1%cm,1)
+
+    do i=1,n
+    do j=1,n
+        a=real(s1%cm(i,j))
+        if(abs(a)<prec) a=0
+        b=aimag(s1%cm(i,j))
+        if(abs(b)<prec) b=0
+        s1%cm(i,j)=a+i_*b
+    enddo
+    enddo
+
+
+  END SUBROUTINE c_clean_cm
 
   SUBROUTINE  c_clean_vector_field(S1,S2,prec,r)
     implicit none
@@ -8560,7 +8885,7 @@ end subroutine c_bmad_reinit
     integer, intent(in) :: NO1,NV1
     integer, optional :: np1,ndpt1,AC_RF
     logical(lp), optional :: ptc  !spin,
-    integer ndpt_ptc,i 
+    integer ndpt_ptc,i,i1,i2,i3,i4,i5,i6,noo,j
     if(use_quaternion) spin_def_tune=-1
  
    ip_mat=0; jp_mat=0; jt_mat=0;
@@ -8568,11 +8893,12 @@ end subroutine c_bmad_reinit
    do i=1,3
     ip_mat(i,2*i-1,2*i-1)=1
     ip_mat(i,2*i,2*i)=1
-    jp_mat(i,2*i-1,2*i)=-1
-    jp_mat(i,2*i,2*i-1)=1
-    jt_mat(2*i-1,2*i)=-1
-    jt_mat(2*i,2*i-1)=1
+    jp_mat(i,2*i-1,2*i)=1
+    jp_mat(i,2*i,2*i-1)=-1
+    jt_mat(2*i-1,2*i)=1
+    jt_mat(2*i,2*i-1)=-1
    enddo
+  
 formatlf(1)="(6(1x,g23.16,1x))       "
 formatlf(2)="(1(25x),5(1x,g23.16,1x))"
 formatlf(3)="(2(25x),4(1x,g23.16,1x))"
@@ -8722,7 +9048,21 @@ endif
     k1_spin(7)=3;k2_spin(7)=1;
     k1_spin(8)=3;k2_spin(8)=2;
     k1_spin(9)=3;k2_spin(9)=3;
+
+   if(ndpt==6) then
+      jp_mat(3,6,5)=0
+      jp_mat(3,5,6)=1
+    endif
+   if(ndpt==5) then
+      jp_mat(3,6,5)=1
+      jp_mat(3,5,6)=0
+    endif 
+ 
+ 
   end subroutine c_init
+
+
+
 
   subroutine c_init_all(NO1,NV1,np1,ndpt1,AC_rf,ptc)  !,spin
     implicit none
@@ -10518,6 +10858,20 @@ SUBROUTINE  c_EQUALcray(S2,S1)
   END SUBROUTINE c_IdentityEQUALMAP
 
 
+  SUBROUTINE  c_zero_constant_in_MAP(S2)
+!*
+    implicit none
+    type (c_damap),INTENT(inOUT)::S2
+    integer i
+     IF(.NOT.C_STABLE_DA) RETURN
+
+     do i=1,s2%n
+      s2%v(i)=s2%v(i)-(s2%v(i).sub.'0')
+     enddo
+ 
+  END SUBROUTINE c_zero_constant_in_MAP
+
+
   SUBROUTINE  c_IdentityEQUALSPIN(S2,S1)
 !*
     implicit none
@@ -11513,7 +11867,7 @@ endif
     return
   end subroutine c_gofix
 
- 
+ ! dragt-finn
 subroutine c_factor_map(m,l,f,dir)  
 !#general: manipulation
 !#  This routine factors a map m as:
@@ -11854,7 +12208,7 @@ subroutine c_full_factorise(at,as,a0,a1,a2,dir)
  
 end subroutine c_full_factorise
 
- 
+
  subroutine c_normal_spin_linear_quaternion(m_in,m_out,as,alpha) 
 !#restricted: normal
 !# This routine normalises the constant part of the spin matrix. 
@@ -11865,20 +12219,26 @@ end subroutine c_full_factorise
   real(dp) alpha,cosalpha,sinalpha,tone
 
 q0=m_in%q.sub.0
-
+!call print(q0)
+!pause 3
          as=1
 
 q1=q0
 q1%x(0)=0.0_dp
 qs=1.0_dp/sqrt(q1%x(1)**2+q1%x(2)**2+q1%x(3)**2)
 q1=q1*qs   ! q1=n
-
+!call print(q1)
+!pause 4
 e_y=0.0_dp
 e_y%x(2)=1.0_dp
- 
+!call print(e_y)
+!pause 5 
 
 q3=q1*e_y
+!call print(q3)
 
+q3%x(0:3)=q3%x(0:3)/sqrt(q3%x(0)**2+q3%x(1)**2+q3%x(2)**2+q3%x(3)**2)
+!pause 6 
  ! q3 =-n.j + n x j . l
 
 cosalpha=-q3%x(0)
@@ -11897,7 +12257,8 @@ if(alpha==0.and.cosalpha/=-1.0_dp) then
 ! pause 123 
  q3=1.0_dp
 
-
+!call print(q3)
+!pause 71 
 else
 
 if(abs(cosalpha+1.0_dp)<=1.e-16_dp)  then
@@ -11907,7 +12268,9 @@ else
  q3%x(1:3)=-sin(alpha/2)*q3%x(1:3)/sinalpha 
 
 endif
-
+ 
+!call print(q3)
+!pause 72 
 
 endif
 
@@ -11928,7 +12291,6 @@ alpha=2*atan2(q0%x(2),q0%x(0))
  end  subroutine c_normal_spin_linear_quaternion
 
  
-
 
 
  
@@ -12098,6 +12460,17 @@ alpha=2*atan2(q0%x(2),q0%x(0))
     type(c_damap) id,as
  
     logical yhere
+
+
+!!!! put stochastic kick in front per Sagan 
+    m1=m**(-1)     !matmul(matmul(mat,ma%e_ij),transpose(mat))  not necessary I think
+    m%e_ij=matmul(matmul(m1,m%e_ij),transpose(m1))
+ !write(6,*) "inside" 
+
+! write(6,*) real(m%e_ij(1,1:2))
+ !write(6,*) real(m%e_ij(2,1:2))
+!!!!!!!!!!!!!!!!!!!
+
     
     a=real(m%e_ij)
     call cholesky_dt(A, ait)
@@ -12105,10 +12478,6 @@ alpha=2*atan2(q0%x(2),q0%x(0))
 
     return
 
-!!!! put stochastic kick in front per Sagan 
-    m1=m**(-1)     !matmul(matmul(mat,ma%e_ij),transpose(mat))  not necessary I think
-    m%e_ij=matmul(matmul(m1,m%e_ij),transpose(m1))
-!!!!!!!!!!!!!!!!!!!
 
     norm=0.0_dp
     do i=1,6
@@ -12405,6 +12774,39 @@ end subroutine c_stochastic_kick
 
 
     end subroutine check_resonance_spin
+
+   SUBROUTINE c_kernel(F,F_FLOQUET) 
+!#internal: normal
+!# This routine extracts circles : equal powers of phasors
+    IMPLICIT NONE
+    TYPE(c_TAYLOR) F,F_FLOQUET,FQ
+    complex(dp) v
+    INTEGER I
+    logical(lp) removeit
+    integer, allocatable :: je(:)
+
+    allocate(je(nv))  
+         
+     call alloc(fq)
+ 
+      F_FLOQUET=F  
+ 
+
+    i=1
+    do while(.true.) 
+     call  c_cycle(F_FLOQUET,i,v ,je); if(i==0) exit;   
+     call check_kernel(0,c_%nd2,je,removeit) 
+     if(.not.removeit) then
+       fq=fq+(v.cmono.je)
+     endif
+    enddo
+     
+    f_floquet=fq
+    call kill(fq)
+
+    deallocate(je)
+
+   END SUBROUTINE c_kernel 
 
    SUBROUTINE C_AVERAGE(F,A,F_FLOQUET) 
 !#internal: normal
@@ -13109,6 +13511,8 @@ c_master=localmaster
 !       call daadd(b4,b1,b3)
        r=full_abs(b1)
  !      call daabs(b1,r)
+!write(6,*) " i",i,r
+
        if(more) then
           if(r.gt.h%eps) then
              rbefore=r
@@ -14308,25 +14712,27 @@ function c_vector_field_quaternion(h,ds) ! spin routine
 
  subroutine exp_mat(f,m)
     implicit none
-    real(dp), intent(in) :: f(:,:) 
-    real(dp), intent(out) ::  m(:,:)
+    real(dp), intent(inout) :: f(:,:) 
+    real(dp), intent(inout) ::  m(:,:)
     integer i,n
     real(dp) norma,normb,x,y
-    real(dp), allocatable :: t(:,:)
+    real(dp), allocatable :: t(:,:),ft(:,:)
     y=1.d-7
     
     n=size(m,1)
      allocate(t(n,n))
+     allocate(ft(n,n))
+ft=f
  t=0
  m=0
   do i=1,n
    m(i,i)=1
    t(i,i)=1
  enddo
-       normb=norm_matrix(f)
+       normb=norm_matrix(ft)
     x=1
     do i=1,10000
-      t=matmul(f,t)/x
+      t=matmul(ft,t)/x
       norma=norm_matrix(t)
       m= m+t
       x=x+1
@@ -14336,6 +14742,7 @@ function c_vector_field_quaternion(h,ds) ! spin routine
     enddo
    if(i>10000-10)  write(6,*) "exp_mat",i
   deallocate(t)
+  deallocate(ft)
   end  subroutine exp_mat
 
     function norm_matrix(f)
@@ -16150,6 +16557,23 @@ subroutine extract_linear_from_normalised(m,a1,phi1,f1,f2,integer_part,dospin)
        call kill(t)
       endif
  
+write(6,*)" change tune "
+read(5,*) i
+if(i==1) then
+     do i=1,nd2t/2
+       je=0
+       je(2*i-1)=1
+        v=f1%v(2*i-1).sub.je
+        dd=aimag(v)
+       if(dd>0) then
+          f1%v(2*i-1)= f1%v(2*i-1)-i_*(twopi.cmono.je)
+       je=0
+       je(2*i)=1
+          f1%v(2*i)= f1%v(2*i)+i_*(twopi.cmono.je)
+      endif
+     enddo
+
+endif
 
      do i=1,nd2t/2
       f1%v(2*i-1)=-(i_*twopi*integer_part(i).cmono.(2*i-1))+ f1%v(2*i-1)
@@ -17910,7 +18334,14 @@ logical dos
 logical, optional :: dospin
 
 dos=.false.
-if(present(dospin)) dos=dospin
+if(present(dospin)) then
+  dos=dospin
+else
+      if(force_spin_input_normal) then
+        write(6,*) " your default forces you to include dospin in the input of c_fast_canonise"
+        stop
+      endif
+endif
 s=0
 b0=0
 do i=1,nd
@@ -17929,12 +18360,15 @@ b=u
  
 if(ndpt/=0)  call extract_a0_mat(b,b0)
 
+if(present(damping).and.do_damping) then
 s=matmul(matmul(b,s),transpose(b))
 damp=0
 do i=1,ndt
     damp(i)=sqrt(abs(s(2*i-1,2*i)))
 enddo
-
+else
+   damp=1
+endif
 !det=FindDet(b(1:nd2,1:nd2), nd2)**(1.0_dp/nd2)
 !write(6,*) damp
 
@@ -18027,7 +18461,7 @@ q=1
  endif
  qc=q*qr
  
- if(present(spin_tune)) then
+ if(present(spin_tune).and.dos) then
   spin_tune(1)=spin_tune(1)+aq/pi   ! changed 2018.11.01
  endif
 cri=ri
@@ -18048,7 +18482,7 @@ endif
 
 endif
  
- if(present(spin_tune)) then
+ if(present(spin_tune).and.dos) then
   spin_tune(2)=spin_tune(2)+daq/pi   ! changed 2018.11.01
  endif
 
@@ -18181,7 +18615,16 @@ END FUNCTION FindDet
     endif
 
     dospinr=.false.
-    if(present(dospin)) dospinr=dospin
+    if(present(dospin)) then
+     dospinr=dospin
+     else
+      if(force_spin_input_normal) then
+        write(6,*) " your default forces you to include dospin in the input of c_normal"
+        stop
+      endif
+    endif
+
+
 
 if(bmad_automatic) then
   if(nd2t+ndc2t/=6) then
@@ -18648,12 +19091,14 @@ endif
     endif
     
     if(present(nu_spin)) nu_spin=0.0_dp
-      
-    if(present(phase)) then
-      
-      do i=1,size(phase)
+     if(present(phase))   then
+     do i=1,size(phase)
          phase(i)=0.0_dp
       enddo
+endif
+    if(present(phase).or.present(nu_spin)) then
+
+ 
         
       if(present(rot)) then
         m1=rot
@@ -18731,14 +19176,14 @@ inside_normal=.false.
     TYPE(taylor), ALLOCATABLE :: M(:), MG(:)
     TYPE(damap) ms
     integer js(6)
-    type(c_damap) L_ns , N_pure_ns , N_s , L_s
+    type(c_damap) L_r , N_r , N_s , L_s
 
 
  
 
-    call alloc(L_ns , N_pure_ns , N_s , L_s)
+    call alloc(L_r , N_r , N_s , L_s)
     
-     if(.not.sagan_gen) call symplectify_for_zhe(ma,L_ns , N_pure_ns, L_s , N_s )
+     if(.not.sagan_gen) call symplectify_for_zhe(ma,L_r , N_r, L_s , N_s )
 
      
 
@@ -18775,21 +19220,21 @@ inside_normal=.false.
     enddo
 
 if(.not.sagan_gen) then
-      L_ns = L_ns*N_pure_ns
+      L_r = L_r*N_r
 else
-   !  L_ns=L_ns*L_s
+   !  L_r=L_r*L_s
        L_s=ma.sub.1
-       L_ns=L_s**(-1)*ma
+       L_r=L_s**(-1)*ma
  
 endif
 
 if(.not.sagan_gen) then
 
-     do i=1,L_ns%n
-      m(i)=L_ns%v(i)   ! orbital part
+     do i=1,L_r%n
+      m(i)=L_r%v(i)   ! orbital part
      enddo
 else
-     do i=1,L_ns%n
+     do i=1,L_r%n
       m(i)= 1.0_dp.mono.i
      enddo
 
@@ -18834,7 +19279,7 @@ if(.not.sagan_gen) then
 
 else
 
-      ms =   L_ns
+      ms =   L_r
 
 endif
 
@@ -18885,7 +19330,7 @@ endif
 
     call kill(m); call kill(mg);
     deallocate(M);    deallocate(Mg);
-    call kill(L_ns , N_pure_ns , N_s , L_s)
+    call kill(L_r , N_r , N_s , L_s)
 
   END SUBROUTINE SET_TREE_G_complex_zhe
 
@@ -18997,12 +19442,15 @@ subroutine fill_tree_element_line_zhe_outside_map(minput ,filef,fix0,as_is,stoch
 implicit none
 logical, optional :: as_is
 real(dp), optional :: fix0(6),stochprec
+complex(dp)v
 logical  as_is0
+integer no1
  
-real(dp)  fix(6),mat(6,6) ,f0(6),stoch
- 
+real(dp)  fix(6),mat(6,6) ,f0(6),stoch,r2,coe
+!real(dp), allocatable :: mm(:,:),vm(:)
 type(c_damap) m,minput
-integer  i,inf
+type(c_taylor) t
+integer  i,inf,j
 type(tree_element_zhe), optional :: tree_zhe(:)
 
 
@@ -19074,6 +19522,9 @@ if(present(tree_zhe))  then
    tree_zhe(i)=forward(i)
  enddo
 endif
+
+ 
+
  if(present(filef)) then
   call kanalnummer(inf,filef)
     call print_tree_elements(forward,inf)
@@ -19082,10 +19533,1040 @@ endif
   deallocate(forward)
 endif
 
+!call print(minput)
  call kill(m) 
 
 end subroutine fill_tree_element_line_zhe_outside_map
 
+
+
+  subroutine init_moment_map(NO1,nd11)  !,spin
+    implicit none
+    integer, intent(in) :: NO1,ND11
+    integer  i,i1,i2,i3,i4,i5,i6,noo,j,nd1
+ 
+ 
+if(associated(in1)) then
+  deallocate(in1,in2,in3,in4,in5,in6,posin,sigdis,sigdis0,dfac,pascal,hash,mono_order,vsol)
+endif
+
+nd1=iabs(nd11)
+  nmono=0
+ do noo=0,NO1   
+ if(nd1==3) then
+  do i1=0,noo
+  do i2=0,noo
+   if(i1+i2>noo)cycle
+  do i3=0,noo
+   if(i1+i2+i3>noo)cycle
+  do i4=0,noo
+   if(i1+i2+i3+i4>noo)cycle
+  do i5=0,noo
+   if(i1+i2+i3+i4+i5>noo)cycle
+  do i6=0,noo
+   if(i1+i2+i3+i4+i5+i6/=noo)cycle
+      nmono=nmono+1
+  enddo
+  enddo
+  enddo
+  enddo
+  enddo
+  enddo
+
+ elseif(nd1==2) then
+  do i1=0,noo
+  do i2=0,noo
+   if(i1+i2>noo)cycle
+  do i3=0,noo
+   if(i1+i2+i3>noo)cycle
+  do i4=0,noo
+   if(i1+i2+i3+i4/=noo)cycle
+      nmono=nmono+1
+  enddo
+  enddo
+  enddo
+  enddo
+ elseif(nd1==1) then
+  do i1=0,noo
+  do i2=0,noo
+   if(i1+i2/=noo)cycle
+      nmono=nmono+1
+
+  enddo
+  enddo
+else 
+
+stop 888
+endif
+      write(6,*) "nmono original",nmono
+  enddo
+
+nmono_from_moment=nmono
+
+ allocate(in1(nmono),in2(nmono),in3(nmono),in4(nmono),in5(nmono),in6(nmono),posin(0:no1),mono_order(nmono),vsol(nmono))
+if(nd1==3) then
+ allocate(sigdis(nmono),sigdis0(nmono),dfac(0:no1),pascal(0:no1,0:no1),hash(0:no1,0:no1,0:no1,0:no1,0:no1,0:no1))
+elseif(nd1==2) then
+ allocate(sigdis(nmono),sigdis0(nmono),dfac(0:no1),pascal(0:no1,0:no1),hash(0:no1,0:no1,0:no1,0:no1,0:0,0:0))
+elseif(nd1==1) then
+ allocate(sigdis(nmono),sigdis0(nmono),dfac(0:no1),pascal(0:no1,0:no1),hash(0:no1,0:no1,0:0,0:0,0:0,0:0))
+endif
+pascal=0
+vsol=0
+
+pascal(0,0)=1
+pascal(1,0)=1
+pascal(1,1)=1
+
+if(no1>=2) then
+ pascal(2,0)=1
+ pascal(2,1)=2
+ pascal(2,2)=1
+
+ do i=3,no1
+ do j=1,i-1
+  pascal(i,j)=pascal(i-1,j-1)+pascal(i-1,j)
+ enddo
+ pascal(i,0)=1
+ pascal(i,i)=1
+ enddo
+endif
+!do i=1,no1
+!write(6,"(7(i2,1x))") pascal(i,0:i)
+!enddo
+
+hash=0
+ dfac=0
+ dfac(0)=1
+if(use_gaussian_zhe) then
+ if(no1>=2) dfac(2)=1
+ do i=4,no1,2
+ dfac(i)=(i-1)*dfac(i-2)
+ enddo
+else
+ do i=2,no1,2
+ dfac(i)=1
+ enddo
+endif
+ write(6,*) "dfac "
+ write(6,*) dfac
+  sigdis0=0
+  sigdis=0
+
+  nmono=0
+ do noo=0,NO1   
+ if(nd1==3) then
+  do i1=0,noo
+  do i2=0,noo
+   if(i1+i2>noo)cycle
+  do i3=0,noo
+   if(i1+i2+i3>noo)cycle
+  do i4=0,noo
+   if(i1+i2+i3+i4>noo)cycle
+  do i5=0,noo
+   if(i1+i2+i3+i4+i5>noo)cycle
+  do i6=0,noo
+   if(i1+i2+i3+i4+i5+i6/=noo)cycle
+      nmono=nmono+1
+    in1(nmono)=i6
+    in2(nmono)=i5
+    in3(nmono)=i4
+    in4(nmono)=i3
+    in5(nmono)=i2
+    in6(nmono)=i1
+   mono_order(nmono)=noo
+ 
+ !  hash(i1,i2,i3,i4,i5,i6)=nmono
+   hash(i6,i5,i4,i3,i2,i1)=nmono
+ 
+
+  enddo
+  enddo
+  enddo
+  enddo
+  enddo
+  enddo
+ elseif(nd1==2) then
+  do i1=0,noo
+  do i2=0,noo
+   if(i1+i2>noo)cycle
+  do i3=0,noo
+   if(i1+i2+i3>noo)cycle
+  do i4=0,noo
+   if(i1+i2+i3+i4/=noo)cycle
+      nmono=nmono+1
+    in1(nmono)=i4
+    in2(nmono)=i3
+    in3(nmono)=i2
+    in4(nmono)=i1
+    in5(nmono)=0
+    in6(nmono)=0
+   mono_order(nmono)=noo
+ 
+   hash(i4,i3,i2,i1,0,0)=nmono
+!   hash(i1,i2,i3,i4,0,0)=nmono
+ 
+  enddo
+  enddo
+  enddo
+  enddo
+ elseif(nd1==1) then
+  do i1=0,noo
+  do i2=0,noo
+   if(i1+i2/=noo)cycle
+      nmono=nmono+1
+    in1(nmono)=i2
+    in2(nmono)=i1
+    in3(nmono)=0
+    in4(nmono)=0
+    in5(nmono)=0
+    in6(nmono)=0
+   mono_order(nmono)=noo
+ 
+!   hash(i1,i2,0,0,0,0)=nmono
+   hash(i2,i1,0,0,0,0)=nmono
+ 
+  enddo
+  enddo
+else 
+
+stop 888
+endif
+
+
+
+enddo
+
+ 
+  end subroutine init_moment_map
+
+
+
+subroutine create_moment_map_one(mtotal,minput,sig,nd11,fin)   ! fix0 is the initial condition for the maps
+implicit none
+ 
+ 
+complex(dp)v
+integer i1,i2,i3,i4,i5,i6,no1,je(6),noo,k,mi,ouch,nz
+ 
+real(dp)   coe,radkick(6,6),a(6,6),sig(6,6),ki(6),eps
+real(dpn) r2
+real(dpn), allocatable :: mm(:,:),vm(:),db(:,:)
+type(c_damap) m,minput,mtotal
+type(c_taylor) t
+integer  i,inf,j,nd1,nd11
+ logical,optional :: fin
+logical ende
+
+ende=.false.
+if(present(fin)) ende=fin
+ nd1=iabs(nd11)
+ 
+ call alloc(m); 
+ sig=0
+    a=real(minput%e_ij)
+    call cholesky_dt(A, radkick)  ! in back
+ 
+
+ 
+ 
+m=minput  
+ 
+
+sigdis0=0
+
+ 
+m=0
+m=radkick
+ 
+call alloc(t)
+ 
+nmono=size(in1)
+ do i = 1,nmono
+ 
+  if(nd1==3) then
+   t=dz_c(1)**in1(i)*dz_c(2)**in2(i)*dz_c(3)**in3(i)*dz_c(4)**in4(i)*dz_c(5)**in5(i)*dz_c(6)**in6(i)
+  elseif(nd1==2)  then
+   t=dz_c(1)**in1(i)*dz_c(2)**in2(i)*dz_c(3)**in3(i)*dz_c(4)**in4(i) 
+
+elseif(nd1==1) then
+   t=dz_c(1)**in1(i)*dz_c(2)**in2(i)
+ 
+ else
+  stop 889
+endif
+
+   t=t*m
+ 
+       j=1
+
+        do while(.true.)
+je=0
+          call  c_cycle(t,j,v ,je); if(j==0) exit;
+ 
+            sigdis0(i)=sigdis0(i)+dfac(je(1))*dfac(je(2))*dfac(je(3))*dfac(je(4))*dfac(je(5))*dfac(je(6))*v
+
+        enddo
+ 
+ enddo
+
+ 
+
+ !  allocate(minput%db(nmono,nmono),minput%m(nmono,nmono))
+   allocate(db(nmono,nmono),minput%m(nmono,nmono))
+ !  minput%db=0
+   db=0
+  minput%m=0
+ 
+ if(nd1==3) then
+   do i=1,nmono
+   noo=mono_order(i)
+ 
+  do i6=0,in6(i)
+  
+  do i5=0,in5(i)
+ 
+  do i4=0,in4(i)
+ 
+  do i3=0,in3(i)
+ 
+  do i2=0,in2(i)
+   do i1=0,in1(i)
+  ouch=i6+i5+i4+i3+i2+i1
+ 
+    if(mod(ouch,2)==1)cycle
+ 
+    coe=pascal(in1(i),i1)*pascal(in2(i),i2)*pascal(in3(i),i3)*pascal(in4(i),i4)*pascal(in5(i),i5)*pascal(in6(i),i6)
+    mi=hash(in1(i)-i1,in2(i)-i2,in3(i)-i3,in4(i)-i4,in5(i)-i5,in6(i)-i6)
+
+          k=hash(i1,i2,i3,i4,i5,i6)
+ 
+        coe=coe*sigdis0(k)
+ !       minput%db(i,mi)=minput%db(i,mi)+coe
+        db(i,mi)=db(i,mi)+coe
+ 
+  enddo
+  enddo
+  enddo
+  enddo
+  enddo
+  enddo    
+
+   enddo
+ 
+ elseif(nd1==2) then
+   do i=1,nmono
+   noo=mono_order(i)
+ 
+  do i4=0,in4(i)
+ 
+  do i3=0,in3(i)
+   do i2=0,in2(i)
+   do i1=0,in1(i)
+  ouch=i4+i3+i2+i1
+ 
+    if(mod(ouch,2)==1)cycle
+     coe=pascal(in1(i),i1)*pascal(in2(i),i2)*pascal(in3(i),i3)*pascal(in4(i),i4) 
+    mi=hash(in1(i)-i1,in2(i)-i2,in3(i)-i3,in4(i)-i4,0,0)
+
+          k=hash(i1,i2,i3,i4,0,0)
+         coe=coe*sigdis0(k)
+        db(i,mi)=db(i,mi)+coe
+   enddo
+  enddo
+  enddo
+  enddo
+    
+
+   enddo
+
+ elseif(nd1==1) then
+   do i=1,nmono
+   noo=mono_order(i)
+ 
+  do i2=0,in2(i)
+ 
+  do i1=0,in1(i)
+  ouch=i2+i1
+ 
+ 
+    coe=pascal(in1(i),i1)*pascal(in2(i),i2) 
+  
+    mi=hash(in1(i)-i1,in2(i)-i2,0,0,0,0)
+
+          k=hash(i1,i2,0,0,0,0)
+         coe=coe*sigdis0(k)
+        db(i,mi)=db(i,mi)+coe
+   enddo
+  enddo
+   
+
+   enddo
+
+endif ! nd1==3
+ 
+m=minput 
+do i=1,nd2
+m%v(i)=m%v(i)-(m%v(i).sub.0)
+enddo
+   do i=1,nmono
+    
+     t=  m%v(1)**in1(i)
+     t=t*m%v(2)**in2(i)
+   if(nd1>1) then
+     t=t*m%v(3)**in3(i)
+     t=t*m%v(4)**in4(i)
+   endif
+   if(nd1>2) then
+
+     t=t*m%v(5)**in5(i)
+     t=t*m%v(6)**in6(i)
+   endif
+       j=1
+
+        do while(.true.)
+
+          call  c_cycle(t,j,v ,je); if(j==0) exit;
+            k=hash(je(1),je(2),je(3),je(4),je(5),je(6))
+            minput%m(i,k)=v
+        enddo
+   enddo
+
+
+  
+minput%m=matmul(db,minput%m)
+ 
+mtotal%m=matmul(minput%m,mtotal%m)
+ 
+
+deallocate(db)
+ 
+deallocate(minput%m)
+
+
+if(ende) then
+nz=nmono-1
+ 
+
+allocate(mm(nz,nz),vm(nz))
+ 
+
+
+mm=0
+
+
+do i=1,nz
+ vm(i)=mtotal%m(i+1,1)
+ mm(i,i)=1
+enddo
+
+do i=1,nz
+do j=1,nz
+ mm(i,j)=mm(i,j)-mtotal%m(1+i,1+j)
+enddo
+enddo
+
+ 
+
+
+call matinvn(mm,mm,nz,nz,i)
+ 
+write(6,*) " success = ",i
+
+vm=matmul(mm,vm)
+vsol(2:nmono)=vm
+
+
+write(6,*) "Quadratic moments to order ", no
+do i=1,2*nd1
+je=0
+je(i)=je(i)+1
+do j=1,2*nd1
+je(j)=je(j)+1
+sig(i,j)=vm(hash(je(1),je(2),je(3),je(4),je(5),je(6))-1)
+je(j)=je(j)-1
+
+if(i<=j) write(6,*) i,j,sig(i,j)
+enddo 
+enddo
+
+ deallocate(mm,vm)
+
+endif ! final 
+
+call kill(t)
+ call kill(m) 
+
+end subroutine create_moment_map_one
+
+
+subroutine create_moment_map(minput,sig,nd11,radk)   ! fix0 is the initial condition for the maps
+implicit none
+ 
+ 
+complex(dp)v
+integer i1,i2,i3,i4,i5,i6,no1,je(6),noo,k,mi,ouch,nz
+real(dp), optional :: radk(6,6)
+real(dp)   coe,radkick(6,6),a(6,6),sig(6,6),ki(6),eps
+real(dpn) r2
+real(dpn), allocatable :: mm(:,:),vm(:),db(:,:)
+type(c_damap) m,minput
+type(c_taylor) t
+integer  i,inf,j,nd1,nd11
+ 
+ nd1=iabs(nd11)
+ 
+ call alloc(m); 
+ sig=0
+    a=real(minput%e_ij)
+    call cholesky_dt(A, radkick)  ! in back
+!    call c_stochastic_kick(minput,a,ki,eps)    ! in front
+!    call c_stochastic_kick(minput,radkick,ki,eps)    ! in front
+
+if(present(radk)) radk=radkick
+ 
+m=minput  
+ 
+
+sigdis0=0
+
+ 
+m=0
+m=radkick
+ 
+call alloc(t)
+ 
+nmono=size(in1)
+ do i = 1,nmono
+ 
+  if(nd1==3) then
+   t=dz_c(1)**in1(i)*dz_c(2)**in2(i)*dz_c(3)**in3(i)*dz_c(4)**in4(i)*dz_c(5)**in5(i)*dz_c(6)**in6(i)
+  elseif(nd1==2)  then
+   t=dz_c(1)**in1(i)*dz_c(2)**in2(i)*dz_c(3)**in3(i)*dz_c(4)**in4(i) 
+
+elseif(nd1==1) then
+   t=dz_c(1)**in1(i)*dz_c(2)**in2(i)
+ 
+ else
+  stop 889
+endif
+ 
+! if(in1(i)==n1_.and.in2(i)==n2_) then
+!   write(mf_,*) " in create map"
+!call print(t,mf_)
+!call print(m,mf_)
+!   write(mf_,*) " in cycle"
+
+!endif
+!   t=t.o.m
+   t=t*m
+ 
+       j=1
+
+        do while(.true.)
+je=0
+          call  c_cycle(t,j,v ,je); if(j==0) exit;
+!          k=hash(j(1),j(2),j(3),j(4),j(5),j(6))
+! if(in1(i)==n1_.and.in2(i)==n2_) then
+!write(mf_,*) v
+!write(mf_,"(6(1x,i4))") je(1:6)
+!write(mf_,format6) dfac(je(1)),dfac(je(2)),dfac(je(3)),dfac(je(4)),dfac(je(5)),dfac(je(6))
+
+!endif
+            sigdis0(i)=sigdis0(i)+dfac(je(1))*dfac(je(2))*dfac(je(3))*dfac(je(4))*dfac(je(5))*dfac(je(6))*v
+
+        enddo
+! if(in1(i)==n1_.and.in2(i)==n2_) then
+
+!  call print(t,mf_)
+! endif
+ enddo
+
+!   do j=1,nmono
+!if( sigdis0(j)/=0) then
+!    write(mf_,*) in1(j),in2(j),j
+!   write(mf_,*) sigdis0(j)
+!endif
+!   enddo
+
+   allocate(db(nmono,nmono),minput%m(nmono,nmono))
+   db=0
+  minput%m=0
+ 
+ if(nd1==3) then
+   do i=1,nmono
+   noo=mono_order(i)
+ 
+  do i6=0,in6(i)
+  
+  do i5=0,in5(i)
+ 
+  do i4=0,in4(i)
+ 
+  do i3=0,in3(i)
+ 
+  do i2=0,in2(i)
+   do i1=0,in1(i)
+  ouch=i6+i5+i4+i3+i2+i1
+ 
+    if(mod(ouch,2)==1)cycle
+ 
+    coe=pascal(in1(i),i1)*pascal(in2(i),i2)*pascal(in3(i),i3)*pascal(in4(i),i4)*pascal(in5(i),i5)*pascal(in6(i),i6)
+    mi=hash(in1(i)-i1,in2(i)-i2,in3(i)-i3,in4(i)-i4,in5(i)-i5,in6(i)-i6)
+
+          k=hash(i1,i2,i3,i4,i5,i6)
+ 
+        coe=coe*sigdis0(k)
+        db(i,mi)=db(i,mi)+coe
+ 
+  enddo
+  enddo
+  enddo
+  enddo
+  enddo
+  enddo    
+
+   enddo
+ 
+ elseif(nd1==2) then
+   do i=1,nmono
+   noo=mono_order(i)
+ 
+  do i4=0,in4(i)
+ 
+  do i3=0,in3(i)
+   do i2=0,in2(i)
+   do i1=0,in1(i)
+  ouch=i4+i3+i2+i1
+ 
+    if(mod(ouch,2)==1)cycle
+     coe=pascal(in1(i),i1)*pascal(in2(i),i2)*pascal(in3(i),i3)*pascal(in4(i),i4) 
+    mi=hash(in1(i)-i1,in2(i)-i2,in3(i)-i3,in4(i)-i4,0,0)
+
+          k=hash(i1,i2,i3,i4,0,0)
+         coe=coe*sigdis0(k)
+        db(i,mi)=db(i,mi)+coe
+   enddo
+  enddo
+  enddo
+  enddo
+    
+
+   enddo
+
+ elseif(nd1==1) then
+   do i=1,nmono
+   noo=mono_order(i)
+ 
+  do i2=0,in2(i)
+ 
+  do i1=0,in1(i)
+  ouch=i2+i1
+ 
+ !  if(ouch>noo)cycle
+ !  if(mod(ouch,2)==1)cycle
+ 
+    coe=pascal(in1(i),i1)*pascal(in2(i),i2) 
+  
+    mi=hash(in1(i)-i1,in2(i)-i2,0,0,0,0)
+
+          k=hash(i1,i2,0,0,0,0)
+         coe=coe*sigdis0(k)
+        db(i,mi)=db(i,mi)+coe
+   enddo
+  enddo
+   
+
+   enddo
+
+endif ! nd1==3
+ 
+m=minput 
+do i=1,nd2
+m%v(i)=m%v(i)-(m%v(i).sub.0)
+enddo
+   do i=1,nmono
+    
+     t=  m%v(1)**in1(i)
+     t=t*m%v(2)**in2(i)
+   if(nd1>1) then
+     t=t*m%v(3)**in3(i)
+     t=t*m%v(4)**in4(i)
+   endif
+   if(nd1>2) then
+
+     t=t*m%v(5)**in5(i)
+     t=t*m%v(6)**in6(i)
+   endif
+       j=1
+
+        do while(.true.)
+
+          call  c_cycle(t,j,v ,je); if(j==0) exit;
+            k=hash(je(1),je(2),je(3),je(4),je(5),je(6))
+            minput%m(i,k)=v
+        enddo
+   enddo
+
+
+ 
+ 
+!minput%m=matmul(minput%m,minput%db)
+minput%m=matmul(db,minput%m)
+ 
+
+ 
+ if(nd11<0) then
+   db=minput%m
+
+  do i=1,100
+
+   db=matmul(db,db)
+  enddo
+ 
+
+ do i=1,nmono
+  write(6,*) i
+ if(nd1==1) then
+ write(6,"(6(1x,i2))") in1(i),in2(i) 
+elseif(nd1==2) then
+write(6,"(6(1x,i2))") in1(i),in2(i),in3(i),in4(i)
+else
+write(6,"(6(1x,i2))") in1(i),in2(i),in3(i),in4(i),in5(i),in6(i)
+endif
+write(6,*) db(i,1)
+ enddo
+endif
+deallocate(db)
+nz=nmono-1
+ 
+allocate(mm(nz,nz),vm(nz))
+ 
+mm=0
+
+
+do i=1,nz
+ vm(i)=minput%m(i+1,1)
+ mm(i,i)=1
+enddo
+
+do i=1,nz
+do j=1,nz
+ mm(i,j)=mm(i,j)-minput%m(1+i,1+j)
+enddo
+enddo
+
+do i=1,100,-1
+minput%m=matmul(minput%m,minput%m)
+ call norm_moment_matrix(minput%m,r2)
+enddo
+deallocate(minput%m)
+call matinvn(mm,mm,nz,nz,i)
+ 
+write(6,*) " success = ",i
+
+vm=matmul(mm,vm)
+vsol(2:nmono)=vm
+
+
+write(6,*) "Quadratic moments to order ", no
+do i=1,2*nd1
+je=0
+je(i)=je(i)+1
+do j=1,2*nd1
+je(j)=je(j)+1
+sig(i,j)=vm(hash(je(1),je(2),je(3),je(4),je(5),je(6))-1)
+je(j)=je(j)-1
+
+if(i<=j) write(6,*) i,j,sig(i,j)
+enddo 
+enddo
+!return
+
+  deallocate(mm,vm)
+call kill(t)
+ call kill(m) 
+
+end subroutine create_moment_map
+
+
+subroutine create_yu_map(minput,nd11)   ! fix0 is the initial condition for the maps
+implicit none
+ 
+ 
+complex(dp)v
+integer i1,i2,i3,i4,i5,i6,no1,je(6),noo,k,mi,ouch,nz
+real(dp)   coe,ki(6),eps
+real(dpn) r2
+!real(dpn), allocatable :: mm(:,:),vm(:)
+type(c_damap) m,minput
+type(c_taylor) t
+integer  i,inf,j,nd1,nd11
+ 
+ nd1=iabs(nd11)
+ 
+ call alloc(m); 
+
+ 
+m=minput  
+ 
+
+sigdis0=0
+
+ 
+m=0
+
+ 
+call alloc(t)
+ 
+nmono=size(in1)
+
+
+ 
+
+   allocate(minput%cm(nmono,nmono))
+
+  minput%cm=0
+ 
+ 
+m=minput 
+do i=1,nd2
+m%v(i)=m%v(i)-(m%v(i).sub.0)
+enddo
+   do i=1,nmono
+    
+     t=  m%v(1)**in1(i)
+     t=t*m%v(2)**in2(i)
+   if(nd1>1) then
+     t=t*m%v(3)**in3(i)
+     t=t*m%v(4)**in4(i)
+   endif
+   if(nd1>2) then
+
+     t=t*m%v(5)**in5(i)
+     t=t*m%v(6)**in6(i)
+   endif
+       j=1
+
+        do while(.true.)
+
+          call  c_cycle(t,j,v ,je); if(j==0) exit;
+            k=hash(je(1),je(2),je(3),je(4),je(5),je(6))
+!            minput%cm(i,k)=v
+            minput%cm(k,i)=v
+        enddo
+   enddo
+
+
+ 
+ 
+call kill(t)
+ call kill(m) 
+
+end subroutine create_yu_map
+
+
+
+subroutine norm_moment_matrix(m,norm)
+implicit none
+real(dpn) norm,m(:,:)
+integer i,j
+
+norm=0
+
+do i=1,size(m,1)
+do j=2,size(m,1)
+
+norm=norm+abs(m(i,j) )
+
+enddo
+enddo
+
+end subroutine norm_moment_matrix
+!$$$$$$$$$$$$$$
+  subroutine matinvn(a,ai,n,nmx,ier)
+
+    implicit none
+
+    integer i,ier,j,n,nmx
+    integer,allocatable ::indx(:)
+    real(dpn) d
+    real(dpn),dimension(nmx,nmx)::a,ai
+    real(dpn),allocatable :: aw(:,:)
+    !
+    !    if((.not.C_%STABLE_DA)) then
+    !       if(c_%watch_user) then
+    !          write(6,*) "big problem in dabnew ", sqrt(crash)
+    !       endif
+    !       return
+    !    endif
+     allocate(aw(n,n),indx(n))
+    aw(1:n,1:n) = a(1:n,1:n)
+
+  !  call ludcmp_nr0n(aw,n,nmaxn,indx,d,ier)
+    call ludcmp_nr0n(aw,n,n,indx,d,ier)
+    if (ier .eq. 132) return
+
+    ai(1:n,1:n) = 0.0_dp
+    !    forall (i = 1:n) ai(i,i) = one
+    do i=1,n
+       ai(i,i) = 1.0_dp
+    enddo
+
+    do j=1,n
+       call lubksb_nr0n(aw,n,n,indx,ai(1,j),nmx)
+!       call lubksb_nr0n(aw,n,nmaxn,indx,ai(1,j),nmx)
+    enddo
+   deallocate(aw,indx)
+  end subroutine matinvn
+
+
+  !
+  subroutine ludcmp_nr0n(a,n,np,indx,d,ier)
+    implicit none
+    !     ************************************
+    !
+    !     THIS SUBROUTINE DECOMPOSES A MATRIX INTO LU FORMAT
+    !     INPUT A: NXN MATRIX - WILL BE OVERWRITTEN BY THE LU DECOMP.
+    !           NP: PHYSICAL DIMENSION OF A
+    !           INDX: ROW PERMUTATION VECTOR
+    !           D: EVEN OR ODD ROW INTERCHANGES
+    !
+    !     REFERENCE: NUMERICAL RECIPIES BY PRESS ET AL (CAMBRIDGE) PG. 35
+    !
+    !-----------------------------------------------------------------------------
+    !
+    integer i,ier,imax,j,k,n,np
+    integer,dimension(np)::indx
+    real(dpn) aamax,d,dum,sum
+    real(dpn),dimension(np,np)::a
+    real(dpn),allocatable ::vv(:)
+    !
+    !    if((.not.C_%STABLE_DA)) then
+    !       if(c_%watch_user) then
+    !          write(6,*) "big problem in dabnew ", sqrt(crash)
+    !       endif
+    !       return
+    !    endif
+    allocate(vv(n))
+    ier=0
+    d=1.0_dp
+    do i=1,n
+       aamax=0.0_dp
+       do j=1,n
+          if(abs(a(i,j)).gt.aamax) aamax=abs(a(i,j))
+       enddo
+       if(aamax.eq.0.0_dp) then
+          ier=132
+          return
+       endif
+       vv(i)=1.0_dp/aamax
+    enddo
+    do j=1,n
+       if(j.gt.1) then
+          do i=1,j-1
+             sum=a(i,j)
+             if(i.gt.1) then
+                do k=1,i-1
+                   sum=sum-a(i,k)*a(k,j)
+                enddo
+                a(i,j)=sum
+             endif
+          enddo
+       endif
+       aamax=0.0_dp
+       do i=j,n
+          sum=a(i,j)
+          if (j.gt.1) then
+             do k=1,j-1
+                sum=sum-a(i,k)*a(k,j)
+             enddo
+             a(i,j)=sum
+          endif
+          dum=vv(i)*abs(sum)
+          if(dum.ge.aamax) then
+             imax=i
+             aamax=dum
+          endif
+       enddo
+       if (j.ne.imax) then
+          do k=1,n
+             dum=a(imax,k)
+             a(imax,k)=a(j,k)
+             a(j,k)=dum
+          enddo
+          d=-d
+          vv(imax)=vv(j)
+       endif
+       indx(j)=imax
+       if(j.ne.n) then
+          if(a(j,j).eq.0.0_dp) a(j,j)=tiny
+          dum=1.0_dp/a(j,j)
+          do i=j+1,n
+             a(i,j)=a(i,j)*dum
+          enddo
+       endif
+    enddo
+    if(a(n,n).eq.0.0_dp) a(n,n)=tiny
+    deallocate(vv)
+    return
+  end subroutine ludcmp_nr0n
+  !
+  subroutine lubksb_nr0n(a,n,np,indx,b,nmx)
+    implicit none
+    !     ************************************
+    !
+    !     THIS SUBROUTINE SOLVES SET OF LINEAR EQUATIONS AX=B,
+    !     INPUT A: NXN MATRIX IN lu FORM GIVEN BY ludcmp_nr
+    !           NP: PHYSICAL DIMENSION OF A
+    !           INDX: ROW PERMUTATION VECTOR
+    !           D: EVEN OR ODD ROW INTERCHANGES
+    !           B: RHS OF LINEAR EQUATION - WILL BE OVERWRITTEN BY X
+    !
+    !     REFERENCE: NUMERICAL RECIPIES BY PRESS ET AL (CAMBRIDGE) PG. 36
+    !
+    !-----------------------------------------------------------------------------
+    !
+    integer i,ii,j,ll,n,nmx,np
+    integer,dimension(np)::indx
+    real(dpn) sum
+    real(dpn),dimension(np,np)::a
+    real(dpn),dimension(nmx)::b
+    !
+    !    if((.not.C_%STABLE_DA)) then
+    !       if(c_%watch_user) then
+    !          write(6,*) "big problem in dabnew ", sqrt(crash)
+    !       endif
+    !       return
+    !    endif
+    ii = 0
+    do i=1,n
+       ll = indx(i)
+       sum = b(ll)
+       b(ll) = b(i)
+       if(ii.ne.0) then
+          do j=ii,i-1
+             sum = sum-a(i,j)*b(j)
+          enddo
+       else if (sum.ne.0.0_dp) then
+          ii = i
+       endif
+       b(i)=sum
+    enddo
+    do i=n,1,-1
+       sum=b(i)
+       if(i.lt.n) then
+          do j=i+1,n
+             sum = sum-a(i,j)*b(j)
+          enddo
+       endif
+
+       b(i)=sum/a(i,i)
+
+    enddo
+    return
+  end subroutine lubksb_nr0n
+!$$$$$$$$$$$$$$$$$$$$
 subroutine copy_tree_into_tree_zhe(tree_zhe,t)
 implicit none
 type(tree_element), intent(in) :: t
@@ -19180,9 +20661,9 @@ integer i,mf
 
 end subroutine read_tree_elements
 
-subroutine symplectify_for_zhe(m,L_ns , N_pure_ns , L_s, N_s )
+subroutine symplectify_for_zhe(m,L_r , N_r , L_s, N_s )
 implicit none
-TYPE(c_damap),intent(inout):: m ,L_ns , N_pure_ns , N_s , L_s
+TYPE(c_damap),intent(inout):: m ,L_r , N_r , N_s , L_s
 type(c_vector_field) f,fs,ft
 complex(dp) v
 type(c_taylor) t,dt
@@ -19193,8 +20674,8 @@ real(dp) dm,norm,normb,norma,h(4)
 TYPE(c_damap) mt,ids,m4,ml
 real(dp),allocatable::   S(:,:),id(:,:)
 
-! m = L_ns o N_pure_ns o L_s o N_s
-! d= = L_ns o N_pure_ns
+! m = L_r o N_r o L_s o N_s
+! d= = L_r o N_r
 ! ms= L_s o N_s
 
 allocate(S(m%n,m%n),id(m%n,m%n))
@@ -19300,9 +20781,9 @@ endif
 
 
 mt=m*L_s**(-1)
-L_ns=mt.sub.1
+L_r=mt.sub.1
 
-mt=L_ns**(-1)*mt
+mt=L_r**(-1)*mt
 
 f=log(mt)
 
@@ -19419,7 +20900,7 @@ endif
 
 
 N_s=exp(fs)
-N_pure_ns= mt*N_s**(-1)
+N_r= mt*N_s**(-1)
 
 N_s= L_s**(-1)*N_s*L_s 
 
@@ -19567,6 +21048,491 @@ subroutine cholesky_dt(A, G)
 end subroutine cholesky_dt
 
 
+  ! Complex Universal Taylor Routines   (Sagan's Stuff made complex)
+
+  SUBROUTINE  c_kill_uni(S2)
+    implicit none
+    type (c_UNIVERSAL_TAYLOR),INTENT(INOUT)::S2
+
+    DEALLOCATE(S2%N,S2%NV,S2%C,S2%J)
+    NULLIFY(S2%N,S2%NV,S2%C,S2%J)
+
+  END SUBROUTINE  c_kill_uni
+
+  SUBROUTINE  c_kill_Unis(S2)
+    implicit none
+    type (C_UNIVERSAL_TAYLOR),INTENT(INOUT)::S2(:)
+     integer k,i
+    k=size(s2)
+    do i=1,k
+    DEALLOCATE(S2(i)%N,S2(i)%NV,S2(i)%C,S2(i)%J)
+    NULLIFY(S2(i)%N,S2(i)%NV,S2(i)%C,S2(i)%J)    
+    enddo
+
+  END SUBROUTINE c_kill_Unis
+ 
+
+
+  SUBROUTINE  c_null_uni(S2,S1)
+    implicit none
+    type (c_UNIVERSAL_TAYLOR),INTENT(INOUT)::S2
+    integer, intent(in):: s1
+    IF(S1==0) THEN
+       NULLIFY(S2%N,S2%NV,S2%C,S2%J)
+    ELSEIF(S1==-1) THEN
+       DEALLOCATE(S2%N,S2%NV,S2%C,S2%J,S2%nd2)
+       NULLIFY(S2%N,S2%NV,S2%C,S2%J,S2%nd2)
+    ENDIF
+  END SUBROUTINE c_null_uni
+
+
+  SUBROUTINE  c_ALLOC_U(S2,N,NV,nd2)
+    implicit none
+    type (C_UNIVERSAL_TAYLOR),INTENT(INOUT)::S2
+    integer, intent(in):: N,NV,nd2
+    ALLOCATE(S2%N,S2%NV,S2%nd2)
+    if(N==0) then
+       allocate(S2%C(1),S2%J(1,NV));S2%C(1)=0.0_dp;S2%J(:,:)=0;
+    else
+       allocate(S2%C(N),S2%J(N,NV))
+    endif
+    S2%N=N
+    S2%NV=NV
+    S2%nd2=nd2
+  END SUBROUTINE c_ALLOC_U
+
+  SUBROUTINE  c_ALLOC_Us(S2,N,NV,nd2)
+    implicit none
+    type (C_UNIVERSAL_TAYLOR),INTENT(INOUT)::S2(:)
+    integer, intent(in):: N,NV,nd2
+     integer k,i
+    k=size(s2)
+    do i=1,k
+      ALLOCATE(S2(i)%N,S2(i)%NV,S2(i)%nd2)
+    if(N==0) then
+       allocate(S2(i)%C(1),S2(i)%J(1,NV));S2(i)%C(1)=0.0_dp;S2(i)%J(:,:)=0;
+    else
+       allocate(S2(i)%C(N),S2(i)%J(N,NV))
+    endif
+    S2(i)%N=N
+    S2(i)%NV=NV
+    S2(i)%nd2=nd2
+    enddo
+
+  END SUBROUTINE c_ALLOC_Us
+
+  SUBROUTINE  c_fill_uni_r(S2,S1)  !new sagan
+    implicit none
+    type (C_UNIVERSAL_TAYLOR),INTENT(INOUT)::S2
+    complex (dp), intent(in):: s1
+    INTEGER n,J(LNV)
+
+
+    IF(ASSOCIATED(S2%N)) S2=-1
+    S2=0
+    CALL c_ALLOC_U(S2,1,nv,nd2)
+    J=0
+    DO N=1,S2%NV
+       S2%J(1,N)=J(N)
+    ENDDO
+    S2%C(1)=S1
+
+  END SUBROUTINE c_fill_uni_r
+
+  SUBROUTINE  c_FILL_UNI(S2,S1)
+    implicit none
+    type (c_UNIVERSAL_TAYLOR),INTENT(INOUT)::S2
+    type (c_TAYLOR), intent(in):: s1
+    INTEGER ipresent,k,n,I
+    complex(dp) value
+    INTEGER, allocatable :: j(:)
+    call c_check_snake
+
+    ! if(old) then
+   ! if(s1%i==0)  call crap1("FILL_N 1")
+    !    else
+    !       IF (.NOT. ASSOCIATED(s1%j%r)) call crap1("FILL_N 2")
+    !    endif
+
+
+    IF(ASSOCIATED(S2%N)) S2=-1
+    S2=0
+    ipresent=1
+    call c_taylor_cycle(S1,n)
+    CALL c_ALLOC_U(S2,N,c_%nv,c_%nd2)
+    allocate(j(c_%nv))
+
+    do i=1,N
+       call c_taylor_cycle(S1,ii=i,value=value,j=j)
+       S2%C(I)=value
+       DO k=1,S2%NV
+          S2%J(i,k)=J(k)
+       ENDDO
+    ENDDO
+
+    deallocate(j)
+
+  END SUBROUTINE c_FILL_UNI
+
+ FUNCTION c_concat_c_uni_ray( S1, S2 )
+    implicit none
+    complex(dp) c_concat_c_uni_ray,c
+    TYPE (c_UNIVERSAL_TAYLOR), INTENT (IN) :: S1
+    TYPE (c_ray), INTENT (IN) ::  S2
+    integer i,j
+
+
+    c_concat_c_uni_ray=0.0_dp
+
+    do i=1,s1%n
+     c=1
+     do j=1,s1%nv
+      c=c*s2%x(j)**s1%J(i,j)
+     enddo
+     c_concat_c_uni_ray=c_concat_c_uni_ray+s1%c(i)*c
+    enddo
+
+ ! TYPE c_UNIVERSAL_TAYLOR
+ !    INTEGER, POINTER:: N,NV,nd2    !  Number of coeeficients and number of variables
+ !    complex(DP), POINTER,dimension(:)::C  ! Coefficients C(N)
+ !    INTEGER, POINTER,dimension(:,:)::J ! Exponents of each coefficients J(N,NV)
+ ! END TYPE c_UNIVERSAL_TAYLOR
+
+  END FUNCTION c_concat_c_uni_ray
+
+ 
+
+ FUNCTION c_concat_c_uni_rays( S1, S2 )
+    implicit none
+    TYPE (c_ray)  c_concat_c_uni_rays 
+    TYPE (c_UNIVERSAL_TAYLOR), INTENT (IN) :: S1(:)
+    TYPE (c_ray), INTENT (IN) ::  S2
+    integer i,j
+
+
+    c_concat_c_uni_rays%x=0.0_dp
+
+    do i=1,size(s1)
+     c_concat_c_uni_rays%x(i)=  S1(i).o.s2
+    enddo
+
+
+  END FUNCTION c_concat_c_uni_rays
+
+  SUBROUTINE  c_REFILL_UNI(S1,S2)
+    implicit none
+    type (c_UNIVERSAL_TAYLOR),INTENT(IN)::S2
+    type (c_TAYLOR), intent(inOUT):: s1
+    INTEGER I,K,J(LNV)
+    logical(lp) DOIT
+
+    ! if(old) then
+    !if(s1%i==0)  call crap1("REFILL_N 1")
+    !    else
+    !       IF (.NOT. ASSOCIATED(s1%j%r)) call crap1("REFILL_N 2")
+    !    endif
+
+
+    S1=0.0_dp
+
+    IF(.not.ASSOCIATED(S2%N)) THEN
+
+         write(6,*) " ERROR IN REFILL_N: UNIVERSAL_TAYLOR DOES NOT EXIST"
+       ! call !write_e(123)
+    ENDIF
+
+    DO I=1,S2%N
+    J=0
+       DOIT=.TRUE.
+       IF(S2%NV>NV) THEN
+          K=NV
+          DO WHILE(DOIT.AND.K<=S2%NV)
+             IF(S2%J(I,K)/=0) DOIT=.FALSE.
+             K=K+1
+          ENDDO
+       ENDIF
+
+       IF(DOIT) THEN
+          !DO K=1,NV
+          !   J(K)=S2%J(I,K)
+          !ENDDO
+
+           s1=s1+(S2%C(I).cmono.S2%J(I,1:nv))
+         ! CALL c_POK(S1,S2%J(I,1:nv),S2%C(I))
+          !CALL c_POK(S1,J,S2%C(I))
+       ENDIF
+    ENDDO
+
+  END SUBROUTINE c_REFILL_UNI
+
+
+  !_________________________________________________________________________________
+
+  subroutine c_printunitaylors(ut,iunit,print_abs,prec)
+    implicit none
+    type(c_universal_taylor) :: ut(:)
+    integer, optional               :: iunit
+    integer                :: i,k
+    logical, optional :: print_abs
+    real(dp), optional ::prec
+    k=size(ut)
+
+    do i=1,k
+      call c_printunitaylor_old(ut(i),iunit,print_abs,prec)
+   enddo
+  end subroutine c_printunitaylors
+
+  !subroutine c_printunitaylor(ut,iunit,abs,prec)
+  !  implicit none
+  !  type(c_universal_taylor) :: ut
+  !  integer, optional               :: iunit
+  !  integer                :: i,ii
+  !  logical, optional :: abs
+  !  logical abst
+  !  integer iunit0
+  !  real(dp) xr,prec0
+  !  real(dp), optional ::prec
+  !    complex(dp) v
+  !  iunit0=6
+  !  abst=.false.
+  !   prec0=0
+
+!    if(present(prec)) prec0=prec
+!    if(present(abs)) abst=abs
+!    if(present(iunit)) iunit0=iunit
+!    if (.not. associated(ut%n)) then
+!       write(iunit0,'(A)') '    C_UNIVERSAL_TAYLOR IS EMPTY (NOT ASSOCIATED)'
+!       write(6,'(A)') '    C_UNIVERSAL_TAYLOR IS EMPTY (NOT ASSOCIATED)'
+!       return
+!    endif
+
+!    write(iunit0,'(/1X,A,I5,A,I5,A/1X,A/)') 'UNIV_TAYLOR   NO =',ut%n,', NV =',ut%nv,', INA = unita',&
+!         '*********************************************'
+!    if(ut%n /= 0) then
+!       write(iunit0,'(A)') '    I  COEFFICIENT          ORDER   EXPONENTS'
+!    else
+!       write(iunit0,'(A)') '   ALL COMPONENTS 0.0_dp '
+!    endif
+!
+!
+!
+!
+!
+!
+!    do i = 1,ut%n
+!     v=0
+!    if(norm2([real(ut%c(i))])>prec0) then
+!      v=real(ut%c(i))
+!    endif
+!    if(norm2([aimag(ut%c(i))])>prec0) then
+!      v=i_*aimag(ut%c(i))+v
+!    endif 
+!       if(norm2([ real(v),aimag(v)])<=prec0)   cycle
+!     if(abst) then
+!       xr=sqrt(real(ut%c(i))**2+aimag(ut%c(i))**2)
+!write(iunit0,'(I6,2X,(G21.14,1x,G21.14,3x,G21.14),I5,4X,18(2I2,1X))') i,v,xr,   &
+!sum(ut%j(i,:)),(ut%j(i,ii),ii=1,ut%nv)
+!     else
+!       write(iunit0,'(I6,2X,(G21.14,1x,G21.14),I5,4X,18(2I2,1X))') i,v,sum(ut%j(i,:)),(ut%j(i,ii),ii=1,ut%nv)
+!     endif
+!       if( .not. print77) then
+!          write(iunit0,*)  ut%c(i)
+!       endif
+!    enddo
+!
+!    write(iunit0,'(A)') '                                      '
+!
+!  end subroutine c_printunitaylor
+
+  subroutine c_printunitaylor_old(ut,iunit,print_abs,prec)
+    implicit none
+    type(c_universal_taylor) :: ut
+    integer, optional               :: iunit
+    integer                :: i,ii
+    logical, optional :: print_abs
+    logical abst
+    integer iunit0
+    real(dp) xr,prec0
+    real(dp), optional ::prec
+      complex(dp) v
+    iunit0=6
+    abst=.false.
+     prec0=0
+
+    if(present(prec)) prec0=prec
+    if(present(print_abs)) abst=print_abs
+    if(present(iunit)) iunit0=iunit
+    if (.not. associated(ut%n)) then
+       write(iunit0,'(A)') '    C_UNIVERSAL_TAYLOR IS EMPTY (NOT ASSOCIATED)'
+       write(6,'(A)') '    C_UNIVERSAL_TAYLOR IS EMPTY (NOT ASSOCIATED)'
+       return
+    endif
+
+    write(iunit0,'(/1X,A,I5,A,I5,A/1X,A/)') 'UNIV_TAYLOR   NO =',ut%n,', NV =',ut%nv,', INA = unita',&
+         '*********************************************'
+    if(ut%n /= 0) then
+       write(iunit0,'(A)') '    I  COEFFICIENT          ORDER   EXPONENTS'
+    else
+       write(iunit0,'(A)') '   ALL COMPONENTS 0.0_dp '
+    endif
+
+    do i = 1,ut%n
+     v=0
+    if(abs(real(ut%c(i)))>prec0) then
+      v=real(ut%c(i))
+    endif
+    if(abs(aimag(ut%c(i)))>prec0) then
+      v=i_*aimag(ut%c(i))+v
+    endif 
+       if(abs(v)<=prec0)   cycle
+     if(abst) then
+       xr=sqrt(real(ut%c(i))**2+aimag(ut%c(i))**2)
+write(iunit0,'(I6,2X,(G21.14,1x,G21.14,3x,G21.14),I5,4X,18(2I2,1X))') i,v,xr,   &
+sum(ut%j(i,:)),(ut%j(i,ii),ii=1,ut%nv)
+     else
+       write(iunit0,'(I6,2X,(G21.14,1x,G21.14),I5,4X,18(2I2,1X))') i,v,sum(ut%j(i,:)),(ut%j(i,ii),ii=1,ut%nv)
+     endif
+       if( .not. print77) then
+          write(iunit0,*)  ut%c(i)
+       endif
+    enddo
+
+    write(iunit0,'(A)') '                                      '
+
+  end subroutine c_printunitaylor_old
+
+subroutine d_field_for_demin(f,ut)
+implicit none
+type(c_vector_field),intent(inout):: f 
+complex(dp) v
+type(c_taylor) t 
+integer i,j,k,n(11),nv,nd2,Nu,i1
+integer, allocatable :: je(:),jf(:)
+type(c_vector_field) fs
+!type(universal_taylor), target :: Re, Im
+type(c_universal_taylor), target :: ut
+real(dp) prec
+complex(dp) zilch
+
+prec=1.d-7
+zilch=0.0_dp
+call alloc(fs)
+call alloc(t)
+ 
+
+!!! counting only 
+fs=f
+
+call c_get_indices(n,0)
+nv=n(4)
+nd2=n(3)
+
+ nu=0
+allocate(je(nv),jf(nv))
+je=0
+fs=f
+ 
+ nu=0
+ 
+
+do i=1,fs%n
+
+       j=1
+
+        do while(.true.)
+je=0
+          call  c_cycle(fs%v(i),j,v ,je); if(j==0) exit;
+!write(6,*) i,je
+!pause 123
+     k=d_mod_demin(i)
+    jf=je
+    jf(k)=jf(k)+1
+
+     v=-(-1)**k*v/n_cai/jf(k)
+     nu=nu+1
+
+!write(6,*) i
+!write(6,*) je
+!write(6,*) jf
+!pause 8
+   do i1=i+1,fs%n  !,-1
+     k=d_mod_demin(i1)
+       jf(k)=jf(k)-1
+       if(jf(k)>=0) CALL c_pok(fs%v(i1),jf,zilch)
+       jf(k)=jf(k)+1
+     enddo
+
+       enddo
+ 
+ enddo
+
+
+!write(6,*) Nu,"size of universal_taylor "
+!pause 111
+!!!!  doing 
+!call ALLOC(re,Nu,NV)
+!call ALLOC(im,Nu,NV)
+call ALLOC(ut,Nu,NV,nd2)
+fs=f
+ 
+ nu=0
+ 
+je=0
+do i=1,fs%n
+
+       j=1
+
+        do while(.true.)
+
+          call  c_cycle(fs%v(i),j,v ,je); if(j==0) exit;
+
+     k=d_mod_demin(i)
+    jf=je
+    jf(k)=jf(k)+1
+
+     v=-(-1)**k*v/n_cai/jf(k)
+     nu=nu+1
+     ut%c(nu)=v  
+
+     ut%J(nu,1:nv)=jf
+ 
+
+ 
+   do i1=i+1,fs%n  !,-1
+     k=d_mod_demin(i1)
+       jf(k)=jf(k)-1
+       if(jf(k)>=0) CALL c_pok(fs%v(i1),jf,zilch)
+       jf(k)=jf(k)+1
+     enddo
+       enddo
+ 
+ enddo
+
+
+!f=fs
+
+call kill(fs)
+call kill(t)
+
+deallocate(je,jf); 
+ 
+end subroutine d_field_for_demin
+
+  integer function d_mod_demin(i)
+  implicit none
+  integer i
+
+  d_mod_demin=mod(i,2) 
+  if(d_mod_demin==0) then
+    d_mod_demin=i-1
+  else
+   d_mod_demin=i+1
+  endif
+
+  end  function d_mod_demin
+
+
+  ! End of Universal complex Taylor Routines
 
 
   END MODULE  c_tpsa

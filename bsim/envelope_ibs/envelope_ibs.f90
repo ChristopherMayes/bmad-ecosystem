@@ -77,7 +77,7 @@ bmad_com%radiation_fluctuations_on = .false.
 
 call bmad_parser(lat_file, lat)
 call twiss_and_track(lat,co,status)
-call calc_z_tune(lat)
+call calc_z_tune(lat%branch(0))
 
 npart = current / e_charge * lat%param%total_length / c_light
 
@@ -159,7 +159,7 @@ do i=1,lat%n_ele_track
     if(ns .gt. 1) then
       do j=1,ns
         six = six + 1
-        call create_uniform_element_slice(lat%ele(i),lat%param,j,ns,temp_ele)
+        call element_slice_iterator(lat%ele(i),lat%param,j,ns,temp_ele)
         call make_mat6(temp_ele, lat%param, coos(six-1), coos(six))
         eles(six) = temp_ele
         call make_SR_mats(eles(six),coos(six),M(:,:,six),Bbar(:,:,six))

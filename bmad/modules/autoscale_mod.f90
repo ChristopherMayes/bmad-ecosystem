@@ -78,13 +78,13 @@ type (coord_struct) orbit0
 type (em_field_struct) field1, field2
 integer, parameter :: n_sample = 16
 
-real(rp) pz, phi, pz_max, phi_max, e_tot, scale_correct, dE_peak_wanted, dE_cut, E_tol
+real(rp) pz, phi, pz_max, phi_max, e_tot, scale_correct, dE_peak_wanted, dE_cut
 real(rp) dphi, e_tot_start, pz_plus, pz_minus, b, c, phi_tol, scale_tol, phi_max_old
 real(rp) value_saved(num_ele_attrib$), phi0_autoscale_original, pz_arr(0:n_sample-1), pz_max1, pz_max2
 real(rp) dE_max1, dE_max2, integral, int_tot, int_old, s
 
 integer i, j, tracking_method_saved, num_times_lost, i_max1, i_max2
-integer n_pts, n_pts_tot, n_loop, n_loop_max, status
+integer n_pts, n_pts_tot, n_loop, n_loop_max, status, sign_of_dE
 
 logical step_up_seen, err_flag, do_scale_phase, do_scale_amp, phase_scale_good, amp_scale_good
 logical, optional :: scale_phase, scale_amp, call_bookkeeper
@@ -113,7 +113,8 @@ if (ele%tracking_method == mad$) return
 
 ! bmad_standard just needs to set e_tot$, p0c$, and phi0_autoscale$
 
-if (ele%tracking_method == bmad_standard$) then
+if (ele%tracking_method == bmad_standard$ .or. &
+        (ele%tracking_method == linear$ .and. ele%mat6_calc_method == bmad_standard$)) then
   if (ele%key == lcavity$) then 
     ! Set e_tot$ and p0c$ 
     phi = twopi * (ele%value(phi0$) + ele%value(phi0_multipass$)) 
@@ -153,14 +154,21 @@ case default
   return
 end select
 
+sign_of_dE = sign_of(dE_peak_wanted)
+
 ! Auto scale amplitude when dE_peak_wanted is zero or very small is not possible.
 ! Therefore if dE_peak_wanted is less than dE_cut then do nothing.
+
+! scale_tol is the tolerance for scale_correct.
+! scale_tol = E_tol / dE_peak_wanted corresponds to a tolerance in dE_peak_wanted of E_tol. 
 
 if (do_scale_amp) then
   dE_cut = 10 ! eV
   if (abs(dE_peak_wanted) < dE_cut) return
+  scale_tol = max(bmad_com%autoscale_amp_rel_tol, bmad_com%autoscale_amp_abs_tol / abs(dE_peak_wanted))
 else
-  if (dE_peak_wanted == 0) return
+  if (dE_peak_wanted == 0) sign_of_dE = 1    ! Assume want accelerating.
+  scale_tol = 1
 endif
 
 if (ele%value(field_autoscale$) == 0) then
@@ -171,16 +179,12 @@ if (ele%value(field_autoscale$) == 0) then
     if (global_com%exit_on_error) call err_exit ! exit on error.
     return 
   endif
-  ele%value(field_autoscale$) = (1.0_rp)  ! Initial guess.
+  ele%value(field_autoscale$) = 1.0_rp  ! Initial guess.
 endif
 
 ! scale_correct is the correction factor applied to ele%value(field_autoscale$) on each iteration:
 !  ele%value(field_autoscale$)(new) = ele%value(field_autoscale$)(old) * scale_correct
-! scale_tol is the tolerance for scale_correct.
-! scale_tol = E_tol / dE_peak_wanted corresponds to a tolerance in dE_peak_wanted of E_tol. 
 
-E_tol = bmad_com%autoscale_amp_abs_tol ! eV
-scale_tol = max(bmad_com%autoscale_amp_rel_tol, E_tol / dE_peak_wanted) ! tolerance for scale_correct
 phi_tol = bmad_com%autoscale_phase_tol
 
 !------------------------------------------------------
@@ -302,7 +306,7 @@ if (do_scale_amp) then
       endif
 
       if (abs(int_tot - int_old) <= 0.2 * (int_tot + int_old)) then
-        ele%value(field_autoscale$) = ele%value(field_autoscale$) * dE_peak_wanted / integral
+        ele%value(field_autoscale$) = ele%value(field_autoscale$) * abs(dE_peak_wanted) / integral
         exit
       endif
     endif
@@ -324,19 +328,19 @@ do i = 1, n_sample - 1
   pz_arr(i) = pz_calc(phi_max + i*dphi, err_flag); if (err_flag) return
 enddo
 
-i_max1 = maxloc(pz_arr, 1) - 1
+i_max1 = maxloc(sign_of_dE*pz_arr, 1) - 1
 pz_max1 = pz_arr(i_max1)
 dE_max1 = dE_particle(pz_max1)
 
-pz_arr(i_max1) = -1  ! To find next max
-i_max2 = maxloc(pz_arr, 1) - 1
+pz_arr(i_max1) = -sign_of_dE  ! To find next max
+i_max2 = maxloc(sign_of_dE*pz_arr, 1) - 1
 pz_max2 = pz_arr(i_max2)
 dE_max2 = dE_particle(pz_max2)
 
 ! If we do not have any phase that shows acceleration this generally means that the
 ! initial particle energy is low and the ele%value(field_autoscale$) is much to large.
 
-if (dE_max1 <= 0) then
+if (sign_of_dE*dE_max1 <= 0) then
   call out_io (s_error$, r_name, 'CANNOT FIND ACCELERATING PHASE REGION FOR: ' // ele%name)
   err_flag = .true.
   return
@@ -345,11 +349,11 @@ endif
 ! If dE_max1 is large compared to dE_max2 then just use the dE_max1 phase. 
 ! Otherwise take half way between dE_max1 and dE_max2 phases.
 
-if (dE_max2 < dE_max1/2) then  ! Just use dE_max1 point
+if (2*abs(dE_max2) < abs(dE_max1)) then  ! Just use dE_max1 point
   phi_max = phi_max + dphi * i_max1
   pz_max = pz_max1
 ! wrap around case when i_max1 = 0 and i_max2 = n_sample-1 or vice versa.
-elseif (abs(i_max1 - i_max2) > n_sample/2) then   
+elseif (2*abs(i_max1 - i_max2) > n_sample) then   
   phi_max = phi_max + dphi * (i_max1 + i_max2 - n_sample) / 2.0
   pz_max = pz_calc(phi_max, err_flag); if (err_flag) return
 else
@@ -388,7 +392,7 @@ main_loop: do n_loop = 1, n_loop_max
       return
     endif
 
-    if (pz < pz_max) then
+    if (sign_of_dE*pz < sign_of_dE*pz_max) then
       pz_plus = pz
       exit
     endif
@@ -406,7 +410,7 @@ main_loop: do n_loop = 1, n_loop_max
       phi = phi_max - dphi
       pz = pz_calc(phi, err_flag); if (err_flag) return
       if (debug) print *, 'REV:', i, trim(ele%name), '  ', phi, pz
-      if (pz < pz_max) then
+      if (sign_of_dE*pz < sign_of_dE*pz_max) then
         pz_minus = pz
         exit
       endif
@@ -519,6 +523,9 @@ logical err_flag
 
 time_runge_kutta_com%print_too_many_step_err = .false.
 ele%value(phi0_autoscale$) = phi
+call attribute_bookkeeper(ele, .true.)
+if (ele%tracking_method == linear$) call make_mat6(ele, param)
+
 call init_coord (start_orb, ele = ele, element_end = upstream_end$)
 call track1 (start_orb, ele, param, end_orb, err_flag = err_flag, ignore_radiation = .true.)
 time_runge_kutta_com%print_too_many_step_err = .true.

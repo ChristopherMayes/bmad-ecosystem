@@ -105,13 +105,14 @@ do
   ! If a match for what1 then check for a match for what2.
   if (line(1:n) == start_tag(1:n)) then
     if (what2 == '') exit
-    if (line(n+1:n+1) == ' ') then  ! If what1 exact match
+    if (line(n+1:n+1) == ' ') then  ! If what1 exact match.
       call string_trim(line(n+1:), line, ix)
-    else  ! Else not an exact match
+    else  ! Else not an exact match then remove rest of what1 word from line.
       call string_trim(line(n+1:), line, ix)
       call string_trim(line(ix+1:), line, ix)
     endif
     if (index(line, trim(what2)) == 1) exit
+    if (line(1:1) == '*') exit    ! "*" means match to anything.
   endif
 enddo
 
@@ -158,12 +159,17 @@ do
 
   has_subbed = .false.
   call substitute (line, "{}", "")
+  call eliminate2 (line, '\vn{', '}', '"', '"')
   call eliminate2 (line, '\item[\vn{\{', '\}}]', '   Argument: ', '')
+  call eliminate2 (line, '\item[', ']', '     ', '')
+  call substitute (line, '\item', '*')
   call substitute (line, "``\vn", '"')
   call substitute (line, "``", '"')
   call substitute (line, "\`", '`')
   call substitute (line, "}''", '"')
   call substitute (line, "''", '"')
+  call substitute (line, "\bf", '')
+  call substitute (line, "\arrowbf", '')
   call substitute (line, "\$", '$', has_subbed)
   if (.not. has_subbed .and. .not. in_example) call substitute (line, "$")  ! Do not remove "$" if "\$" -> "$" has been done
   call substitute (line, "\protect")
@@ -172,8 +178,6 @@ do
   call substitute (line, "\%", "%")
   call substitute (line, "\tao", "Tao")
   call substitute (line, "\bmad", "Bmad")
-  call eliminate2 (line, '\item[', ']', '     ', '')
-  call eliminate2 (line, '\vn{', '}', '"', '"')
   call eliminate_inbetween (line, '& \sref{', '}', .true.)
   call eliminate_inbetween (line, '\hspace*{', '}', .true.)
   call eliminate_inbetween (line, '(\sref{', '})', .false.)
@@ -213,6 +217,8 @@ do
 
   call substitute (line, "\{", "{")
   call substitute (line, "\}", "}")
+  call substitute (line, "\(", "")
+  call substitute (line, "\)", "")
 
   n = max(1, len_trim(line))
   if (line(n:n) == '!') line(n:n) =  ' '

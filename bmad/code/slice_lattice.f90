@@ -106,6 +106,9 @@ if (logic_option(.true., do_bookkeeping)) then
       lat%particle_start = orbit(ie-1)
       exit
     enddo
+  else
+    call out_io (s_error$, r_name, 'PROBLEM CALCULATING TWISS/ORBIT.', &
+           'WILL NOT BE ABLE TO SET THE BEGINNING TWISS PARAMETERS CORRECTLY IN THE SLICED LATTICE.')
   endif
 endif
 
@@ -113,6 +116,8 @@ endif
 
 do ib = 0, ubound(lat%branch, 1)
   branch => lat%branch(ib)
+  branch%param%geometry = open$
+
   do ie = 1, branch%n_ele_track
     if (branch%ele(ie)%izz == -1) cycle
     if (ie == 1) exit        ! No need to do anything if branch beginning is preserved.
@@ -132,7 +137,6 @@ do ib = 0, ubound(lat%branch, 1)
     ele0%b%phi = 0
     ele0%z%phi = 0
     call set_flags_for_changed_attribute(ele0, ele0%value(p0c$))
-    branch%param%geometry = open$
     exit
   enddo
 enddo
@@ -185,7 +189,7 @@ enddo
 
 call lattice_bookkeeper (lat)
 
-error = .false.
+if (status == ok$) error = .false.
 
 !-------------------------------------------------------------------------------------
 contains

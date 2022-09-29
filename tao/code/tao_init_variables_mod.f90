@@ -2,7 +2,7 @@ module tao_init_variables_mod
 
 use tao_interface
 
-integer, parameter, private :: n_var_maxx      = 1000   ! max index of datum per v1_var 
+integer, parameter, private :: n_var_maxx      = 5000   ! max index of datum per v1_var 
 integer, parameter, private :: n_var_minn      = -100   ! min index of datum per v1_var 
 
 contains
@@ -37,7 +37,6 @@ type (ele_struct), pointer :: ele
 real(rp) default_weight        ! default merit function weight
 real(rp) default_step          ! default "small" step size
 real(rp) default_low_lim, default_high_lim, default_key_delta
-real(rp), allocatable :: default_key_d(:)
 
 integer ios, iu, i, j, j1, j2, k, ix, num
 integer n, iostat, n_list, n_nml
@@ -52,10 +51,10 @@ character(200) file_name
 character(200) line, search_for_lat_eles
 
 logical(4) default_key_bound, default_good_user
-logical, allocatable :: default_key_b(:)
 logical err, free, gang
 logical searching, limited
 logical, allocatable :: dflt_good_unis(:), good_unis(:)
+logical :: logical_is_garbage
 
 namelist / tao_var / v1_var, var, default_weight, default_step, default_key_delta, &
                     ix_min_var, ix_max_var, default_universe, default_attribute, &
@@ -81,7 +80,7 @@ endif
 ! Standard var init:
 ! First open the var init file.
 
-call out_io (s_blank$, r_name, '*Init: Opening Variable File: ' // file_name)
+call out_io (s_blank$, r_name, '*Init: Opening Variable File: ' // var_file)
 call tao_open_file (var_file, iu, file_name, s_fatal$)
 if (iu == 0) then
   call out_io (s_error$, r_name, 'CANNOT OPEN VARIABLE INIT FILE: ' // var_file)
@@ -90,12 +89,9 @@ endif
 
 ! Count how many v1_var definitions there are
 
-allocate (default_key_b(100), default_key_d(100))
 n = 0
 n_nml = 0
 do
-  call set_logical_to_garbage(default_key_bound)
-  default_key_delta = 0
   v1_var%name = ''
   n_nml = n_nml + 1
   read (iu, nml = tao_var, iostat = ios)
@@ -114,12 +110,6 @@ do
   else
     n = n + size(s%u)
   endif
-  if (n >= size(default_key_b)) then
-    call re_allocate (default_key_b, 2*size(default_key_b))
-    call re_allocate (default_key_d, 2*size(default_key_d))
-  endif
-  call transfer_logical (default_key_bound, default_key_b(n))
-  default_key_d(n) = default_key_delta
 enddo
 
 call tao_allocate_v1_var (n, .false.)
@@ -158,13 +148,15 @@ var_loop: do
   var%low_lim        = default_low_lim
   var%high_lim       = default_high_lim
   ! Transfer defaults
-  call transfer_logical (default_key_b(n_v1), var(0)%key_bound)
   call set_logical_to_garbage(default_good_user)
+  call set_logical_to_garbage(default_key_bound)
+  default_key_delta = 0d0
+  
   do i = lbound(var, 1), ubound(var, 1)
-    call set_logical_to_garbage (var(i)%good_user)
+     call set_logical_to_garbage (var(i)%good_user)
+     call set_logical_to_garbage (var(i)%key_bound)
   enddo
-  var%key_bound      = var(0)%key_bound
-  var%key_delta      = default_key_d(n_v1)
+  var%key_delta      = 0d0
 
   read (iu, nml = tao_var, iostat = ios)
   if (ios < 0 .and. v1_var%name == '') exit         ! exit on end-of-file
@@ -192,6 +184,8 @@ var_loop: do
   do i = lbound(var, 1), ubound(var, 1)
     call str_upcase (var(i)%attribute, var(i)%attribute)
     call str_upcase (var(i)%ele_name, var(i)%ele_name)
+    if (logical_is_garbage(var(i)%key_bound)) call transfer_logical(default_key_bound,var(i)%key_bound)
+    if (var(i)%key_delta.eq.0d0) var(i)%key_delta = default_key_delta
   enddo
 
   if (v1_var%name == '') then
@@ -214,10 +208,6 @@ var_loop: do
 
   if (default_universe == '*' .or. default_universe == '') then
     dflt_good_unis = .true.
-    if (s%com%common_lattice .and. gang) then
-      dflt_good_unis = .false.
-      dflt_good_unis(ix_common_uni$) = .true.
-    endif
 
   else
     call location_decode (default_universe, dflt_good_unis, 1, num)
@@ -290,7 +280,6 @@ enddo var_loop
 
 close (iu)
 deallocate (dflt_good_unis, good_unis)
-deallocate (default_key_b, default_key_d)
 
 ! For a variable pointing to a term in a taylor map, the pointer can get messed up if a later variable points to a taylor term
 ! that does not exist forcing the reallocation of the map to create the taylor term.
@@ -506,7 +495,7 @@ if (search_for_lat_eles /= '') then
   deallocate(ele_names, an_indexx)
 
   if (.not. found_one) then
-    call out_io (s_error$, r_name, &
+    call out_io (s_warn$, r_name, &
             'NO ELEMENTS FOUND IN SEARCH FOR: ' // search_for_lat_eles, &
             'WHILE SETTING UP VARIABLE ARRAY FOR: ' // v1_var%name, &
             'THIS V1_VARIABLE WILL NOT BE CREATED!')
@@ -794,7 +783,6 @@ character(*), parameter :: r_name = 'tao_pointer_to_var_in_lattice'
 err = .true.
 
 u => s%u(ix_uni)
-if (s%com%common_lattice) u => s%com%u_working
 
 ! allocate space for var%slave.
 
@@ -834,32 +822,6 @@ var_slave%ix_uni    = ix_uni
 var%model_value => var%slave(1)%model_value
 var%base_value  => var%slave(1)%base_value
 var%design_value = var%slave(1)%model_value
-
-! Common pointer
-
-if (associated(u%common)) then
-  ele2 => pointer_to_ele (u%common%model%lat, ele%ix_ele, ele%ix_branch)
-  call pointer_to_attribute (ele,  var%attrib_name, .true., a_ptr,  err)
-  var%common_slave%model_value => a_ptr%r
-  ele2 => pointer_to_ele (u%common%base%lat, ele%ix_ele, ele%ix_branch)
-  call pointer_to_attribute (ele, var%attrib_name, .true., a_ptr, err)
-  var%common_slave%base_value => a_ptr%r
-endif
-
-! With unified lattices: model_value and base_value get their own storage
-! instead of pointing to var%slave(1). 
-! Exception: If variable controls a common parameter
-
-if (s%com%common_lattice) then
-  if (var_slave%ix_uni == ix_common_uni$) then
-    var%model_value => var%common_slave%model_value
-    var%base_value => var%common_slave%base_value
-  else
-    allocate (var%model_value, var%base_value)
-    var%model_value = var_slave%model_value
-    var%base_value = var_slave%base_value
-  endif
-endif
 
 end subroutine tao_pointer_to_var_in_lattice
 
@@ -905,7 +867,6 @@ character(*), parameter :: r_name = 'tao_pointer_to_var_in_lattice'
 err = .true.
 
 u => s%u(ix_uni)
-if (s%com%common_lattice) u => s%com%u_working
 
 call pointers_to_attribute (u%model%lat, var%ele_name, var%attrib_name, .true., a_ptr, err, .false., eles, var%ix_attrib)
 if (err .or. size(a_ptr) == 0) then
@@ -921,10 +882,6 @@ if (err .or. size(a_ptr) == 0) then
 endif
 
 call pointers_to_attribute (u%base%lat, var%ele_name, var%attrib_name, .true., b_ptr, err, .false., eles, var%ix_attrib)
-if (associated(u%common)) then
-  call pointers_to_attribute (u%common%model%lat, var%ele_name, var%attrib_name, .true., cm_ptr, err, .false., eles, var%ix_attrib)
-  call pointers_to_attribute (u%common%base%lat,  var%ele_name, var%attrib_name, .true., cb_ptr, err, .false., eles, var%ix_attrib)
-endif
 
 ! allocate space for var%slave.
 
@@ -953,29 +910,6 @@ do ii = 1, size(a_ptr)
   var%model_value => var%slave(1)%model_value
   var%base_value  => var%slave(1)%base_value
   var%design_value = var%slave(1)%model_value
-
-  ! Common pointer
-
-  if (associated(u%common)) then
-    var%common_slave%model_value => cm_ptr(ii)%r
-    var%common_slave%base_value  => cb_ptr(ii)%r
-  endif
-
-  ! With unified lattices: model_value and base_value get their own storage
-  ! instead of pointing to var%slave(1). 
-  ! Exception: If variable controls a common parameter
-
-  if (s%com%common_lattice) then
-    if (var_slave%ix_uni == ix_common_uni$) then
-      var%model_value => var%common_slave%model_value
-      var%base_value => var%common_slave%base_value
-    else
-      allocate (var%model_value, var%base_value)
-      var%model_value = var_slave%model_value
-      var%base_value = var_slave%base_value
-    endif
-  endif
-
 enddo
 
 end subroutine tao_pointer_to_var_in_lattice2

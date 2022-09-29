@@ -15,9 +15,9 @@ use dynamic_aperture_mod
 use complex_taylor_mod
 use bmad_interface
 use srdt_mod
+use rad_6d_mod
 
 integer, parameter :: model$ = 1, base$ = 2, design$ = 3
-integer, parameter :: ix_common_uni$ = 0
 integer, parameter :: apparent_emit$ = 1, projected_emit$ = 2
 
 character(2), parameter :: tao_floor_plan_view_name(6) = [character(2):: 'xy', 'xz', 'yx', 'yz', 'zx', 'zy']
@@ -51,8 +51,8 @@ logical, save, target :: forever_true$ = .true.  ! Used for pointer init.
 
 interface assignment (=)
   module procedure tao_lattice_equal_tao_lattice
-  module procedure tao_lattice_branch_equal_tao_lattice_branch
   module procedure tao_lattice_branches_equal_tao_lattice_branches
+!  module procedure tao_lattice_branch_equal_tao_lattice_branch
 end interface
 
 !---------
@@ -60,7 +60,7 @@ end interface
 type tao_cmd_history_struct          ! Record the command history
   character(:), allocatable :: cmd   ! The command
   integer :: ix = 0                  ! Command index (1st command has ix = 1, etc.)
-  logical cmd_file                   ! Did command come from a command file
+  !! logical :: cmd_file = ''           ! Did command come from a command file
 end type
 
 !-----------------------------------------------------------------------
@@ -206,16 +206,16 @@ type tao_curve_struct
   real(rp), allocatable :: symb_size(:)  ! Symbol size. Used with symbol_size_scale. 
   integer, allocatable :: ix_symb(:)     ! Corresponding index in d1_data%d(:) array.
   real(rp) :: y_axis_scale_factor = 1    ! y-axis conversion from internal to plotting units.
-  type (qp_line_struct) line             ! Line attributes
-  type (qp_symbol_struct) symbol         ! Symbol attributes
-  type (tao_curve_orbit_struct) orbit    ! Used for E/B field plotting.
+  type (qp_line_struct) :: line = qp_line_struct()                    ! Line attributes
+  type (qp_symbol_struct) :: symbol = qp_symbol_struct()              ! Symbol attributes
+  type (tao_curve_orbit_struct) :: orbit = tao_curve_orbit_struct()   ! Used for E/B field plotting.
   integer :: ix_universe = -1            ! Universe where data is. -1 => use s%global%default_universe
   integer :: symbol_every = 1            ! Symbol every how many points.
   integer :: ix_branch = 0
   integer :: ix_ele_ref = -1             ! Index in lattice of reference element.
   integer :: ix_ele_ref_track = -1       ! = ix_ele_ref except for super_lord elements.
   integer :: ix_bunch = 0                ! Bunch to plot.
-  integer :: n_turn = 10                 ! Used for multi_turn_orbit plotting
+  integer :: n_turn = -1                 ! Used for multi_turn_orbit plotting
   logical :: use_y2 = .false.            ! Use y2 axis?
   logical :: draw_line = .true.          ! Draw a line through the data points?
   logical :: draw_symbols = .true.       ! Draw a symbol at the data points?
@@ -255,19 +255,19 @@ type tao_graph_struct
   character(100) :: text_legend_out(10) = ''        ! Array for holding descriptive info.
   character(80) :: why_invalid = '???'              ! Informative string to print.
   type (tao_curve_struct), allocatable :: curve(:)
-  type (tao_plot_struct), pointer :: p ! pointer to parent plot
+  type (tao_plot_struct), pointer :: p => null() ! pointer to parent plot
   type (tao_floor_plan_struct) :: floor_plan = tao_floor_plan_struct()
-  type (qp_point_struct) text_legend_origin
-  type (qp_point_struct) curve_legend_origin
-  type (qp_axis_struct) x                           ! X-axis parameters.
-  type (qp_axis_struct) y                           ! Y-axis attributes.
-  type (qp_axis_struct) x2                          ! X2-axis attributes (Not currently used).
-  type (qp_axis_struct) y2                          ! Y2-axis attributes.
-  type (qp_rect_struct) margin                      ! Margin around the graph.
-  type (qp_rect_struct) scale_margin                ! Margin for scaling
+  type (qp_point_struct) :: text_legend_origin = qp_point_struct()
+  type (qp_point_struct) :: curve_legend_origin = qp_point_struct()
+  type (qp_axis_struct) :: x = qp_axis_struct()              ! X-axis parameters.
+  type (qp_axis_struct) :: y = qp_axis_struct()              ! Y-axis attributes.
+  type (qp_axis_struct) :: x2 = qp_axis_struct()             ! X2-axis attributes (Not currently used).
+  type (qp_axis_struct) :: y2 = qp_axis_struct()             ! Y2-axis attributes.
+  type (qp_rect_struct) :: margin = qp_rect_struct()         ! Margin around the graph.
+  type (qp_rect_struct) :: scale_margin = qp_rect_struct()   ! Margin for scaling
   real(rp) :: x_axis_scale_factor = 1               ! x-axis conversion from internal to plotting units.
   real(rp) :: symbol_size_scale = 0                 ! Symbol size scale factor for phase_space plots.
-  integer box(4)                                    ! Defines which box the plot is put in.
+  integer :: box(4) = 0                             ! Defines which box the plot is put in.
   integer :: ix_branch = 0                          ! Branch in lattice.
   integer :: ix_universe = -1                       ! Used for lat_layout plots.
   logical :: clip = .false.                         ! Clip plot at graph boundary.
@@ -324,27 +324,29 @@ end type
 ! plot page info.
 
 type tao_plot_page_struct
-  type (tao_title_struct) title             ! Title  at top of page.
-  type (tao_title_struct) subtitle          ! Subtitle below title at top of page.
-  type (qp_rect_struct) border              ! Border around plots edge of page.
-  type (tao_drawing_struct) :: floor_plan
-  type (tao_drawing_struct) :: lat_layout
+  type (tao_title_struct) :: title = tao_title_struct()          ! Title  at top of page.
+  type (tao_title_struct) :: subtitle = tao_title_struct()       ! Subtitle below title at top of page.
+  type (qp_rect_struct) :: border = qp_rect_struct()             ! Border around plots edge of page.
+  type (tao_drawing_struct) :: floor_plan = tao_drawing_struct(null())
+  type (tao_drawing_struct) :: lat_layout = tao_drawing_struct(null())
   type (tao_shape_pattern_struct), allocatable :: pattern(:)
   type (tao_plot_struct), allocatable :: template(:)  ! Templates for the plots.
   type (tao_plot_region_struct), allocatable :: region(:)
   character(8) :: plot_display_type = 'X'   ! 'X' or 'TK'
-  real(rp) size(2)                          ! width and height of plot window in pixels.
+  real(rp) :: size(2) = 0                   ! width and height of plot window in pixels.
   real(rp) :: text_height = 12              ! In points. Scales the height of all text
   real(rp) :: main_title_text_scale  = 1.3  ! Relative to text_height
   real(rp) :: graph_title_text_scale = 1.1  ! Relative to text_height
   real(rp) :: axis_number_text_scale = 0.9  ! Relative to text_height
   real(rp) :: axis_label_text_scale  = 1.0  ! Relative to text_height
-  real(rp) :: legend_text_scale      = 0.9  ! Relative to text_height
+  real(rp) :: legend_text_scale      = 0.9  ! Relative to text_height. For legends, plot_page, and lat_layout
   real(rp) :: key_table_text_scale   = 0.9  ! Relative to text_height
   real(rp) :: curve_legend_line_len  = 30   ! Points
-  real(rp) :: curve_legend_text_offset = 6 ! Points
+  real(rp) :: curve_legend_text_offset = 6  ! Points
   real(rp) :: floor_plan_shape_scale = 1.0
+  real(rp) :: floor_plan_text_scale  = 1.0  ! Scale used = floor_plan_text_scale * legend_text_scale
   real(rp) :: lat_layout_shape_scale = 1.0
+  real(rp) :: lat_layout_text_scale  = 1.0  ! Scale used = lat_layout_text_scale * legend_text_scale
   integer :: n_curve_pts = 401              ! Default number of points for plotting a smooth curve.
   integer :: id_window = -1                 ! X window id number.
   logical :: delete_overlapping_plots = .true. ! Delete overlapping plots when a plot is placed?
@@ -373,8 +375,6 @@ end type
 
 type tao_spin_map_struct
   logical :: valid = .false.
-  type (taylor_struct) :: orbit_taylor(6) = taylor_struct()  ! Not yet used.
-  type (taylor_struct) :: spin_taylor(0:3) = taylor_struct() ! Not yet used.
   type (spin_orbit_map1_struct) :: map1 = spin_orbit_map1_struct()
   type (spin_axis_struct) :: axis_input = spin_axis_struct() ! Input axes.
   type (spin_axis_struct) :: axis0 = spin_axis_struct()      ! Initial axes.
@@ -536,15 +536,12 @@ end type
 !                  %useit_opt = %exists & %good_user & %good_opt & %good_var
 ! %useit_plot -- If True variable is used in plotting variable values.
 !                  %useit_plot = %exists & %good_plot & %good_user
-!
-! With common_lattice = True => var%slave(:)%model_value will point to the working universe.
 
 type tao_var_struct
   character(40) :: ele_name = ''    ! Associated lattice element name.
   character(40) :: attrib_name = '' ! Name of the attribute to vary.
   character(40) :: id = ''          ! Used by Tao extension code. Not used by Tao directly.
   type (tao_var_slave_struct), allocatable :: slave(:)
-  type (tao_var_slave_struct) :: common_slave
   integer :: ix_v1 = 0              ! Index of this var in the s%v1_var(i)%v(:) array.
   integer :: ix_var = 0             ! Index number of this var in the s%var(:) array.
   integer :: ix_dvar = -1           ! Column in the dData_dVar derivative matrix.
@@ -631,7 +628,6 @@ end type
 
 !------------------------------------------------------------------------
 ! global parameters that the user has direct access to.
-! Also see: tao_common_struct.
 ! If this structure is changed, change tao_set_global_cmd.
 
 type tao_global_struct
@@ -678,6 +674,7 @@ type tao_global_struct
   logical :: disable_smooth_line_calc = .false.       ! Global disable of the smooth line calculation.
   logical :: draw_curve_off_scale_warn = .true.       ! Display warning on graphs?
   logical :: external_plotting = .false.              ! Used with matplotlib and gui.
+  logical :: init_lat_sigma_from_beam = .false.       ! Initial lattice derived sigma matrix derived from beam dist?
   logical :: label_lattice_elements = .true.          ! For lat_layout plots
   logical :: label_keys = .true.                      ! For lat_layout plots
   logical :: lattice_calc_on = .true.                 ! Turn on/off beam and single particle calculations.
@@ -686,10 +683,9 @@ type tao_global_struct
   logical :: opt_with_base = .false.                  ! Use base data in optimization?
   logical :: optimizer_allow_user_abort = .true.      ! See Tao manual for more details.
   logical :: optimizer_var_limit_warn = .true.        ! Warn when vars reach a limit with optimization.
-  logical :: orm_analysis = .false.                   ! ORM using MDSA? 
   logical :: plot_on = .true.                         ! Do plotting?
   logical :: rad_int_calc_on = .true.                 ! Radiation integrals calculation on/off.
-  logical :: rf_on = .false.                          ! RFcavities on or off? Does not affect lcavities.
+  logical :: rf_on = .true.                           ! RFcavities on or off? Does not affect lcavities.
   logical :: single_step = .false.                    ! For debugging and demonstrations: Single step through a command file?
   logical :: stop_on_error = .true.                   ! For debugging: False prevents tao from exiting on an error.
   logical :: svd_retreat_on_merit_increase = .true.
@@ -755,7 +751,6 @@ type tao_common_struct
   logical :: use_saved_beam_in_tracking = .false.
   logical :: single_mode = .false.
   logical :: combine_consecutive_elements_of_like_name = .false.
-  logical :: common_lattice = .false.      
   logical :: have_tracked_beam = .false.      ! Used to catch error when beam plotting without having tracked a beam.
   logical :: init_plot_needed      = .true.   ! reinitialize plotting?
   logical :: init_beam             = .true.   ! Used by custom programs to control Tao init
@@ -770,6 +765,7 @@ type tao_common_struct
   logical :: command_arg_has_been_executed = .false. ! Has the -command command line argument been executed?
   logical :: all_merit_weights_positive = .true.  
   logical :: multi_turn_orbit_is_plotted = .false.   ! Is a multi_turn_orbit being plotted?
+  logical :: force_chrom_calc = .false.              ! Used by a routine to force calculation
   character(100) :: cmd = ''                         ! Used for the cmd history
   character(16) :: valid_plot_who(10) = ''           ! model, base, ref etc...
   character(200) :: saved_cmd_line = ''              ! Saved part of command line when there are mulitple commands on a line
@@ -796,14 +792,13 @@ type tao_init_struct
   character(200) :: hook_init_file_arg = ''        ! -hook_init_file      command line argument
   character(200) :: init_file_arg = ''             ! -init_file           command line argument.
   character(200) :: beam_file_arg = ''             ! -beam_file           command line argument.
-  character(200) :: beam_track_data_file_arg = ''  ! -beam_track_data_file       command line argument.
   character(200) :: beam_init_position_file_arg = '' ! -beam_init_position_file command line argument.
   character(500) :: command_arg = ''               ! -command             command line argument.
   character(200) :: data_file_arg = ''             ! -data_file           command line argument.
   character(200) :: plot_file_arg = ''             ! -plot_file           command line argument.
   character(200) :: startup_file_arg = ''          ! -startup_file        command line argument.
   character(200) :: var_file_arg = ''              ! -var_file            command line argument.
-  character(200) :: building_wall_file_arg = ''    ! -building_wtrack_data_file  command line argument.
+  character(200) :: building_wall_file_arg = ''    ! -building_wall_file  command line argument.
   character(16) :: geometry_arg = ''               ! -geometry            command line argument.
   character(80) :: slice_lattice_arg = ''          ! -slice_lattice       command line argument.
   character(40) :: start_branch_at_arg = ''        ! -start_branch_at     command line argument.
@@ -846,7 +841,6 @@ type tao_scratch_space_struct
   type (tao_expression_info_struct), allocatable :: info(:)
   type (tao_expression_info_struct), allocatable :: info_x(:), info_y(:), info_ix(:)
   logical, allocatable :: picked(:)
-  logical, allocatable :: this_u(:)
   real(rp), allocatable :: axis1(:), axis2(:), axis3(:)
   real(rp), allocatable :: x(:), y(:), err(:)
   real(rp), allocatable :: y_value(:)
@@ -862,23 +856,30 @@ type tao_lat_mode_struct
   real(rp) growth_rate
 end type
 
-type tao_sigma_mat_struct
-  real(rp) sigma(6,6)
+type tao_lat_sigma_struct
+  real(rp) :: mat(6,6) = 0
 end type
 
 type tao_dn_dpz_struct
-  real(rp) vec(3)       ! Spin n0 derivative wrt pz.
-  real(rp) partial(3,3) ! partial(i:) is spin n0 derivative wrt pz for i^th oscillation mode (1 => a-mode, etc.)
+  real(rp) vec(3)         ! Spin n0 derivative wrt pz.
+  real(rp) partial(3,3)   ! partial(i:) is spin n0 derivative wrt pz for i^th oscillation mode (1 => a-mode, etc.)
+  real(rp) partial2(3,3)  ! partial(i:) is spin n0 derivative wrt pz with i^th oscillation mode missing (1 => a-mode, etc.)
 end type
 
 type tao_spin_polarization_struct
   real(rp) :: tune = real_garbage$
   real(rp) :: pol_limit_st = real_garbage$             ! Polarization calculated using Sokolov-Ternov formula.
-  real(rp) :: pol_limit_dkm = real_garbage$            ! Equalibrium Polarization calculated via the Derbenev-Kondratenko-Mane formula.
-  real(rp) :: pol_limit_dkm_partial(3) = real_garbage$ ! Limit using only single mode to calc dn_dpz
+  real(rp) :: pol_limit_dk = real_garbage$             ! Equalibrium Polarization calculated via the Derbenev-Kondratenko-Mane formula.
+  real(rp) :: pol_limit_dk_partial(3) = real_garbage$  ! Limit using only single mode to calc dn_dpz
+  real(rp) :: pol_limit_dk_partial2(3) = real_garbage$ ! Limit using only single mode to calc dn_dpz
   real(rp) :: pol_rate_bks = real_garbage$             ! BKS Polarization rate (1/sec).
   real(rp) :: depol_rate = real_garbage$               ! Depolarization rate (1/sec).
   real(rp) :: depol_rate_partial(3) = real_garbage$    ! Depolarization rate (1/sec) using only single mode to calc dn_dpz.
+  real(rp) :: depol_rate_partial2(3) = real_garbage$   ! Depolarization rate (1/sec) using only two modes to calc dn_dpz.
+  real(rp) :: integral_bn = real_garbage$              ! Integral of g^3 * b_hat * n_0
+  real(rp) :: integral_bdn = real_garbage$             ! Integral of g^3 * b_hat * dn/ddelta
+  real(rp) :: integral_1ns = real_garbage$             ! Integral of g^3 (1 - 2(n * s_hat)/9)
+  real(rp) :: integral_dn2 = real_garbage$             ! Integral of g^3 * 11 (dn/ddelta)^2 / 9
 end type
 
 ! For caching lattice calculations associated with plotting.
@@ -894,29 +895,31 @@ end type
 ! tao_lattice_branch_equal_tao_lattice_branch must be modified as well.
 
 type tao_lattice_branch_struct
-  type (tao_lattice_struct), pointer :: tao_lat => null()        ! Parent tao_lat
-  type (summation_rdt_struct) srdt
-  type (tao_spin_polarization_struct) spin
-  type (tao_dn_dpz_struct), allocatable :: dn_dpz(:)
-  type (bunch_params_struct), allocatable :: bunch_params(:)
-  type (tao_sigma_mat_struct), allocatable :: linear(:) ! Sigma matrix derived from linear lattice.
+  type (tao_lattice_struct), pointer :: tao_lat => null()       ! Parent tao_lat
+  type (tao_lat_sigma_struct), allocatable :: lat_sigma(:)      ! Sigma matrix derived from lattice (not beam).
+  type (tao_dn_dpz_struct), allocatable :: dn_dpz(:)            ! Spin invariant field
+  type (bunch_params_struct), allocatable :: bunch_params(:)    ! Per element
+  type (bunch_params_struct), allocatable :: bunch_params_comb(:) ! Evenly spaced per global%beam_track_ds_step step
   type (coord_struct), allocatable :: orbit(:)
-  type (coord_struct) orb0                     ! For saving beginning orbit
   type (tao_plot_cache_struct), allocatable :: plot_cache(:)  ! Plotting data cache
   type (tao_plot_cache_struct) :: plot_ref_cache              ! Plotting data cache
-  integer track_state
-  logical has_open_match_element
-  logical :: plot_cache_valid = .false.        ! Valid plotting data cache?
-  logical :: spin_valid = .false.
-  real(rp) :: cache_x_min = 0, cache_x_max = 0
-  integer :: cache_n_pts = 0
-  type (normal_modes_struct) modes             ! Synchrotron integrals stuff
   type (tao_lat_mode_struct) a, b
-  integer ix_rad_int_cache                     ! Radiation integrals cache index.
-  integer :: n_hterms = 0                      ! Number of distinct res driving terms to evaluate.
-  type (normal_modes_struct) modes_rf_on       ! Synchrotron integrals stuff
+  type (tao_spin_polarization_struct) spin
+  type (summation_rdt_struct) srdt
+  type (coord_struct) orb0                                    ! For saving beginning orbit
+  type (normal_modes_struct) modes_ri                         ! Synchrotron integrals stuff
+  type (normal_modes_struct) modes_6d                         ! 6D radiation matrices.
   type (ptc_normal_form_struct) ptc_normal_form
   type (bmad_normal_form_struct) bmad_normal_form
+  real(rp) :: cache_x_min = 0, cache_x_max = 0
+  integer track_state
+  integer :: cache_n_pts = 0
+  integer ix_rad_int_cache                                    ! Radiation integrals cache index.
+  integer :: n_hterms = 0                                     ! Number of distinct res driving terms to evaluate.
+  integer :: n_bunch_params_comb                              ! Number of %bunch_params_comb(:)
+  logical has_open_match_element
+  logical :: plot_cache_valid = .false.                       ! Valid plotting data cache?
+  logical :: spin_valid = .false.
 end type
 
 ! Structure to hold a single lat_struct (model, base, or design) in
@@ -947,14 +950,15 @@ end type
 ! Beam information for a branch in a universe
 
 type tao_beam_branch_struct
-  type (beam_init_struct) :: beam_init                 ! Beam distrubution at beginning of lattice
   type (beam_struct) beam_at_start                     ! Initial beam 
-  type (ele_struct) ele_at_start                       ! To save starting element parameters.
+  type (beam_init_struct) :: beam_init                 ! Beam distrubution at beginning of lattice
   logical :: init_starting_distribution = .true.       ! Init beam
-  character(40) :: track_start = ''
+  character(40) :: track_start = ''                    ! Tracking start element.
   character(40) :: track_end = ''
-  integer :: ix_track_start = not_set$                 ! Element start index of tracking
-  integer :: ix_track_end = not_set$                   ! Element end index of tracking
+  integer :: ix_branch = 0                             ! Branch tracked.
+  ! If track_start or track_end is a lord, ix_track_start/end index will be a index of slave.
+  integer :: ix_track_start = not_set$                 ! Element track start index. 
+  integer :: ix_track_end = not_set$                   ! Element track end index
 end type
 
 ! tao_model_branch_struct is for information just used for the model lattice.
@@ -967,10 +971,10 @@ end type
 ! Beam information for a universe 
 
 type tao_beam_uni_struct
-  character(200) :: track_data_file = ''         ! Track data from previous simulation for reanalysis.
   character(200) :: saved_at = ''
   character(200) :: dump_file = ''
   character(200) :: dump_at = ''
+  real(rp) :: comb_ds_step = -1                  ! Tracking step size to calculate %bunch_param_comb.
   logical :: track_beam_in_universe = .false.    ! Beam tracking enabled in this universe?
   logical :: always_reinit = .false.
 end type
@@ -984,8 +988,8 @@ type tao_universe_calc_struct
   logical :: rad_int_for_plotting = .false.       !   data or plotting?
   logical :: chrom_for_data = .false.             ! Does the chromaticity need to be computed for
   logical :: chrom_for_plotting = .false.         !   data or plotting? 
-  logical :: beam_sigma_for_data = .false.        ! Do the beam sigmas need to be computed for
-  logical :: beam_sigma_for_plotting = .false.    !   data or plotting? 
+  logical :: lat_sigma_for_data = .false.         ! Do the beam sigmas need to be computed for
+  logical :: lat_sigma_for_plotting = .false.     !   data or plotting? 
   logical :: dynamic_aperture = .false.           ! Do the dynamic_aperture calc?
   logical :: one_turn_map = .false.               ! Compute the one turn map?
   logical :: lattice = .true.                     ! Used to indicate which lattices need tracking done.
@@ -1027,23 +1031,24 @@ type tao_wave_kick_pt_struct
 end type  
 
 type tao_wave_struct     ! Struct for wave analysis
-  character(40) data_type
-  real(rp) rms_rel_a, rms_rel_b, rms_rel_as, rms_rel_bs, rms_rel_ar, rms_rel_br
-  real(rp) rms_rel_k, rms_rel_ks, rms_rel_kr 
-  real(rp) rms_phi, rms_phi_s, rms_phi_r
-  real(rp) amp_ba_s, amp_ba_r, chi_a, chi_c, chi_ba
-  real(rp) amp_a(2), amp_b(2), amp_ba(2)
-  real(rp) coef_a(4), coef_b(4), coef_ba(4)
-  integer n_func   ! Number of functions used in the fit.
+  character(40) :: data_type = ''
+  real(rp) :: rms_rel_a = 0, rms_rel_b = 0, rms_rel_as = 0
+  real(rp) :: rms_rel_bs = 0, rms_rel_ar = 0, rms_rel_br = 0
+  real(rp) :: rms_rel_k = 0, rms_rel_ks = 0, rms_rel_kr = 0
+  real(rp) :: rms_phi = 0, rms_phi_s = 0, rms_phi_r = 0
+  real(rp) :: amp_ba_s = 0, amp_ba_r = 0, chi_a = 0, chi_c = 0, chi_ba = 0
+  real(rp) :: amp_a(2) = 0, amp_b(2) = 0, amp_ba(2) = 0
+  real(rp) :: coef_a(4) = 0, coef_b(4) = 0, coef_ba(4) = 0
+  integer :: n_func = 0   ! Number of functions used in the fit.
   integer :: ix_a1 = -1, ix_a2 = -1, ix_b1 = -1, ix_b2 = -1
-  integer i_a1, i_a2, i_b1, i_b2, n_a, n_b
-  integer i_curve_wrap_pt      ! Index of last point before wrap in curve array. 
+  integer :: i_a1 = 0, i_a2 = 0, i_b1 = 0, i_b2 = 0, n_a = 0, n_b = 0
+  integer :: i_curve_wrap_pt = 0      ! Index of last point before wrap in curve array. 
   integer, allocatable :: ix_data(:) ! Translates from plot point to datum index
-  integer n_kick
+  integer :: n_kick = 0
   type (tao_wave_kick_pt_struct), allocatable :: kick(:)
-  type (tao_graph_struct) :: base_graph   ! Graph before curves extended to 1.5 periods.
-  type (tao_plot_region_struct), pointer :: region    ! Where the wave plot is
-  type (tao_d1_data_struct), pointer :: d1_dat        ! D1 data for analysis
+  type (tao_graph_struct) :: base_graph                        ! Graph before curves extended to 1.5 periods.
+  type (tao_plot_region_struct), pointer :: region => null()   ! Where the wave plot is
+  type (tao_d1_data_struct), pointer :: d1_dat => null()       ! D1 data for analysis
 end type
 
 !-----------------------------------------------------------------------
@@ -1066,7 +1071,6 @@ end type
 ! A universe is a snapshot of a machine
 
 type tao_universe_struct
-  type (tao_universe_struct), pointer :: common => null()
   type (tao_lattice_struct), pointer :: model, design, base
   type (tao_beam_uni_struct) beam
   type (tao_dynamic_aperture_struct) :: dynamic_aperture
@@ -1092,20 +1096,20 @@ end type
 ! Essentially this holds all the information known to the program.
 
 type tao_super_universe_struct
-  type (tao_global_struct) :: global                       ! User accessible global variables.
+  type (tao_global_struct) :: global = tao_global_struct() ! User accessible global variables.
   type (tao_init_struct) :: init = tao_init_struct()       ! Initialization parameters
   type (tao_common_struct) :: com                          ! Non-initialization common parameters
   type (tao_plot_page_struct) :: plot_page                 ! Defines the plot window.
   type (tao_v1_var_struct), allocatable :: v1_var(:)       ! The variable types
   type (tao_var_struct), allocatable :: var(:)             ! array of all variables.
   type (tao_universe_struct), allocatable :: u(:)          ! array of universes.
-  type (tao_mpi_struct) mpi
+  type (tao_mpi_struct) :: mpi = tao_mpi_struct()
   integer, allocatable :: key(:)
   type (tao_building_wall_struct) :: building_wall
   type (tao_wave_struct) :: wave 
   integer :: n_var_used = 0
   integer :: n_v1_var_used = 0
-  type (tao_cmd_history_struct) :: history(1000) ! command history
+  type (tao_cmd_history_struct) :: history(1000) = tao_cmd_history_struct() ! command history
   logical :: initialized = .false.                 ! Does tao_init() need to be called?
 end type
 
@@ -1152,76 +1156,6 @@ do i = 1, size(tlb1)
 enddo
 
 end subroutine tao_lattice_branches_equal_tao_lattice_branches
-
-!-----------------------------------------------------------------------
-! contains
-
-subroutine tao_lattice_branch_equal_tao_lattice_branch (tlb1, tlb2)
-
-implicit none
-
-type (tao_lattice_branch_struct), intent(inout) :: tlb1
-type (tao_lattice_branch_struct), intent(in) :: tlb2
-integer n1, n2, i
-
-!
-
-if (allocated(tlb2%bunch_params)) then
-  tlb1%bunch_params = tlb2%bunch_params
-else
-  if (allocated(tlb1%bunch_params)) deallocate(tlb1%bunch_params)
-endif
-
-if (allocated(tlb2%linear)) then
-  tlb1%linear = tlb2%linear
-else
-  if (allocated(tlb1%linear)) deallocate(tlb1%linear)
-endif
-
-if (allocated(tlb2%orbit)) then
-  tlb1%orbit = tlb2%orbit
-else
-  if (allocated(tlb1%orbit)) deallocate(tlb1%orbit)
-endif
-
-if (allocated(tlb2%dn_dpz)) then
-  tlb1%dn_dpz = tlb2%dn_dpz
-else
-  if (allocated(tlb1%dn_dpz)) deallocate(tlb1%dn_dpz)
-endif
-
-tlb1%srdt                   = tlb2%srdt
-tlb1%orb0                   = tlb2%orb0
-tlb1%track_state            = tlb2%track_state
-tlb1%has_open_match_element = tlb2%has_open_match_element
-tlb1%plot_cache_valid       = tlb2%plot_cache_valid
-tlb1%cache_x_min            = tlb2%cache_x_min
-tlb1%cache_x_max            = tlb2%cache_x_max
-tlb1%cache_n_pts            = tlb2%cache_n_pts
-tlb1%modes                  = tlb2%modes
-tlb1%a                      = tlb2%a
-tlb1%b                      = tlb2%b
-tlb1%ix_rad_int_cache       = tlb2%ix_rad_int_cache
-tlb1%modes_rf_on            = tlb2%modes_rf_on
-
-
-n1 = -1
-if (allocated(tlb1%plot_cache)) n1 = size(tlb1%plot_cache)
-
-n2 = -1
-if (allocated(tlb2%plot_cache)) n2 = size(tlb2%plot_cache)
-
-if (n1 > -1 .and. n1 /= n2) call tao_deallocate_plot_cache(tlb1%plot_cache)
-
-if (n2 > -1) then
-  if (.not. allocated(tlb1%plot_cache)) allocate (tlb1%plot_cache(n2))
-  do i = 1, n2
-    tlb1%plot_cache(i)%ele   = tlb2%plot_cache(i)%ele
-    tlb1%plot_cache(i)%orbit = tlb2%plot_cache(i)%orbit
-  enddo
-endif
-
-end subroutine tao_lattice_branch_equal_tao_lattice_branch 
 
 !-----------------------------------------------------------------------
 ! contains

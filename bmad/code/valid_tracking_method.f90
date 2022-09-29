@@ -42,10 +42,15 @@ if (species == photon$) then
 endif
 
 ! Save some writting since fixed_step_* versions are valid when non fixed_step_* versions are valid.
+! Exception: patch elements.
 
 method = tracking_method
-if (method == fixed_step_runge_kutta$) method = runge_kutta$
-if (method == fixed_step_time_runge_kutta$) method = time_runge_kutta$
+if (ele%key /= patch$) then
+  if (method == fixed_step_runge_kutta$) method = runge_kutta$
+  if (method == fixed_step_time_runge_kutta$) method = time_runge_kutta$
+endif
+
+!
 
 select case (ele%key)
 
@@ -57,7 +62,7 @@ case (ab_multipole$)
 
 case (ac_kicker$)
   select case (method)
-  case (bmad_standard$, runge_kutta$, time_runge_kutta$, linear$, custom$)
+  case (bmad_standard$, runge_kutta$, time_runge_kutta$, linear$, custom$, symp_lie_ptc$, taylor$)
     is_valid = .true.
   end select
 
@@ -247,7 +252,7 @@ case (rfcavity$)
 
 case (sad_mult$)
   select case (method)
-  case (bmad_standard$, custom$, symp_lie_ptc$, linear$, taylor$)
+  case (bmad_standard$, custom$, symp_lie_ptc$, linear$, taylor$, runge_kutta$)
     is_valid = .true.
   end select
 

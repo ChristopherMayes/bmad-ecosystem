@@ -48,11 +48,11 @@ case (ac_kicker$)
   endif
   ele%mat6_calc_method = tracking$
   ele%value(interpolation$) = spline$
-  ele%value(ref_time_offset$) = true$
 
 case (beambeam$)
   ele%value(charge$) = -1
   ele%value(n_slice$) = 1
+  ele%value(species_strong$) = real_garbage$
 
 case (beginning_ele$)
   ele%value(e_tot$) = -1
@@ -108,6 +108,7 @@ case (def_parameter$)
   ele%value(ix_branch$) = -1
 
 case (detector$)
+  ele%aperture_at = surface$
   ele%aperture_type = auto_aperture$
   if (logic_option(.true., do_allocate)) then
     ! Avoid "ele%photon = photon_element_struct()" to get around ifort bug. 4/10/2019

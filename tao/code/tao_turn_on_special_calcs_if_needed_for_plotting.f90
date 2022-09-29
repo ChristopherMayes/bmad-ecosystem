@@ -28,7 +28,7 @@ s%u(:)%picked_uni  = s%u(:)%calc%rad_int_for_plotting
 
 s%u(:)%calc%rad_int_for_plotting    = .false.
 s%u(:)%calc%chrom_for_plotting      = .false.
-s%u(:)%calc%beam_sigma_for_plotting = .false.
+s%u(:)%calc%lat_sigma_for_plotting  = .false.
 
 do i = 1, size(s%plot_page%region)
   if (.not. s%plot_page%region(i)%visible) cycle
@@ -45,8 +45,8 @@ do i = 1, size(s%plot_page%region)
 
       if (.not. u%picked_uni .and. tao_rad_int_calc_needed(curve%data_type, curve%data_source)) then
         if (curve%ix_branch /= 0) then
-          call out_io (s_fatal$, r_name, 'PLOTTING THIS: ' // curve%data_type, 'ON A BRANCH NOT YET IMPLEMENTED!')
-          call err_exit
+          call out_io (s_error$, r_name, 'PLOTTING THIS: ' // curve%data_type, 'ON A BRANCH NOT YET IMPLEMENTED!')
+          cycle
         endif
         u%calc%rad_int_for_plotting = .true.
         u%calc%lattice = .true.
@@ -58,8 +58,8 @@ do i = 1, size(s%plot_page%region)
         u%calc%lattice = .true.
       endif
 
-      if (tao_beam_sigma_calc_needed(curve%data_type, curve%data_source)) then
-        u%calc%beam_sigma_for_plotting = .true.
+      if (tao_lat_sigma_calc_needed(curve%data_type, curve%data_source)) then
+        u%calc%lat_sigma_for_plotting = .true.
         u%calc%lattice = .true.
       endif
 

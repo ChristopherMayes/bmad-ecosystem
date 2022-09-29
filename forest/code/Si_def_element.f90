@@ -2349,7 +2349,7 @@ fringe,permfringe,bend_like,fint,hgap)
     TYPE(ELEMENT), INTENT(INOUT) ::EL
     real(dp), INTENT(IN) ::V
     INTEGER, INTENT(IN) ::NM,F
-    INTEGER I,N
+    INTEGER I,N,n_old
     real(dp), ALLOCATABLE,dimension(:)::AN,BN
     logical(lp), optional :: electric
     logical(lp) elec
@@ -2365,6 +2365,7 @@ fringe,permfringe,bend_like,fint,hgap)
     if(present(electric)) elec=electric
     if(elec.and.(.not.EL%KIND==kind10)) return
 
+n_old=EL%P%NMUL
 
 if(elec) then
     N=NM
@@ -2432,6 +2433,45 @@ else
        EL%AN(I)=AN(I)
        EL%BN(I)=BN(I)
     ENDDO
+!!!!1 added 2022/8/23
+    DO I=1,EL%P%NMUL
+     AN(I)=0.0_dp
+     BN(I)=0.0_dp
+    enddo
+if(associated(EL%d0_AN)) then
+    DO I=1,n_old
+     AN(I)= EL%d0_AN(I) 
+     BN(I)= EL%d0_BN(I)
+    enddo
+    DEALLOCATE(EL%d0_BN)
+    DEALLOCATE(EL%d0_AN)
+    ALLOCATE(EL%d0_AN(EL%P%NMUL),EL%d0_BN(EL%P%NMUL))
+    DO I=1,EL%P%NMUL
+       EL%d0_AN(I) = AN(i)
+       EL%d0_BN(I) = BN(I)
+    ENDDO
+endif
+if(associated(EL%d_BN))  then
+    DO I=1,EL%P%NMUL
+     AN(I)=0.0_dp
+     BN(I)=0.0_dp
+    enddo
+    DO I=1,n_old
+     AN(I)= EL%d_AN(I) 
+     BN(I)= EL%d_BN(I)
+    enddo
+    DEALLOCATE(EL%d_BN)
+    DEALLOCATE(EL%d_AN)
+    ALLOCATE(EL%d_AN(EL%P%NMUL),EL%d_BN(EL%P%NMUL))
+    DO I=1,EL%P%NMUL
+       EL%d_AN(I) = AN(i)
+       EL%d_BN(I) = BN(I)
+    ENDDO   
+endif
+
+!!!!!!!!!!    end of changes   !!!!!!!!!!!!!!
+
+ 
 
     DEALLOCATE(AN);DEALLOCATE(BN);
 
@@ -2496,6 +2536,8 @@ else
     END SELECT
 endif
 
+
+
     !    if(el%kind==kind10) then
     !    call GETANBN(EL%TP10)
     !    endif
@@ -2510,13 +2552,16 @@ endif
     TYPE(ELEMENTP), INTENT(INOUT) ::EL
     real(dp), INTENT(IN) ::V
     INTEGER, INTENT(IN) ::NM,F
-    INTEGER I,N
+    INTEGER I,N,N_OLD
     TYPE(REAL_8), ALLOCATABLE,dimension(:)::AN,BN
     logical(lp), optional :: electric
     logical(lp) elec
     elec=my_false
     if(present(electric)) elec=electric
     if(elec.and.(.not.EL%KIND==kind10)) return
+n_old=EL%P%NMUL
+
+
 if(elec) then
     N=NM
     IF(NM<0) N=-N
@@ -2582,6 +2627,52 @@ else
        EL%AN(I)=AN(I)
        EL%BN(I)=BN(I)
     ENDDO
+
+!!!!1 added 2022/8/23
+    DO I=1,EL%P%NMUL
+     AN(I)=0.0_dp
+     BN(I)=0.0_dp
+    enddo
+if(associated(EL%d0_AN)) then
+
+    DO I=1,n_old
+     AN(I)= EL%d0_AN(I) 
+     BN(I)= EL%d0_BN(I)
+    enddo
+    CALL KILL(EL%D0_AN);CALL KILL(EL%D0_BN);
+    DEALLOCATE(EL%d0_BN)
+    DEALLOCATE(EL%d0_AN)
+    ALLOCATE(EL%d0_AN(EL%P%NMUL),EL%d0_BN(EL%P%NMUL))
+    CALL ALLOC(EL%D0_AN);CALL ALLOC(EL%D0_BN);
+
+    DO I=1,EL%P%NMUL
+       EL%d0_AN(I) = AN(i)
+       EL%d0_BN(I) = BN(I)
+    ENDDO
+endif
+if(associated(EL%d_BN))  then
+    DO I=1,EL%P%NMUL
+     AN(I)=0.0_dp
+     BN(I)=0.0_dp
+    enddo
+    DO I=1,n_old
+     AN(I)= EL%d_AN(I) 
+     BN(I)= EL%d_BN(I)
+    enddo
+    CALL KILL(EL%D_AN);CALL KILL(EL%D_BN);
+    DEALLOCATE(EL%d_BN)
+    DEALLOCATE(EL%d_AN)
+    ALLOCATE(EL%d_AN(EL%P%NMUL),EL%d_BN(EL%P%NMUL))
+    ALLOCATE(EL%d_AN(EL%P%NMUL),EL%d_BN(EL%P%NMUL))
+    CALL ALLOC(EL%D_AN);CALL KILL(EL%D_BN);
+
+    DO I=1,EL%P%NMUL
+       EL%d_AN(I) = AN(i)
+       EL%d_BN(I) = BN(I)
+    ENDDO   
+endif
+!!!!!!!!!!    end of changes   !!!!!!!!!!!!!!
+
 
     DEALLOCATE(AN);DEALLOCATE(BN);
 
@@ -2660,6 +2751,7 @@ ENDIF
     IMPLICIT NONE
     TYPE(ELEMENT), INTENT(INOUT)::EL
     nullify(EL%KIND);
+    nullify(EL%old_integrator);
     nullify(EL%PLOT);
     nullify(EL%NAME);nullify(EL%vorname);nullify(EL%electric);
 nullify(EL%filef,el%fileb);
@@ -2720,6 +2812,7 @@ nullify(EL%filef,el%fileb);
     TYPE(ELEMENTP), INTENT(INOUT)::EL
 
     nullify(EL%KNOB);
+    nullify(EL%old_integrator);
     nullify(EL%probe);
     nullify(EL%KIND);
     nullify(EL%NAME);nullify(EL%vorname);nullify(EL%electric);
@@ -2778,6 +2871,7 @@ nullify(EL%filef,el%fileb);
     INTEGER, INTENT(IN)::I
 
     IF(I==-1) THEN
+       DEALLOCATE(el%old_integrator);
        DEALLOCATE(EL%KIND);
        DEALLOCATE(EL%PLOT);
        DEALLOCATE(EL%recut);
@@ -2959,6 +3053,7 @@ nullify(EL%filef,el%fileb);
        call alloc(el%P);
 
        ALLOCATE(EL%KIND);EL%KIND=0;
+       ALLOCATE(el%old_integrator); el%old_integrator=old_integrator_init;
        ALLOCATE(EL%PLOT);EL%PLOT=MY_TRUE;
        ALLOCATE(EL%RECUT);EL%RECUT=MY_TRUE;
        ALLOCATE(EL%probe);EL%probe=my_false;
@@ -3165,6 +3260,7 @@ nullify(EL%filef,el%fileb);
 
 
        DEALLOCATE(EL%KIND);DEALLOCATE(EL%KNOB);DEALLOCATE(EL%probe);
+       deallocate(el%old_integrator)
        DEALLOCATE(EL%NAME);DEALLOCATE(EL%VORNAME);DEALLOCATE(EL%electric);
 !       DEALLOCATE(EL%PERMFRINGE);
        CALL KILL(EL%L);DEALLOCATE(EL%L);
@@ -3252,6 +3348,8 @@ nullify(EL%filef,el%fileb);
        call alloc(el%P)
 
        ALLOCATE(EL%KIND);EL%KIND=0;ALLOCATE(EL%KNOB);EL%KNOB=.FALSE.;ALLOCATE(EL%probe);EL%probe=.FALSE.;
+       ALLOCATE(el%old_integrator); el%old_integrator=old_integrator_init;
+
        ALLOCATE(EL%NAME);ALLOCATE(EL%VORNAME);ALLOCATE(EL%electric);
        ALLOCATE(EL%skip_ptc_f);   EL%skip_ptc_f=0 ;   ALLOCATE(EL%skip_ptc_b);EL%skip_ptc_b=0  ;
        ALLOCATE(el%do1mapb);   el%do1mapb=.false. ;   ALLOCATE(el%do1mapf);el%do1mapf=.false.  ;
@@ -3321,6 +3419,8 @@ nullify(EL%filef,el%fileb);
     ELP%electric=EL%electric
     ELP%vorname=EL%vorname
     ELP%KIND=EL%KIND
+    ELP%old_integrator=EL%old_integrator
+
     ELP%L=EL%L
     ELP%FINT(1)=EL%FINT(1)
     ELP%FINT(2)=EL%FINT(2)
@@ -3743,6 +3843,8 @@ nullify(EL%filef,el%fileb);
     ELP%electric=EL%electric
     ELP%vorname=EL%vorname
     ELP%KIND=EL%KIND
+    ELP%old_integrator=EL%old_integrator
+
     ELP%L=EL%L
     ELP%FINT(1)=EL%FINT(1)
     ELP%FINT(2)=EL%FINT(2)
@@ -4150,6 +4252,8 @@ nullify(EL%filef,el%fileb);
     ELP%probe=EL%probe
     ELP%even=EL%even
     ELP%KIND=EL%KIND
+    ELP%old_integrator=EL%old_integrator
+
     ELP%PLOT=EL%PLOT
     ELP%L=EL%L
     ELP%FINT(1)=EL%FINT(1)

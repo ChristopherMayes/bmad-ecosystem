@@ -60,6 +60,7 @@ struct_list = [
     'twiss_struct',
     'mode3_struct',
     'bookkeeping_state_struct',
+    'rad_map_struct',
     'rad_int_ele_cache_struct',
     'surface_grid_pt_struct',
     'surface_grid_struct',
@@ -67,8 +68,8 @@ struct_list = [
     'surface_curvature_struct',
     'photon_target_struct',
     'photon_material_struct',
-    'pixel_grid_pt_struct',
-    'pixel_grid_struct',
+    'pixel_pt_struct',
+    'pixel_detec_struct',
     'photon_element_struct',
     'wall3d_vertex_struct',
     'wall3d_section_struct',
@@ -87,10 +88,11 @@ struct_list = [
     'linac_normal_mode_struct',
     'normal_modes_struct',
     'em_field_struct',
+    'strong_beam_struct',
     'track_point_struct',
     'track_struct',
     'synch_rad_common_struct',
-    'csr_parameter_struct',
+    'space_charge_common_struct',
     'bmad_common_struct',
     'rad_int1_struct',
     'rad_int_branch_struct',
@@ -139,6 +141,7 @@ component_no_translate_list = set([
 interface_ignore_list = set([
   'ele_struct%branch',
   'branch_struct%lat',
+  'pixel_grid_struct',
 ])
 
 # List of structure components that are structures and are defined externally.

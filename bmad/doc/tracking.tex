@@ -342,13 +342,13 @@ exit end of the $n$\Th element.
 
 \index{fork}\index{photon_fork}
 Tracking from a \vn{fork} or \vn{photon_fork} (\sref{s:fork}) element
-to the target \vn{branch} is not ``automatic''. That is, since the
+to the downstream \vn{branch} is not ``automatic''. That is, since the
 requirements of how to handle forking can vary greatly from one
 situation to the next, \bmad does not try to track from one \vn{branch}
 to the next in any one of its tracking routines. 
 
 The discussion here is restricted to the case where the particle being
-tracked is simply transferred from the forking element to the target
+tracked is simply transferred from the forking element to the downstream
 branch. [Thus the subject of photon generation is not covered here.]
 
 There are two cases discussed here. The first case is when a given
@@ -357,7 +357,7 @@ the \vn{from_branch} that forks to the beginning of the
 \vn{to_branch}. Appropriate code is:
 \begin{example}
   type (lat_struct), target :: lat   ! Lattice 
-  type (branch_struct) :: to_branch  ! Given target branch
+  type (branch_struct) :: to_branch  ! Given downstream branch
   type (branch_struct), pointer  :: from_branch ! Base branch
   type (ele_struct), pointer :: fork_ele
   type (coord_struct), allocatable :: from_orbit(:), to_orbit(:)
@@ -388,7 +388,7 @@ element, called \vn{to_ele} in the \vn{to_branch} that is connected to
 \vn{fork_ele} need not be the starting element of \vn{to_branch}.
 \begin{example}
   type (lat_struct), target :: lat   ! Lattice 
-  type (branch_struct), pointer :: to_branch  ! Target branch
+  type (branch_struct), pointer :: to_branch  ! downstream branch
   type (ele_struct), pointer :: to_ele
   type (coord_struct), allocatable :: from_orbit(:), to_orbit(:)
   integer ib_to, ie_to
@@ -577,8 +577,8 @@ It should be noted that except for \vn{linear} tracking, none of the
 matrix. The reverse, however, is not true.  The transfer matrix
 routines (\vn{lat_make_mat6}, etc.)  will do tracking.
 
-For determining what tracking methods are valid for a given element,
-use \Hyperref{r:valid.tracking.method}{valid_tracking_method} and
+For determining what tracking methods are valid for a given element, use
+\Hyperref{r:valid.tracking.method}{valid_tracking_method} and
 \Hyperref{r:valid.mat6.calc.method}{valid_mat6_calc_method} functions
 \begin{example}
   print *, "Method is valid: ", valid_tracking_method(ele, symp_lie_ptc\$)
@@ -592,45 +592,40 @@ just before and after each element.
 \section{Using Time as the Independent Variable}
 \label{s:time.tracking}
 
-Time tracking uses time as the independent variable as opposed to the
-standard $s$ based tracking. Time tracking is useful when a particle's
-trajectory can reverse itself longitudinally. For example, low energy
-particles generated when a relativistic particle hits the vacuum
-chamber wall are good candidates for time tracking. 
+Time tracking uses time as the independent variable as opposed to the standard $s$ based
+tracking. Time tracking is useful when a particle's trajectory can reverse itself
+longitudinally. For example, low energy particles generated when a relativistic particle hits the
+vacuum chamber wall are good candidates for time tracking.
 
-Currently, the only \vn{ele%tracking_method} available for time
-tracking is \vn{time_runge_kutta\$}. Time tracking needs extra
-bookkeeping due to the fact that the particle may reverse directions.
-See the \vn{dark_current_tracker} program as an example. 
+Currently, the only \vn{ele%tracking_method} available for time tracking is
+\vn{time_runge_kutta\$}. Time tracking needs extra bookkeeping due to the fact that the particle may
+reverse directions.  See the \vn{dark_current_tracker} program as an example.
 
-Note: Using time as the independent variable can be used with both
-absolute and relative time tracking (\sref{s:rf.time}).
+Note: Using time as the independent variable can be used with both absolute and relative time
+tracking (\sref{s:rf.time}).
 
 %----------------------------------------------------------------
 \section{Absolute/Relative Time Tracking}
 \label{s:abs.time}
 \index{absolute time tracking}
 
-\index{lat_struct!absolute_time_tracking}
-Absolute or relative time tracking (\sref{s:rf.time}) can be set after
-the lattice file is parsed, by setting the
-\vn{%absolute_time_tracking} component of the \vn{lat_struct}. when
+\index{bmad_common_struct!absolute_time_tracking}
+Absolute or relative time tracking (\sref{s:rf.time}) can be set after the lattice file is parsed,
+by setting the \vn{%absolute_time_tracking} component of the \vn{lat_struct}. when
 \vn{%absolute_time_tracking} is toggled, the
-\Hyperref{r:autoscale.phase.and.amp}{autoscale_phase_and_amp} must be
-called to reset the appropriate phase offsets and scale amplitudes.
+\Hyperref{r:autoscale.phase.and.amp}{autoscale_phase_and_amp} must be called to reset the
+appropriate phase offsets and scale amplitudes.
 
 %----------------------------------------------------------------
 \section{Taylor Maps}
 \label{s:taylor.track}
 \index{taylor Map}
 
-A list of routines for manipulating Taylor maps is given
-in~\sref{r:taylor}. The order of the Taylor maps is set in the lattice
-file using the \vn{parameter} statement (\sref{s:param}). In a program
-this can be overridden using the routine
-\Hyperref{r:set.ptc}{set_ptc}. The routine
-\Hyperref{r:taylor.coef}{taylor_coef} can be used to get the
-coefficient of any given term in a Taylor map.
+A list of routines for manipulating Taylor maps is given in~\sref{r:taylor}. The order of the Taylor
+maps is set in the lattice file using the \vn{parameter} statement (\sref{s:param}). In a program
+this can be overridden using the routine \Hyperref{r:set.ptc}{set_ptc}. The routine
+\Hyperref{r:taylor.coef}{taylor_coef} can be used to get the coefficient of any given term in a
+Taylor map.
 \begin{example}
   type (taylor_struct) t_map(6)
   ...

@@ -1,7 +1,6 @@
 module changed_attribute_bookkeeper
 
 use equal_mod
-use pointer_to_branch_mod
 
 implicit none
 
@@ -290,8 +289,7 @@ endif
 
 ! Transfer matrix calc needs to be flagged
 
-if (ele%key /= overlay$ .and. ele%key /= group$ .and. &
-    ele%lord_status /= multipass_lord$) then
+if (ele%key /= overlay$ .and. ele%key /= group$ .and. ele%lord_status /= multipass_lord$) then
   call set_ele_status_stale (ele, mat6_group$)
 endif
 
@@ -442,6 +440,17 @@ endif
 ! By element type
 
 select case (ele%key)
+
+! BeamBeam
+
+case (beambeam$)
+  if (dep2_set) then
+    if (associated(a_ptr, ele%value(ks$))) then
+      ele%value(bs_field$) = ele%value(ks$) * p0c_factor
+    elseif (associated(a_ptr, ele%value(bs_field$))) then
+      ele%value(ks$) = ele%value(bs_field$) / p0c_factor
+    endif
+  endif
 
 ! Beginning_ele
 

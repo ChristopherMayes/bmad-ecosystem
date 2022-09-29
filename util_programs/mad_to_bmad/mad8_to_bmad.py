@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 #+
 # Script to convert from MAD8 lattice format to Bmad lattice format.
 # See the README file for more details
@@ -38,7 +40,7 @@ class common_struct:
     self.seq_dict = OrderedDict()    # List of all sequences.
     self.super_list = []             # List of superimpose statements to be prepended to the bmad file.
     self.ele_dict = {}               # Dict of elements
-    self.var_def_list = []               # List of "A = B" sets after translation to Bmad. Does not Include "A,P = B" parameter sets.
+    self.var_def_list = []           # List of "A = B" sets after translation to Bmad. Does not Include "A,P = B" parameter sets.
     self.var_name_list = []          # List of mad8 variable names.
     self.f_in = []         # MAD8 input files
     self.f_out = []        # Bmad output files
@@ -131,7 +133,7 @@ ele_type_translate = {
 }
 
 ignore_mad8_param = ['lrad', 'slot_id', 'aper_tol', 'apertype', 'assembly_id', 'removed',
-                     'mech_sep', 'betrf', 'tfill', 'shunt', 'pg', 'eloss', 'lfile', 'tfile']
+                     'mech_sep', 'betrf', 'tfill', 'shunt', 'pg', 'eloss', 'lfile', 'tfile', 'e0']
 
 bmad_param_name = {
     'deltae':   'voltage',
@@ -795,6 +797,31 @@ def parse_command(command, dlist):
     if 'pc' in params:        f_out.write('parameter[p0c] = ' + bmad_expression(params['pc'], 'pc') + '\n')
     if 'gamma' in params:     f_out.write('parameter[E_tot] = mass_of(parameter[particle]) * ' + add_parens(bmad_expression(params['gamma'], '')) + '\n')
     if 'npart' in params:     f_out.write('parameter[n_part] = ' + bmad_expression(params['npart'], '') + '\n')
+    return
+
+  # Beta0
+
+  if dlist[0] == 'beta0' or (dlist[1] == ':' and dlist[2] == 'beta0'):
+    if dlist[0] == 'beta0':
+      params = action_parameter_dictionary(dlist[2:])
+    else:
+      params = action_parameter_dictionary(dlist[4:])
+
+    if 'betx' in params:      f_out.write(f'beginning[beta_a] = {bmad_expression(params["betx"], "")}\n')
+    if 'bety' in params:      f_out.write(f'beginning[beta_b] = {bmad_expression(params["bety"], "")}\n')
+    if 'alfx' in params:      f_out.write(f'beginning[alpha_a] = {bmad_expression(params["alfx"], "")}\n')
+    if 'alfy' in params:      f_out.write(f'beginning[alpha_b] = {bmad_expression(params["alfy"], "")}\n')
+    if 'mux' in params:       f_out.write(f'beginning[phi_a] = twopi * {add_parens(bmad_expression(params["mux"], ""))}\n')
+    if 'muy' in params:       f_out.write(f'beginning[phi_b] = twopi * {add_parens(bmad_expression(params["muy"], ""))}\n')
+    if 'dx' in params:        f_out.write(f'beginning[eta_x] = {bmad_expression(params["dx"], "")}\n')
+    if 'dy' in params:        f_out.write(f'beginning[eta_y] = {bmad_expression(params["dy"], "")}\n')
+    if 'dpx' in params:       f_out.write(f'beginning[etap_x] = {bmad_expression(params["dpx"], "")}\n')
+    if 'dpy' in params:       f_out.write(f'beginning[etap_y] = {bmad_expression(params["dpy"], "")}\n')
+    if 'x' in params:         f_out.write(f'particle_start[x] = {bmad_expression(params["x"], "")}\n')
+    if 'y' in params:         f_out.write(f'particle_start[y] = {bmad_expression(params["y"], "")}\n')
+    if 'px' in params:        f_out.write(f'particle_start[px] = {bmad_expression(params["px"], "")}\n')
+    if 'py' in params:        f_out.write(f'particle_start[py] = {bmad_expression(params["py"], "")}\n')
+    if 'energy' in params:    f_out.write(f'parameter[E_tot] = {bmad_expression(params["energy"], "energy")}\n')
     return
 
   # "qf, k1 = ..." parameter set

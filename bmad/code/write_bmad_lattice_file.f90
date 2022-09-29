@@ -26,6 +26,7 @@
 subroutine write_bmad_lattice_file (bmad_file, lat, err, output_form, orbit0)
 
 use write_lat_file_mod, dummy => write_bmad_lattice_file
+use expression_mod, only: end_stack$, variable$, split_expression_string, expression_stack_to_string
 
 implicit none
 
@@ -72,6 +73,7 @@ type (em_taylor_term_struct), pointer :: t_term
 type (wall3d_section_struct), pointer :: section
 type (wall3d_vertex_struct), pointer :: v
 type (bmad_common_struct), parameter :: bmad_com_default = bmad_common_struct()
+type (space_charge_common_struct), parameter :: space_charge_com_default = space_charge_common_struct()
 type (ac_kicker_struct), pointer :: ac
 type (expression_atom_struct), pointer :: stack(:)
 type (str_index_struct) str_index
@@ -163,11 +165,8 @@ if (lat%param%default_tracking_species /= ref_particle$) then
   write (iu, '(4a)')    'parameter[default_tracking_species] = ', species_name(lat%param%default_tracking_species)
 endif
 
-call write_if_logic_param_changed (lat%param%high_energy_space_charge_on, .false., 'parameter[high_energy_space_charge_on]')
-
 if (lat%param%n_part /= 0)             write (iu, '(2a)') 'parameter[n_part]                 = ', re_str(lat%param%n_part)
 
-write (iu, '(a, l1)') 'parameter[absolute_time_tracking]    = ', lat%absolute_time_tracking
 ele => lat%ele(lat%n_ele_track)
 if (ele%name /= 'END' .or. ele%key /= marker$) then
   write (iu, '(a)') 'parameter[no_end_marker]          =  T'
@@ -193,7 +192,6 @@ call write_if_real_param_changed  (bmad_com%autoscale_amp_abs_tol,           bma
 call write_if_real_param_changed  (bmad_com%autoscale_amp_rel_tol,           bmad_com_default%autoscale_amp_rel_tol,            'bmad_com[autoscale_amp_rel_tol]')
 call write_if_real_param_changed  (bmad_com%autoscale_phase_tol,             bmad_com_default%autoscale_phase_tol,              'bmad_com[autoscale_phase_tol]')
 call write_if_real_param_changed  (bmad_com%electric_dipole_moment,          bmad_com_default%electric_dipole_moment,           'bmad_com[electric_dipole_moment]')
-call write_if_real_param_changed  (bmad_com%ptc_cut_factor,                  bmad_com_default%ptc_cut_factor,                   'bmad_com[ptc_cut_factor]')
 call write_if_real_param_changed  (bmad_com%sad_eps_scale,                   bmad_com_default%sad_eps_scale,                    'bmad_com[sad_eps_scale]')
 call write_if_real_param_changed  (bmad_com%sad_amp_max,                     bmad_com_default%sad_amp_max,                      'bmad_com[sad_amp_max]')
 call write_if_int_param_changed   (bmad_com%sad_n_div_max,                   bmad_com_default%sad_n_div_max,                    'bmad_com[sad_n_div_max]')
@@ -204,8 +202,7 @@ call write_if_int_param_changed   (bmad_com%max_num_runge_kutta_step,        bma
 call write_if_logic_param_changed (bmad_com%rf_phase_below_transition_ref,   bmad_com_default%rf_phase_below_transition_ref,    'bmad_com[rf_phase_below_transition_ref]')
 call write_if_logic_param_changed (bmad_com%sr_wakes_on,                     bmad_com_default%sr_wakes_on,                      'bmad_com[sr_wakes_on]')
 call write_if_logic_param_changed (bmad_com%lr_wakes_on,                     bmad_com_default%lr_wakes_on,                      'bmad_com[lr_wakes_on]')
-call write_if_logic_param_changed (bmad_com%ptc_use_orientation_patches,     bmad_com_default%ptc_use_orientation_patches,      'bmad_com[ptc_use_orientation_patches]')
-call write_if_logic_param_changed (bmad_com%auto_bookkeeper,                 bmad_com_default%auto_bookkeeper,                  'bmad_com[auto_bookkeeper]')
+call write_if_logic_param_changed (bmad_com%high_energy_space_charge_on,     bmad_com_default%high_energy_space_charge_on,      'bmad_com[high_energy_space_charge_on]')
 call write_if_logic_param_changed (bmad_com%csr_and_space_charge_on,         bmad_com_default%csr_and_space_charge_on,          'bmad_com[csr_and_space_charge_on]')
 call write_if_logic_param_changed (bmad_com%spin_tracking_on,                bmad_com_default%spin_tracking_on,                 'bmad_com[spin_tracking_on]')
 call write_if_logic_param_changed (bmad_com%backwards_time_tracking_on,      bmad_com_default%backwards_time_tracking_on,       'bmad_com[backwards_time_tracking_on]')
@@ -214,15 +211,34 @@ call write_if_logic_param_changed (bmad_com%radiation_damping_on,            bma
 call write_if_logic_param_changed (bmad_com%radiation_zero_average,          bmad_com_default%radiation_zero_average,           'bmad_com[radiation_zero_average]')
 call write_if_logic_param_changed (bmad_com%radiation_fluctuations_on,       bmad_com_default%radiation_fluctuations_on,        'bmad_com[radiation_fluctuations_on]')
 call write_if_logic_param_changed (bmad_com%conserve_taylor_maps,            bmad_com_default%conserve_taylor_maps,             'bmad_com[conserve_taylor_maps]')
-call write_if_logic_param_changed (bmad_com%absolute_time_tracking_default,  bmad_com_default%absolute_time_tracking_default,   'bmad_com[absolute_time_tracking_default]')
+call write_if_logic_param_changed (bmad_com%absolute_time_ref_shift,         bmad_com_default%absolute_time_ref_shift,          'bmad_com[absolute_time_ref_shift]')
+call write_if_logic_param_changed (bmad_com%absolute_time_tracking,          bmad_com_default%absolute_time_tracking,           'bmad_com[absolute_time_tracking]')
 call write_if_logic_param_changed (bmad_com%convert_to_kinetic_momentum,     bmad_com_default%convert_to_kinetic_momentum,      'bmad_com[convert_to_kinetic_momentum]')
 call write_if_logic_param_changed (bmad_com%aperture_limit_on,               bmad_com_default%aperture_limit_on,                'bmad_com[aperture_limit_on]')
-call write_if_logic_param_changed (bmad_com%ptc_print_info_messages,         bmad_com_default%ptc_print_info_messages,          'bmad_com[ptc_print_info_messages]')
 
-call write_if_int_param_changed   (ptc_com%max_fringe_order,          ptc_com_default%max_fringe_order,      'ptc_com[max_fringe_order]')
-call write_if_logic_param_changed (ptc_com%old_integrator,            ptc_com_default%old_integrator,        'ptc_com[old_integrator]')
-call write_if_logic_param_changed (ptc_com%exact_model,               ptc_com_default%exact_model,           'ptc_com[exact_model]')
-call write_if_logic_param_changed (ptc_com%exact_misalign,            ptc_com_default%exact_misalign,        'ptc_com[exact_misalign]')
+call write_if_logic_param_changed (ptc_com%use_orientation_patches,     ptc_com_default%use_orientation_patches,      'ptc_com[use_orientation_patches]')
+call write_if_logic_param_changed (ptc_com%print_info_messages,         ptc_com_default%print_info_messages,          'ptc_com[print_info_messages]')
+call write_if_real_param_changed  (ptc_com%cut_factor,                  ptc_com_default%cut_factor,                   'ptc_com[cut_factor]')
+call write_if_int_param_changed   (ptc_com%max_fringe_order,            ptc_com_default%max_fringe_order,             'ptc_com[max_fringe_order]')
+call write_if_real_param_changed  (ptc_com%vertical_kick,               ptc_com_default%vertical_kick,                'ptc_com[vertical_kick]')
+call write_if_int_param_changed   (ptc_com%old_integrator,              ptc_com_default%old_integrator,               'ptc_com[old_integrator]')
+call write_if_logic_param_changed (ptc_com%exact_model,                 ptc_com_default%exact_model,                  'ptc_com[exact_model]')
+call write_if_logic_param_changed (ptc_com%exact_misalign,              ptc_com_default%exact_misalign,               'ptc_com[exact_misalign]')
+
+call write_if_real_param_changed (space_charge_com%ds_track_step,              space_charge_com_default%ds_track_step,              'space_charge_com[ds_track_step]')
+call write_if_real_param_changed (space_charge_com%dt_track_step,              space_charge_com_default%dt_track_step,              'space_charge_com[dt_track_step]')
+call write_if_real_param_changed (space_charge_com%cathode_strength_cutoff,    space_charge_com_default%cathode_strength_cutoff,    'space_charge_com[cathode_strength_cutoff]')
+call write_if_real_param_changed (space_charge_com%rel_tol_tracking,           space_charge_com_default%rel_tol_tracking,           'space_charge_com[rel_tol_tracking]')
+call write_if_real_param_changed (space_charge_com%abs_tol_tracking,           space_charge_com_default%abs_tol_tracking,           'space_charge_com[abs_tol_tracking]')
+call write_if_real_param_changed (space_charge_com%beam_chamber_height,        space_charge_com_default%beam_chamber_height,        'space_charge_com[beam_chamber_height]')
+call write_if_real_param_changed (space_charge_com%sigma_cutoff,               space_charge_com_default%sigma_cutoff,               'space_charge_com[sigma_cutoff]')
+call write_if_int_param_changed  (space_charge_com%n_bin,                      space_charge_com_default%n_bin,                      'space_charge_com[n_bin]')
+call write_if_int_param_changed  (space_charge_com%particle_bin_span,          space_charge_com_default%particle_bin_span,          'space_charge_com[particle_bin_span]')
+call write_if_int_param_changed  (space_charge_com%n_shield_images,            space_charge_com_default%n_shield_images,            'space_charge_com[n_shield_images]')
+call write_if_int_param_changed  (space_charge_com%sc_min_in_bin,              space_charge_com_default%sc_min_in_bin,              'space_charge_com[sc_min_in_bin]')
+call write_if_logic_param_changed (space_charge_com%lsc_kick_transverse_dependence, space_charge_com_default%lsc_kick_transverse_dependence, 'space_charge_com[lsc_kick_transverse_dependence]')
+
+if (space_charge_com%diagnostic_output_file /= '') write (iu, '(2a)') 'space_charge_com[diagnostic_output_file] = ', quote(space_charge_com%diagnostic_output_file)
 
 ele => lat%ele(0) 
 
@@ -239,20 +255,21 @@ if (ele%ref_time /= 0)     write (iu, '(2a)') 'beginning[ref_time] = ', re_str(e
 ! Write beginning Twiss even for closed lattices as that is useful info.
 
 write (iu, '(2a)')
-if (ele%a%beta /= 0)     write (iu, '(2a)') 'beginning[beta_a]   = ', re_str(ele%a%beta)
-if (ele%a%alpha /= 0)    write (iu, '(2a)') 'beginning[alpha_a]  = ', re_str(ele%a%alpha)
-if (ele%a%phi /= 0)      write (iu, '(2a)') 'beginning[phi_a]    = ', re_str(ele%a%phi)
-if (ele%x%eta /= 0)      write (iu, '(2a)') 'beginning[eta_x]    = ', re_str(ele%x%eta)
-if (ele%x%etap /= 0)     write (iu, '(2a)') 'beginning[etap_x]   = ', re_str(ele%x%etap)
-if (ele%b%beta /= 0)     write (iu, '(2a)') 'beginning[beta_b]   = ', re_str(ele%b%beta)
-if (ele%b%alpha /= 0)    write (iu, '(2a)') 'beginning[alpha_b]  = ', re_str(ele%b%alpha)
-if (ele%b%phi /= 0)      write (iu, '(2a)') 'beginning[phi_b]    = ', re_str(ele%b%phi)
-if (ele%y%eta /= 0)      write (iu, '(2a)') 'beginning[eta_y]    = ', re_str(ele%y%eta)
-if (ele%y%etap /= 0)     write (iu, '(2a)') 'beginning[etap_y]   = ', re_str(ele%y%etap)
-if (ele%c_mat(1,1) /= 0) write (iu, '(2a)') 'beginning[cmat_11]  = ', re_str(ele%c_mat(1,1))
-if (ele%c_mat(1,2) /= 0) write (iu, '(2a)') 'beginning[cmat_12]  = ', re_str(ele%c_mat(1,2))
-if (ele%c_mat(2,1) /= 0) write (iu, '(2a)') 'beginning[cmat_21]  = ', re_str(ele%c_mat(2,1))
-if (ele%c_mat(2,2) /= 0) write (iu, '(2a)') 'beginning[cmat_22]  = ', re_str(ele%c_mat(2,2))
+if (ele%a%beta /= 0)     write (iu, '(2a)') 'beginning[beta_a]    = ', re_str(ele%a%beta)
+if (ele%a%alpha /= 0)    write (iu, '(2a)') 'beginning[alpha_a]   = ', re_str(ele%a%alpha)
+if (ele%a%phi /= 0)      write (iu, '(2a)') 'beginning[phi_a]     = ', re_str(ele%a%phi)
+if (ele%x%eta /= 0)      write (iu, '(2a)') 'beginning[eta_x]     = ', re_str(ele%x%eta)
+if (ele%x%etap /= 0)     write (iu, '(2a)') 'beginning[etap_x]    = ', re_str(ele%x%etap)
+if (ele%b%beta /= 0)     write (iu, '(2a)') 'beginning[beta_b]    = ', re_str(ele%b%beta)
+if (ele%b%alpha /= 0)    write (iu, '(2a)') 'beginning[alpha_b]   = ', re_str(ele%b%alpha)
+if (ele%b%phi /= 0)      write (iu, '(2a)') 'beginning[phi_b]     = ', re_str(ele%b%phi)
+if (ele%y%eta /= 0)      write (iu, '(2a)') 'beginning[eta_y]     = ', re_str(ele%y%eta)
+if (ele%y%etap /= 0)     write (iu, '(2a)') 'beginning[etap_y]    = ', re_str(ele%y%etap)
+if (ele%c_mat(1,1) /= 0) write (iu, '(2a)') 'beginning[cmat_11]   = ', re_str(ele%c_mat(1,1))
+if (ele%c_mat(1,2) /= 0) write (iu, '(2a)') 'beginning[cmat_12]   = ', re_str(ele%c_mat(1,2))
+if (ele%c_mat(2,1) /= 0) write (iu, '(2a)') 'beginning[cmat_21]   = ', re_str(ele%c_mat(2,1))
+if (ele%c_mat(2,2) /= 0) write (iu, '(2a)') 'beginning[cmat_22]   = ', re_str(ele%c_mat(2,2))
+if (ele%mode_flip)       write (iu, '(a)')  'beginning[mode_flip] = T'
 
 ! particle_start. Note: For an open geometry, orbit0 should be the same as lat%particle_start
 
@@ -407,11 +424,11 @@ do ib = 0, ubound(lat%branch, 1)
         line = trim(line) // '}'
 
       else
-        line = trim(line) // ', frequencies = {(' // re_str(ac%frequencies(1)%f) // &
-                  ', ' // re_str(ac%frequencies(1)%amp) // ', ' // re_str(ac%frequencies(1)%phi)  // ')'
-        do i = 2, size(ac%frequencies)
-          line = trim(line) // ', (' // re_str(ac%frequencies(i)%f) // &
-                  ', ' // re_str(ac%frequencies(i)%amp) // ', ' // re_str(ac%frequencies(i)%phi) // ')'
+        line = trim(line) // ', frequencies = {(' // re_str(ac%frequency(1)%f) // &
+                  ', ' // re_str(ac%frequency(1)%amp) // ', ' // re_str(ac%frequency(1)%phi)  // ')'
+        do i = 2, size(ac%frequency)
+          line = trim(line) // ', (' // re_str(ac%frequency(i)%f) // &
+                  ', ' // re_str(ac%frequency(i)%amp) // ', ' // re_str(ac%frequency(i)%phi) // ')'
         enddo
         line = trim(line) // '}'
       endif
@@ -741,7 +758,7 @@ do ib = 0, ubound(lat%branch, 1)
         this_ele%value(num_steps$) = 0
         this_ele%value(integrator_order$) = 0
         call attribute_bookkeeper (this_ele, .true.)
-        if (attrib%name == 'DS_STEP' .and. val == this_ele%value(ds_step$)) cycle
+        if (attrib%name == 'DS_STEP' .and. abs(val - this_ele%value(ds_step$)) < 1e-6*val) cycle
         if (attrib%name == 'INTEGRATOR_ORDER' .and. val == this_ele%value(integrator_order$)) cycle        
       endif
 
@@ -1023,8 +1040,9 @@ do ie = lat%n_ele_track+1, lat%n_ele_max
           write (line, '(1000a)') trim(line), ':{', (re_str(ctl%y_knot(ix)), ', ', ix = 1, size(ctl%y_knot))
           n = len_trim(line)
           line(n:) = '}'
-          call write_lat_line(line, iu, .false.)
         endif
+
+        if (len_trim(line) > 1000) call write_lat_line(line, iu, .false.)
       enddo j_loop
     endif
 
@@ -1296,7 +1314,6 @@ do ib = 0, ubound(lat%branch, 1)
 
   if (is_false(ele0%value(inherit_from_fork$))) write (iu, '(3a)') trim(branch%name), '[particle] = ', trim(species_name(branch%param%particle))
   write (iu, '(3a)') trim(branch%name), '[p0c]      = ', re_str(ele0%value(p0c$))
-  call write_if_logic_param_changed (branch%param%high_energy_space_charge_on, .false., trim(branch%name) // '[high_energy_space_charge_on]')
   if (branch%ix_from_branch >= 0) write (iu, '(2a, l1)') trim(branch%name), '[inherit_from_fork]      = ', is_true(ele0%value(inherit_from_fork$))
 
 enddo

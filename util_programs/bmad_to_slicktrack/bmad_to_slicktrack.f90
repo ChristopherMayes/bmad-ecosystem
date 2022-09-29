@@ -34,7 +34,7 @@ type (ele_struct), pointer :: ele
 type (nametable_struct) nametab
 
 real(rp) slick_params(3), s_start, length, scale
-integer i, j, ix, n_arg, slick_class, nb, nq, ne, n_count, n_edge, sgn
+integer i, j, ix, n_arg, slick_class, nbv, nbh, nq, ne, n_count, n_edge, sgn
 
 logical end_here, added, split_eles, always_include_bend_edges, ins_e1, ins_e2
 
@@ -89,7 +89,6 @@ if (unique_name /= '') call create_unique_ele_names(lat, 0, unique_name)
 
 write (1, '(a)') '    1 IP        0.00000000  0.00000000  0.00000000    1   0.000000    0'
 
-
 call nametable_init(nametab)
 
 do i = 1, lat%n_ele_track
@@ -129,7 +128,8 @@ write (1, *)
 write (1, '(a)') '----------------------------------------------------------------------------'
 write (1, *)
 
-nb = 0
+nbv = 0
+nbh = 0
 nq = 0
 n_edge = 0
 
@@ -152,8 +152,10 @@ do i = 1, lat%n_ele_track
       else
         call write_insert_ele_def (nq, ['CQ', 'RQ', 'VQ', 'HQ', 'VC', 'HC'])    
       endif
+    elseif (modulo(nint(2*ele%value(ref_tilt$)/pi), 2) == 0) then  ! Not tilted
+      call write_insert_ele_def (nbv, ['VD'])
     else
-      call write_insert_ele_def (nb, ['VD'])
+      call write_insert_ele_def (nbh, ['HD'])
     endif
 
     ins_e1 = at_this_ele_end(entrance_end$, nint(ele%value(fringe_at$)))
@@ -187,7 +189,8 @@ write (1, *)
 write (1, '(a)') '----------------------------------------------------------------------------'
 write (1, *)
 
-nb = 0
+nbv = 0
+nbh = 0
 nq = 0
 ne = 0
 n_edge = 0
@@ -210,7 +213,7 @@ do i = 1, lat%n_ele_track
     case (solenoid$)
       call write_ele_position (line, ne, ele%name, ele%s_start)
 
-    case (sextupole$, rfcavity$, beambeam$, hkicker$, vkicker$, kicker$, quadrupole$, marker$)
+    case (sextupole$, rfcavity$, beambeam$, hkicker$, vkicker$, kicker$, quadrupole$, marker$, multipole$, ab_multipole$, octupole$)
       call write_ele_position (line, ne, ele%name, ele%s_start + 0.5_rp * ele%value(l$))
     end select
 
@@ -259,7 +262,11 @@ do i = 1, lat%n_ele_track
     else
       if (ins_e1 .and. (ele%value(e1$) /= 0 .or. always_include_bend_edges)) call write_insert_ele_position (line, ne, n_edge, ['EE'], s_start, .true.)
       call write_ele_position (line, ne, name, s_start + 0.25_rp * length)
-      call write_insert_ele_position (line, ne, nb, ['VD'], s_start + 0.5_rp * length, .true.)
+      if (modulo(nint(2*ele%value(ref_tilt$)/pi), 2) == 0) then  ! Not tilted
+        call write_insert_ele_position (line, ne, nbv, ['VD'], s_start + 0.5_rp * length, .true.)
+      else
+        call write_insert_ele_position (line, ne, nbh, ['HD'], s_start + 0.5_rp * length, .true.)
+      endif
       call write_ele_position (line, ne, name, s_start + 0.75_rp * length)
       if (ins_e2 .and. (ele%value(e2$) /= 0 .or. always_include_bend_edges)) call write_insert_ele_position (line, ne, n_edge, ['EE'], ele%s, .true.)
     endif
@@ -292,7 +299,7 @@ do i = 1, lat%n_ele_track
   case (solenoid$)
     call write_ele_position (line, ne, ele%name, ele%s_start)
 
-  case (sextupole$, rfcavity$, beambeam$, hkicker$, vkicker$, kicker$, marker$)
+  case (sextupole$, rfcavity$, beambeam$, hkicker$, vkicker$, kicker$, marker$, multipole$, ab_multipole$, octupole$)
     call write_ele_position (line, ne, ele%name, ele%s_start + 0.5_rp * ele%value(l$))
   end select
 enddo
@@ -354,13 +361,9 @@ case (quadrupole$)
   if (ele%value(tilt$) == 0) then
     slick_class = 3
     slick_params = [strength_scale*knl(1), 0.0_rp, len_scale*ele%value(l$)]
-
   else
-    if (abs(abs(tilt(1)) - pi/4) > 1d-6) then
-      print *, 'Bend element has tilt that is not +/- pi/4! ' // trim(ele%name)
-    endif
     slick_class = 4
-    slick_params = [strength_scale*knl(1)*sign_of(tilt(1)), 0.0_rp, len_scale*ele%value(l$)]
+    slick_params = [strength_scale*knl(1), ele%value(tilt$), len_scale*ele%value(l$)]
   endif
 
 case (rfcavity$)
@@ -387,7 +390,7 @@ case (beambeam$)
   slick_class = 17
   slick_params = [0.0_rp, 0.0_rp, 0.0_rp]
 
-case (hkicker$, vkicker$, kicker$)
+case (hkicker$, vkicker$, kicker$, octupole$)
   if (tilt(0) == 0) then
     slick_class = 6
     slick_params = [strength_scale*knl(0), 0.0_rp, len_scale*ele%value(l$)]    
@@ -402,6 +405,15 @@ case (marker$)
 
 case (drift$, monitor$)
   ! Ignore
+
+case (multipole$, ab_multipole$)
+  call multipole_ele_to_kt (ele, .true., ix_pole_max, knl, tilt, magnetic$)
+  if (knl(0) /= 0 .or. any(knl(2:) /= 0)) then
+    print *, 'Cannot properly translate: ' // trim(ele%name) // ': ' // trim(key_name(ele%key))
+    print *, '  Problem is that there are non-quadrupole kike multipoles. These multipoles will be ignored'
+  endif
+    slick_class = 4
+  slick_params = [strength_scale*knl(1), tilt(1), len_scale*ele%value(l$)]
 
 case default
   print *, 'Cannot translate: ' // trim(ele%name) // ': ' // trim(key_name(ele%key))
@@ -435,8 +447,12 @@ do i = 1, size(names)
   case ('VQ'); line = '    7 VQ______  0.00000000  0.00000000  0.10000000    1   0.000000    0'
   case ('RQ'); line = '    4 RQ______  0.00000000  0.00000000  0.00000000    1   0.000000    0'
   case ('CQ'); line = '    3 CQ______  0.00000000  0.00000000  0.00000000    1   0.000000    0'
+  case ('HD'); line = '    6 HD______  0.00000000  0.00000000  0.10000000    1   0.000000    0'
   case ('VD'); line = '    7 VD______  0.00000000  0.00000000  0.10000000    1   0.000000    0'
   case ('EE'); write (line, '(i5, a, 2f12.8, a)') id, ' EE______', edge_kl, g,    ' 0.00000000    1   0.000000    0'
+  case default
+    print *, 'INTERNAL ERROR IN WRITE_INSERT_ELE_DEF!'
+    stop
   end select
 
   line(15-j:14) = nc(1:j)

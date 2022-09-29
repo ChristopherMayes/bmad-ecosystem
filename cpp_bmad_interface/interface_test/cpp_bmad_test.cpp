@@ -272,6 +272,9 @@ void set_CPP_ac_kicker_freq_test_pattern (CPP_ac_kicker_freq& C, int ix_patt) {
   // c_side.test_pat[real, 0, NOT]
   rhs = 3 + offset; C.phi = rhs;
 
+  // c_side.test_pat[integer, 0, NOT]
+  rhs = 4 + offset; C.rf_clock_harmonic = rhs;
+
 
 }
 
@@ -330,10 +333,10 @@ void set_CPP_ac_kicker_test_pattern (CPP_ac_kicker& C, int ix_patt) {
 
   // c_side.test_pat[type, 1, ALLOC]
   if (ix_patt < 3) 
-    C.frequencies.resize(0);
+    C.frequency.resize(0);
   else {
-    C.frequencies.resize(3);
-    for (unsigned int i = 0; i < C.frequencies.size(); i++)  {set_CPP_ac_kicker_freq_test_pattern(C.frequencies[i], ix_patt+i+1);}
+    C.frequency.resize(3);
+    for (unsigned int i = 0; i < C.frequency.size(); i++)  {set_CPP_ac_kicker_freq_test_pattern(C.frequency[i], ix_patt+i+1);}
   }
 
 
@@ -636,7 +639,7 @@ void set_CPP_coord_test_pattern (CPP_coord& C, int ix_patt) {
   rhs = 7 + offset; C.charge = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 8 + offset; C.path_len = rhs;
+  rhs = 8 + offset; C.dt_ref = rhs;
 
   // c_side.test_pat[real, 0, NOT]
   rhs = 9 + offset; C.r = rhs;
@@ -2788,29 +2791,80 @@ extern "C" void test_c_bookkeeping_state (Opaque_bookkeeping_state_class* F, boo
 //--------------------------------------------------------------
 //--------------------------------------------------------------
 
+extern "C" void test2_f_rad_map (CPP_rad_map&, bool&);
+
+void set_CPP_rad_map_test_pattern (CPP_rad_map& C, int ix_patt) {
+
+  int rhs, offset = 100 * ix_patt;
+
+  // c_side.test_pat[real, 1, NOT]
+  for (unsigned int i = 0; i < C.ref_orb.size(); i++)
+    {int rhs = 101 + i + 1 + offset; C.ref_orb[i] = rhs;}
+  // c_side.test_pat[real, 1, NOT]
+  for (unsigned int i = 0; i < C.damp_vec.size(); i++)
+    {int rhs = 101 + i + 2 + offset; C.damp_vec[i] = rhs;}
+  // c_side.test_pat[real, 2, NOT]
+  for (unsigned int i = 0; i < C.damp_mat.size(); i++)  for (unsigned int j = 0; j < C.damp_mat[0].size(); j++) 
+    {int rhs = 101 + i + 10*(j+1) + 3 + offset; C.damp_mat[i][j] = rhs;}
+  // c_side.test_pat[real, 2, NOT]
+  for (unsigned int i = 0; i < C.stoc_mat.size(); i++)  for (unsigned int j = 0; j < C.stoc_mat[0].size(); j++) 
+    {int rhs = 101 + i + 10*(j+1) + 4 + offset; C.stoc_mat[i][j] = rhs;}
+
+}
+
+//--------------------------------------------------------------
+
+extern "C" void test_c_rad_map (Opaque_rad_map_class* F, bool& c_ok) {
+
+  CPP_rad_map C, C2;
+
+  c_ok = true;
+
+  rad_map_to_c (F, C);
+  set_CPP_rad_map_test_pattern (C2, 1);
+
+  if (C == C2) {
+    cout << " rad_map: C side convert F->C: Good" << endl;
+  } else {
+    cout << " rad_map: C SIDE CONVERT F->C: FAILED!" << endl;
+    c_ok = false;
+  }
+
+  set_CPP_rad_map_test_pattern (C2, 2);
+  bool c_ok2;
+  test2_f_rad_map (C2, c_ok2);
+  if (!c_ok2) c_ok = false;
+
+  set_CPP_rad_map_test_pattern (C, 3);
+  if (C == C2) {
+    cout << " rad_map: F side convert F->C: Good" << endl;
+  } else {
+    cout << " rad_map: F SIDE CONVERT F->C: FAILED!" << endl;
+    c_ok = false;
+  }
+
+  set_CPP_rad_map_test_pattern (C2, 4);
+  rad_map_to_f (C2, F);
+
+}
+
+//--------------------------------------------------------------
+//--------------------------------------------------------------
+
 extern "C" void test2_f_rad_int_ele_cache (CPP_rad_int_ele_cache&, bool&);
 
 void set_CPP_rad_int_ele_cache_test_pattern (CPP_rad_int_ele_cache& C, int ix_patt) {
 
   int rhs, offset = 100 * ix_patt;
 
-  // c_side.test_pat[real, 1, NOT]
-  for (unsigned int i = 0; i < C.orb0.size(); i++)
-    {int rhs = 101 + i + 1 + offset; C.orb0[i] = rhs;}
-  // c_side.test_pat[real, 0, NOT]
-  rhs = 2 + offset; C.g2_0 = rhs;
+  // c_side.test_pat[type, 0, NOT]
+  set_CPP_rad_map_test_pattern(C.rm0, ix_patt);
 
-  // c_side.test_pat[real, 0, NOT]
-  rhs = 3 + offset; C.g3_0 = rhs;
+  // c_side.test_pat[type, 0, NOT]
+  set_CPP_rad_map_test_pattern(C.rm1, ix_patt);
 
-  // c_side.test_pat[real, 1, NOT]
-  for (unsigned int i = 0; i < C.dg2_dorb.size(); i++)
-    {int rhs = 101 + i + 4 + offset; C.dg2_dorb[i] = rhs;}
-  // c_side.test_pat[real, 1, NOT]
-  for (unsigned int i = 0; i < C.dg3_dorb.size(); i++)
-    {int rhs = 101 + i + 5 + offset; C.dg3_dorb[i] = rhs;}
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 6 + offset; C.stale = (rhs % 2 == 0);
+  rhs = 3 + offset; C.stale = (rhs % 2 == 0);
 
 
 }
@@ -3243,13 +3297,13 @@ extern "C" void test_c_photon_material (Opaque_photon_material_class* F, bool& c
 //--------------------------------------------------------------
 //--------------------------------------------------------------
 
-extern "C" void test2_f_pixel_grid_pt (CPP_pixel_grid_pt&, bool&);
+extern "C" void test2_f_pixel_pt (CPP_pixel_pt&, bool&);
 
-void set_CPP_pixel_grid_pt_test_pattern (CPP_pixel_grid_pt& C, int ix_patt) {
+void set_CPP_pixel_pt_test_pattern (CPP_pixel_pt& C, int ix_patt) {
 
   int rhs, offset = 100 * ix_patt;
 
-  // c_side.test_pat[integer, 0, NOT]
+  // c_side.test_pat[integer8, 0, NOT]
   rhs = 1 + offset; C.n_photon = rhs;
 
   // c_side.test_pat[complex, 0, NOT]
@@ -3284,46 +3338,46 @@ void set_CPP_pixel_grid_pt_test_pattern (CPP_pixel_grid_pt& C, int ix_patt) {
 
 //--------------------------------------------------------------
 
-extern "C" void test_c_pixel_grid_pt (Opaque_pixel_grid_pt_class* F, bool& c_ok) {
+extern "C" void test_c_pixel_pt (Opaque_pixel_pt_class* F, bool& c_ok) {
 
-  CPP_pixel_grid_pt C, C2;
+  CPP_pixel_pt C, C2;
 
   c_ok = true;
 
-  pixel_grid_pt_to_c (F, C);
-  set_CPP_pixel_grid_pt_test_pattern (C2, 1);
+  pixel_pt_to_c (F, C);
+  set_CPP_pixel_pt_test_pattern (C2, 1);
 
   if (C == C2) {
-    cout << " pixel_grid_pt: C side convert F->C: Good" << endl;
+    cout << " pixel_pt: C side convert F->C: Good" << endl;
   } else {
-    cout << " pixel_grid_pt: C SIDE CONVERT F->C: FAILED!" << endl;
+    cout << " pixel_pt: C SIDE CONVERT F->C: FAILED!" << endl;
     c_ok = false;
   }
 
-  set_CPP_pixel_grid_pt_test_pattern (C2, 2);
+  set_CPP_pixel_pt_test_pattern (C2, 2);
   bool c_ok2;
-  test2_f_pixel_grid_pt (C2, c_ok2);
+  test2_f_pixel_pt (C2, c_ok2);
   if (!c_ok2) c_ok = false;
 
-  set_CPP_pixel_grid_pt_test_pattern (C, 3);
+  set_CPP_pixel_pt_test_pattern (C, 3);
   if (C == C2) {
-    cout << " pixel_grid_pt: F side convert F->C: Good" << endl;
+    cout << " pixel_pt: F side convert F->C: Good" << endl;
   } else {
-    cout << " pixel_grid_pt: F SIDE CONVERT F->C: FAILED!" << endl;
+    cout << " pixel_pt: F SIDE CONVERT F->C: FAILED!" << endl;
     c_ok = false;
   }
 
-  set_CPP_pixel_grid_pt_test_pattern (C2, 4);
-  pixel_grid_pt_to_f (C2, F);
+  set_CPP_pixel_pt_test_pattern (C2, 4);
+  pixel_pt_to_f (C2, F);
 
 }
 
 //--------------------------------------------------------------
 //--------------------------------------------------------------
 
-extern "C" void test2_f_pixel_grid (CPP_pixel_grid&, bool&);
+extern "C" void test2_f_pixel_detec (CPP_pixel_detec&, bool&);
 
-void set_CPP_pixel_grid_test_pattern (CPP_pixel_grid& C, int ix_patt) {
+void set_CPP_pixel_detec_test_pattern (CPP_pixel_detec& C, int ix_patt) {
 
   int rhs, offset = 100 * ix_patt;
 
@@ -3333,6 +3387,15 @@ void set_CPP_pixel_grid_test_pattern (CPP_pixel_grid& C, int ix_patt) {
   // c_side.test_pat[real, 1, NOT]
   for (unsigned int i = 0; i < C.r0.size(); i++)
     {int rhs = 101 + i + 2 + offset; C.r0[i] = rhs;}
+  // c_side.test_pat[integer8, 0, NOT]
+  rhs = 3 + offset; C.n_track_tot = rhs;
+
+  // c_side.test_pat[integer8, 0, NOT]
+  rhs = 4 + offset; C.n_hit_detec = rhs;
+
+  // c_side.test_pat[integer8, 0, NOT]
+  rhs = 5 + offset; C.n_hit_pixel = rhs;
+
   // c_side.test_pat[type, 2, ALLOC]
   if (ix_patt < 3) 
     C.pt.resize(0);
@@ -3342,7 +3405,7 @@ void set_CPP_pixel_grid_test_pattern (CPP_pixel_grid& C, int ix_patt) {
       C.pt[i].resize(2);
 
       for (unsigned int j = 0; j < C.pt[0].size(); j++) {
-        set_CPP_pixel_grid_pt_test_pattern(C.pt[i][j], ix_patt+i+2*j+3);
+        set_CPP_pixel_pt_test_pattern(C.pt[i][j], ix_patt+i+2*j+3);
       }
     }
   }
@@ -3352,37 +3415,37 @@ void set_CPP_pixel_grid_test_pattern (CPP_pixel_grid& C, int ix_patt) {
 
 //--------------------------------------------------------------
 
-extern "C" void test_c_pixel_grid (Opaque_pixel_grid_class* F, bool& c_ok) {
+extern "C" void test_c_pixel_detec (Opaque_pixel_detec_class* F, bool& c_ok) {
 
-  CPP_pixel_grid C, C2;
+  CPP_pixel_detec C, C2;
 
   c_ok = true;
 
-  pixel_grid_to_c (F, C);
-  set_CPP_pixel_grid_test_pattern (C2, 1);
+  pixel_detec_to_c (F, C);
+  set_CPP_pixel_detec_test_pattern (C2, 1);
 
   if (C == C2) {
-    cout << " pixel_grid: C side convert F->C: Good" << endl;
+    cout << " pixel_detec: C side convert F->C: Good" << endl;
   } else {
-    cout << " pixel_grid: C SIDE CONVERT F->C: FAILED!" << endl;
+    cout << " pixel_detec: C SIDE CONVERT F->C: FAILED!" << endl;
     c_ok = false;
   }
 
-  set_CPP_pixel_grid_test_pattern (C2, 2);
+  set_CPP_pixel_detec_test_pattern (C2, 2);
   bool c_ok2;
-  test2_f_pixel_grid (C2, c_ok2);
+  test2_f_pixel_detec (C2, c_ok2);
   if (!c_ok2) c_ok = false;
 
-  set_CPP_pixel_grid_test_pattern (C, 3);
+  set_CPP_pixel_detec_test_pattern (C, 3);
   if (C == C2) {
-    cout << " pixel_grid: F side convert F->C: Good" << endl;
+    cout << " pixel_detec: F side convert F->C: Good" << endl;
   } else {
-    cout << " pixel_grid: F SIDE CONVERT F->C: FAILED!" << endl;
+    cout << " pixel_detec: F SIDE CONVERT F->C: FAILED!" << endl;
     c_ok = false;
   }
 
-  set_CPP_pixel_grid_test_pattern (C2, 4);
-  pixel_grid_to_f (C2, F);
+  set_CPP_pixel_detec_test_pattern (C2, 4);
+  pixel_detec_to_f (C2, F);
 
 }
 
@@ -3408,7 +3471,7 @@ void set_CPP_photon_element_test_pattern (CPP_photon_element& C, int ix_patt) {
   set_CPP_surface_grid_test_pattern(C.grid, ix_patt);
 
   // c_side.test_pat[type, 0, NOT]
-  set_CPP_pixel_grid_test_pattern(C.pixel, ix_patt);
+  set_CPP_pixel_detec_test_pattern(C.pixel, ix_patt);
 
 
 }
@@ -4239,7 +4302,7 @@ void set_CPP_beam_init_test_pattern (CPP_beam_init& C, int ix_patt) {
   rhs = 31 + offset; C.full_6d_coupling_calc = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 32 + offset; C.use_particle_start_for_center = (rhs % 2 == 0);
+  rhs = 32 + offset; C.use_particle_start = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
   rhs = 33 + offset; C.use_t_coords = (rhs % 2 == 0);
@@ -4252,6 +4315,9 @@ void set_CPP_beam_init_test_pattern (CPP_beam_init& C, int ix_patt) {
 
   // c_side.test_pat[real, 0, NOT]
   rhs = 36 + offset; C.sig_e = rhs;
+
+  // c_side.test_pat[logical, 0, NOT]
+  rhs = 37 + offset; C.use_particle_start_for_center = (rhs % 2 == 0);
 
 
 }
@@ -4332,13 +4398,19 @@ void set_CPP_lat_param_test_pattern (CPP_lat_param& C, int ix_patt) {
   rhs = 10 + offset; C.ixx = rhs;
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 11 + offset; C.high_energy_space_charge_on = (rhs % 2 == 0);
+  rhs = 11 + offset; C.stable = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 12 + offset; C.stable = (rhs % 2 == 0);
+  rhs = 12 + offset; C.live_branch = (rhs % 2 == 0);
 
-  // c_side.test_pat[logical, 0, NOT]
-  rhs = 13 + offset; C.live_branch = (rhs % 2 == 0);
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 13 + offset; C.g1_integral = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 14 + offset; C.g2_integral = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 15 + offset; C.g3_integral = rhs;
 
   // c_side.test_pat[type, 0, NOT]
   set_CPP_bookkeeping_state_test_pattern(C.bookkeeping_state, ix_patt);
@@ -4524,20 +4596,23 @@ void set_CPP_anormal_mode_test_pattern (CPP_anormal_mode& C, int ix_patt) {
   // c_side.test_pat[real, 0, NOT]
   rhs = 1 + offset; C.emittance = rhs;
 
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 2 + offset; C.emittance_no_vert = rhs;
+
   // c_side.test_pat[real, 1, NOT]
   for (unsigned int i = 0; i < C.synch_int.size(); i++)
-    {int rhs = 101 + i + 2 + offset; C.synch_int[i] = rhs;}
+    {int rhs = 101 + i + 3 + offset; C.synch_int[i] = rhs;}
   // c_side.test_pat[real, 0, NOT]
-  rhs = 3 + offset; C.j_damp = rhs;
+  rhs = 4 + offset; C.j_damp = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 4 + offset; C.alpha_damp = rhs;
+  rhs = 5 + offset; C.alpha_damp = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 5 + offset; C.chrom = rhs;
+  rhs = 6 + offset; C.chrom = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 6 + offset; C.tune = rhs;
+  rhs = 7 + offset; C.tune = rhs;
 
 
 }
@@ -4674,6 +4749,15 @@ void set_CPP_normal_modes_test_pattern (CPP_normal_modes& C, int ix_patt) {
   // c_side.test_pat[real, 0, NOT]
   rhs = 6 + offset; C.pz_aperture = rhs;
 
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 7 + offset; C.pz_average = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 8 + offset; C.momentum_compaction = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 9 + offset; C.dpz_damp = rhs;
+
   // c_side.test_pat[type, 0, NOT]
   set_CPP_anormal_mode_test_pattern(C.a, ix_patt);
 
@@ -4797,6 +4881,75 @@ extern "C" void test_c_em_field (Opaque_em_field_class* F, bool& c_ok) {
 //--------------------------------------------------------------
 //--------------------------------------------------------------
 
+extern "C" void test2_f_strong_beam (CPP_strong_beam&, bool&);
+
+void set_CPP_strong_beam_test_pattern (CPP_strong_beam& C, int ix_patt) {
+
+  int rhs, offset = 100 * ix_patt;
+
+  // c_side.test_pat[integer, 0, NOT]
+  rhs = 1 + offset; C.ix_slice = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 2 + offset; C.x_center = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 3 + offset; C.y_center = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 4 + offset; C.x_sigma = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 5 + offset; C.y_sigma = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 6 + offset; C.dx = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 7 + offset; C.dy = rhs;
+
+
+}
+
+//--------------------------------------------------------------
+
+extern "C" void test_c_strong_beam (Opaque_strong_beam_class* F, bool& c_ok) {
+
+  CPP_strong_beam C, C2;
+
+  c_ok = true;
+
+  strong_beam_to_c (F, C);
+  set_CPP_strong_beam_test_pattern (C2, 1);
+
+  if (C == C2) {
+    cout << " strong_beam: C side convert F->C: Good" << endl;
+  } else {
+    cout << " strong_beam: C SIDE CONVERT F->C: FAILED!" << endl;
+    c_ok = false;
+  }
+
+  set_CPP_strong_beam_test_pattern (C2, 2);
+  bool c_ok2;
+  test2_f_strong_beam (C2, c_ok2);
+  if (!c_ok2) c_ok = false;
+
+  set_CPP_strong_beam_test_pattern (C, 3);
+  if (C == C2) {
+    cout << " strong_beam: F side convert F->C: Good" << endl;
+  } else {
+    cout << " strong_beam: F SIDE CONVERT F->C: FAILED!" << endl;
+    c_ok = false;
+  }
+
+  set_CPP_strong_beam_test_pattern (C2, 4);
+  strong_beam_to_f (C2, F);
+
+}
+
+//--------------------------------------------------------------
+//--------------------------------------------------------------
+
 extern "C" void test2_f_track_point (CPP_track_point&, bool&);
 
 void set_CPP_track_point_test_pattern (CPP_track_point& C, int ix_patt) {
@@ -4812,12 +4965,15 @@ void set_CPP_track_point_test_pattern (CPP_track_point& C, int ix_patt) {
   // c_side.test_pat[type, 0, NOT]
   set_CPP_em_field_test_pattern(C.field, ix_patt);
 
+  // c_side.test_pat[type, 0, NOT]
+  set_CPP_strong_beam_test_pattern(C.strong_beam, ix_patt);
+
   // c_side.test_pat[real, 1, NOT]
   for (unsigned int i = 0; i < C.vec0.size(); i++)
-    {int rhs = 101 + i + 4 + offset; C.vec0[i] = rhs;}
+    {int rhs = 101 + i + 5 + offset; C.vec0[i] = rhs;}
   // c_side.test_pat[real, 2, NOT]
   for (unsigned int i = 0; i < C.mat6.size(); i++)  for (unsigned int j = 0; j < C.mat6[0].size(); j++) 
-    {int rhs = 101 + i + 10*(j+1) + 5 + offset; C.mat6[i][j] = rhs;}
+    {int rhs = 101 + i + 10*(j+1) + 6 + offset; C.mat6[i][j] = rhs;}
 
 }
 
@@ -4991,9 +5147,9 @@ extern "C" void test_c_synch_rad_common (Opaque_synch_rad_common_class* F, bool&
 //--------------------------------------------------------------
 //--------------------------------------------------------------
 
-extern "C" void test2_f_csr_parameter (CPP_csr_parameter&, bool&);
+extern "C" void test2_f_space_charge_common (CPP_space_charge_common&, bool&);
 
-void set_CPP_csr_parameter_test_pattern (CPP_csr_parameter& C, int ix_patt) {
+void set_CPP_space_charge_common_test_pattern (CPP_space_charge_common& C, int ix_patt) {
 
   int rhs, offset = 100 * ix_patt;
 
@@ -5001,84 +5157,84 @@ void set_CPP_csr_parameter_test_pattern (CPP_csr_parameter& C, int ix_patt) {
   rhs = 1 + offset; C.ds_track_step = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 2 + offset; C.beam_chamber_height = rhs;
+  rhs = 2 + offset; C.dt_track_step = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 3 + offset; C.sigma_cutoff = rhs;
+  rhs = 3 + offset; C.cathode_strength_cutoff = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 4 + offset; C.rel_tol_tracking = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 5 + offset; C.abs_tol_tracking = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 6 + offset; C.beam_chamber_height = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 7 + offset; C.sigma_cutoff = rhs;
 
   // c_side.test_pat[integer, 1, NOT]
   for (unsigned int i = 0; i < C.space_charge_mesh_size.size(); i++)
-    {int rhs = 101 + i + 4 + offset; C.space_charge_mesh_size[i] = rhs;}
+    {int rhs = 101 + i + 8 + offset; C.space_charge_mesh_size[i] = rhs;}
   // c_side.test_pat[integer, 1, NOT]
   for (unsigned int i = 0; i < C.csr3d_mesh_size.size(); i++)
-    {int rhs = 101 + i + 5 + offset; C.csr3d_mesh_size[i] = rhs;}
+    {int rhs = 101 + i + 9 + offset; C.csr3d_mesh_size[i] = rhs;}
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 6 + offset; C.n_bin = rhs;
-
-  // c_side.test_pat[integer, 0, NOT]
-  rhs = 7 + offset; C.particle_bin_span = rhs;
+  rhs = 10 + offset; C.n_bin = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 8 + offset; C.n_shield_images = rhs;
+  rhs = 11 + offset; C.particle_bin_span = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 9 + offset; C.sc_min_in_bin = rhs;
+  rhs = 12 + offset; C.n_shield_images = rhs;
+
+  // c_side.test_pat[integer, 0, NOT]
+  rhs = 13 + offset; C.sc_min_in_bin = rhs;
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 10 + offset; C.lsc_kick_transverse_dependence = (rhs % 2 == 0);
-
-  // c_side.test_pat[logical, 0, NOT]
-  rhs = 11 + offset; C.print_taylor_warning = (rhs % 2 == 0);
-
-  // c_side.test_pat[logical, 0, NOT]
-  rhs = 12 + offset; C.write_csr_wake = (rhs % 2 == 0);
-
-  // c_side.test_pat[logical, 0, NOT]
-  rhs = 13 + offset; C.use_csr_old = (rhs % 2 == 0);
-
-  // c_side.test_pat[logical, 0, NOT]
-  rhs = 14 + offset; C.small_angle_approx = (rhs % 2 == 0);
+  rhs = 14 + offset; C.lsc_kick_transverse_dependence = (rhs % 2 == 0);
 
   // c_side.test_pat[character, 0, NOT]
-  C.wake_output_file.resize(200);
-  for (unsigned int i = 0; i < C.wake_output_file.size(); i++)
-    {int rhs = 101 + i + 15 + offset; C.wake_output_file[i] = 'a' + rhs % 26;}
+  C.diagnostic_output_file.resize(200);
+  for (unsigned int i = 0; i < C.diagnostic_output_file.size(); i++)
+    {int rhs = 101 + i + 15 + offset; C.diagnostic_output_file[i] = 'a' + rhs % 26;}
 
 }
 
 //--------------------------------------------------------------
 
-extern "C" void test_c_csr_parameter (Opaque_csr_parameter_class* F, bool& c_ok) {
+extern "C" void test_c_space_charge_common (Opaque_space_charge_common_class* F, bool& c_ok) {
 
-  CPP_csr_parameter C, C2;
+  CPP_space_charge_common C, C2;
 
   c_ok = true;
 
-  csr_parameter_to_c (F, C);
-  set_CPP_csr_parameter_test_pattern (C2, 1);
+  space_charge_common_to_c (F, C);
+  set_CPP_space_charge_common_test_pattern (C2, 1);
 
   if (C == C2) {
-    cout << " csr_parameter: C side convert F->C: Good" << endl;
+    cout << " space_charge_common: C side convert F->C: Good" << endl;
   } else {
-    cout << " csr_parameter: C SIDE CONVERT F->C: FAILED!" << endl;
+    cout << " space_charge_common: C SIDE CONVERT F->C: FAILED!" << endl;
     c_ok = false;
   }
 
-  set_CPP_csr_parameter_test_pattern (C2, 2);
+  set_CPP_space_charge_common_test_pattern (C2, 2);
   bool c_ok2;
-  test2_f_csr_parameter (C2, c_ok2);
+  test2_f_space_charge_common (C2, c_ok2);
   if (!c_ok2) c_ok = false;
 
-  set_CPP_csr_parameter_test_pattern (C, 3);
+  set_CPP_space_charge_common_test_pattern (C, 3);
   if (C == C2) {
-    cout << " csr_parameter: F side convert F->C: Good" << endl;
+    cout << " space_charge_common: F side convert F->C: Good" << endl;
   } else {
-    cout << " csr_parameter: F SIDE CONVERT F->C: FAILED!" << endl;
+    cout << " space_charge_common: F SIDE CONVERT F->C: FAILED!" << endl;
     c_ok = false;
   }
 
-  set_CPP_csr_parameter_test_pattern (C2, 4);
-  csr_parameter_to_f (C2, F);
+  set_CPP_space_charge_common_test_pattern (C2, 4);
+  space_charge_common_to_f (C2, F);
 
 }
 
@@ -5137,70 +5293,70 @@ void set_CPP_bmad_common_test_pattern (CPP_bmad_common& C, int ix_patt) {
   rhs = 15 + offset; C.electric_dipole_moment = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 16 + offset; C.ptc_cut_factor = rhs;
+  rhs = 16 + offset; C.sad_eps_scale = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 17 + offset; C.sad_eps_scale = rhs;
-
-  // c_side.test_pat[real, 0, NOT]
-  rhs = 18 + offset; C.sad_amp_max = rhs;
+  rhs = 17 + offset; C.sad_amp_max = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 19 + offset; C.sad_n_div_max = rhs;
+  rhs = 18 + offset; C.sad_n_div_max = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 20 + offset; C.taylor_order = rhs;
+  rhs = 19 + offset; C.taylor_order = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 21 + offset; C.runge_kutta_order = rhs;
+  rhs = 20 + offset; C.runge_kutta_order = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 22 + offset; C.default_integ_order = rhs;
+  rhs = 21 + offset; C.default_integ_order = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 23 + offset; C.max_num_runge_kutta_step = rhs;
+  rhs = 22 + offset; C.max_num_runge_kutta_step = rhs;
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 24 + offset; C.rf_phase_below_transition_ref = (rhs % 2 == 0);
+  rhs = 23 + offset; C.rf_phase_below_transition_ref = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 25 + offset; C.sr_wakes_on = (rhs % 2 == 0);
+  rhs = 24 + offset; C.sr_wakes_on = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 26 + offset; C.lr_wakes_on = (rhs % 2 == 0);
+  rhs = 25 + offset; C.lr_wakes_on = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 27 + offset; C.ptc_use_orientation_patches = (rhs % 2 == 0);
+  rhs = 26 + offset; C.auto_bookkeeper = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 28 + offset; C.auto_bookkeeper = (rhs % 2 == 0);
+  rhs = 27 + offset; C.high_energy_space_charge_on = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 29 + offset; C.csr_and_space_charge_on = (rhs % 2 == 0);
+  rhs = 28 + offset; C.csr_and_space_charge_on = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 30 + offset; C.spin_tracking_on = (rhs % 2 == 0);
+  rhs = 29 + offset; C.spin_tracking_on = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 31 + offset; C.backwards_time_tracking_on = (rhs % 2 == 0);
+  rhs = 30 + offset; C.backwards_time_tracking_on = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 32 + offset; C.spin_sokolov_ternov_flipping_on = (rhs % 2 == 0);
+  rhs = 31 + offset; C.spin_sokolov_ternov_flipping_on = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 33 + offset; C.radiation_damping_on = (rhs % 2 == 0);
+  rhs = 32 + offset; C.radiation_damping_on = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 34 + offset; C.radiation_zero_average = (rhs % 2 == 0);
+  rhs = 33 + offset; C.radiation_zero_average = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 35 + offset; C.radiation_fluctuations_on = (rhs % 2 == 0);
+  rhs = 34 + offset; C.radiation_fluctuations_on = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 36 + offset; C.conserve_taylor_maps = (rhs % 2 == 0);
+  rhs = 35 + offset; C.conserve_taylor_maps = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 37 + offset; C.absolute_time_tracking_default = (rhs % 2 == 0);
+  rhs = 36 + offset; C.absolute_time_tracking = (rhs % 2 == 0);
+
+  // c_side.test_pat[logical, 0, NOT]
+  rhs = 37 + offset; C.absolute_time_ref_shift = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
   rhs = 38 + offset; C.convert_to_kinetic_momentum = (rhs % 2 == 0);
@@ -5209,10 +5365,7 @@ void set_CPP_bmad_common_test_pattern (CPP_bmad_common& C, int ix_patt) {
   rhs = 39 + offset; C.aperture_limit_on = (rhs % 2 == 0);
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 40 + offset; C.ptc_print_info_messages = (rhs % 2 == 0);
-
-  // c_side.test_pat[logical, 0, NOT]
-  rhs = 41 + offset; C.debug = (rhs % 2 == 0);
+  rhs = 40 + offset; C.debug = (rhs % 2 == 0);
 
 
 }
@@ -5573,9 +5726,12 @@ void set_CPP_ele_test_pattern (CPP_ele& C, int ix_patt) {
   // c_side.test_pat[type, 1, NOT]
   for (unsigned int i = 0; i < C.taylor.size(); i++)
     {int rhs = 101 + i + 26 + offset; set_CPP_taylor_test_pattern(C.taylor[i], ix_patt+i+1);}
+  // c_side.test_pat[real, 1, NOT]
+  for (unsigned int i = 0; i < C.spin_taylor_ref_orb_in.size(); i++)
+    {int rhs = 101 + i + 27 + offset; C.spin_taylor_ref_orb_in[i] = rhs;}
   // c_side.test_pat[type, 1, NOT]
   for (unsigned int i = 0; i < C.spin_taylor.size(); i++)
-    {int rhs = 101 + i + 27 + offset; set_CPP_taylor_test_pattern(C.spin_taylor[i], ix_patt+i+1);}
+    {int rhs = 101 + i + 28 + offset; set_CPP_taylor_test_pattern(C.spin_taylor[i], ix_patt+i+1);}
   // c_side.test_pat[type, 0, PTR]
   if (ix_patt < 3) 
     C.wake = NULL;
@@ -5637,9 +5793,6 @@ void set_CPP_ele_test_pattern (CPP_ele& C, int ix_patt) {
   set_CPP_coord_test_pattern(C.time_ref_orb_out, ix_patt);
 
   // c_side.test_pat[real, 1, NOT]
-  for (unsigned int i = 0; i < C.spin_taylor_ref_orb_in.size(); i++)
-    {int rhs = 101 + i + 44 + offset; C.spin_taylor_ref_orb_in[i] = rhs;}
-  // c_side.test_pat[real, 1, NOT]
   C.value[0] = 0;
   for (unsigned int i = 1; i < Bmad::NUM_ELE_ATTRIB+1; i++)
     {int rhs = 100 + i + 45 + offset; C.value[i] = rhs;}
@@ -5649,21 +5802,21 @@ void set_CPP_ele_test_pattern (CPP_ele& C, int ix_patt) {
   for (unsigned int i = 1; i < Bmad::NUM_ELE_ATTRIB+1; i++)
     {int rhs = 100 + i + 46 + offset; C.old_value[i] = rhs;}
 
-  // c_side.test_pat[real, 1, NOT]
-  for (unsigned int i = 0; i < C.vec0.size(); i++)
-    {int rhs = 101 + i + 47 + offset; C.vec0[i] = rhs;}
-  // c_side.test_pat[real, 2, NOT]
-  for (unsigned int i = 0; i < C.mat6.size(); i++)  for (unsigned int j = 0; j < C.mat6[0].size(); j++) 
-    {int rhs = 101 + i + 10*(j+1) + 48 + offset; C.mat6[i][j] = rhs;}
-  // c_side.test_pat[real, 2, NOT]
-  for (unsigned int i = 0; i < C.c_mat.size(); i++)  for (unsigned int j = 0; j < C.c_mat[0].size(); j++) 
-    {int rhs = 101 + i + 10*(j+1) + 49 + offset; C.c_mat[i][j] = rhs;}
-  // c_side.test_pat[real, 0, NOT]
-  rhs = 50 + offset; C.gamma_c = rhs;
-
   // c_side.test_pat[real, 2, NOT]
   for (unsigned int i = 0; i < C.spin_q.size(); i++)  for (unsigned int j = 0; j < C.spin_q[0].size(); j++) 
-    {int rhs = 101 + i + 10*(j+1) + 51 + offset; C.spin_q[i][j] = rhs;}
+    {int rhs = 101 + i + 10*(j+1) + 47 + offset; C.spin_q[i][j] = rhs;}
+  // c_side.test_pat[real, 1, NOT]
+  for (unsigned int i = 0; i < C.vec0.size(); i++)
+    {int rhs = 101 + i + 48 + offset; C.vec0[i] = rhs;}
+  // c_side.test_pat[real, 2, NOT]
+  for (unsigned int i = 0; i < C.mat6.size(); i++)  for (unsigned int j = 0; j < C.mat6[0].size(); j++) 
+    {int rhs = 101 + i + 10*(j+1) + 49 + offset; C.mat6[i][j] = rhs;}
+  // c_side.test_pat[real, 2, NOT]
+  for (unsigned int i = 0; i < C.c_mat.size(); i++)  for (unsigned int j = 0; j < C.c_mat[0].size(); j++) 
+    {int rhs = 101 + i + 10*(j+1) + 50 + offset; C.c_mat[i][j] = rhs;}
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 51 + offset; C.gamma_c = rhs;
+
   // c_side.test_pat[real, 0, NOT]
   rhs = 52 + offset; C.s_start = rhs;
 
@@ -6263,9 +6416,6 @@ void set_CPP_lat_test_pattern (CPP_lat& C, int ix_patt) {
   // c_side.test_pat[integer, 0, NOT]
   rhs = 42 + offset; C.creation_hash = rhs;
 
-  // c_side.test_pat[logical, 0, NOT]
-  rhs = 43 + offset; C.absolute_time_tracking = (rhs % 2 == 0);
-
 
 }
 
@@ -6342,14 +6492,26 @@ void set_CPP_bunch_test_pattern (CPP_bunch& C, int ix_patt) {
   // c_side.test_pat[real, 0, NOT]
   rhs = 8 + offset; C.t_center = rhs;
 
-  // c_side.test_pat[integer, 0, NOT]
-  rhs = 9 + offset; C.ix_ele = rhs;
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 9 + offset; C.t0 = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 10 + offset; C.ix_bunch = rhs;
+  rhs = 10 + offset; C.ix_ele = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 11 + offset; C.n_live = rhs;
+  rhs = 11 + offset; C.ix_bunch = rhs;
+
+  // c_side.test_pat[integer, 0, NOT]
+  rhs = 12 + offset; C.ix_turn = rhs;
+
+  // c_side.test_pat[integer, 0, NOT]
+  rhs = 13 + offset; C.n_live = rhs;
+
+  // c_side.test_pat[integer, 0, NOT]
+  rhs = 14 + offset; C.n_good = rhs;
+
+  // c_side.test_pat[integer, 0, NOT]
+  rhs = 15 + offset; C.n_bad = rhs;
 
 
 }
@@ -6436,22 +6598,25 @@ void set_CPP_bunch_params_test_pattern (CPP_bunch_params& C, int ix_patt) {
   rhs = 12 + offset; C.s = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 13 + offset; C.charge_live = rhs;
+  rhs = 13 + offset; C.t = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 14 + offset; C.charge_tot = rhs;
+  rhs = 14 + offset; C.charge_live = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 15 + offset; C.charge_tot = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 15 + offset; C.n_particle_tot = rhs;
+  rhs = 16 + offset; C.n_particle_tot = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 16 + offset; C.n_particle_live = rhs;
+  rhs = 17 + offset; C.n_particle_live = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 17 + offset; C.n_particle_lost_in_ele = rhs;
+  rhs = 18 + offset; C.n_particle_lost_in_ele = rhs;
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 18 + offset; C.twiss_valid = (rhs % 2 == 0);
+  rhs = 19 + offset; C.twiss_valid = (rhs % 2 == 0);
 
 
 }

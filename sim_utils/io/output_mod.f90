@@ -87,7 +87,7 @@ private header_io, find_format, out_io_lines, insert_numbers, out_io_line_out
 ! Input:
 !   level              -- Integer: Status level flags for messages.
 !       s_nooutput$      -- No output is produced.
-!       s_blank$         -- Information message. No tag line is inserted.
+!       s_blank$         -- Informational message. No tag line is inserted in the output.
 !       s_info$          -- Informational message. (no timestamp)
 !       s_dinfo$         -- Info message (w/timestamp).
 !       s_success$       -- Successful completion. (no timestamp)
@@ -111,7 +111,7 @@ private header_io, find_format, out_io_lines, insert_numbers, out_io_line_out
 !   r_array(:)         -- Real(rp), optional: Real numbers to print.
 !   i_array(:)         -- Integer, optional: Integer numbers to print.
 !   l_array(:)         -- Logical, optional: Logicals to print.
-!   insert_tag_line    -- logical, optional: Include the taga line in the output?
+!   insert_tag_line    -- logical, optional: Include the tag line in the output?
 !-
 
 interface out_io

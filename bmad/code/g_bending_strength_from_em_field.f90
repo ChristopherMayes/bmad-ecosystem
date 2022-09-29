@@ -16,6 +16,7 @@
 ! Output:
 !   g(3)              -- Real(rp): g = (g_x, g_y, g_s) bending strength vector (|g| = 1/bend_radius).
 !   dg(3,3)           -- Real(rp), optional: dg(:)/dr gradient. 
+!                         Takes into account dg_x/dx in a bend due to curvilinear coords.
 !-
 
 subroutine g_bending_strength_from_em_field (ele, param, s_rel, orbit, local_ref_frame, g, dg)

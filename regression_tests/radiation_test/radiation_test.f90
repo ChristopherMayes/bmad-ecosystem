@@ -1,20 +1,27 @@
 program radiation_test
 
 use bmad
+use ptc_map_with_radiation_mod
+use ptc_layout_mod
+use rad_6d_mod
 
 implicit none
 
 type (lat_struct), target :: lat
 type (branch_struct), pointer :: branch
 type (ele_struct), pointer :: ele
-type (coord_struct) orb_start, orb_end
+type (coord_struct) orb_start, orb_end, orb0, orb
 type (coord_struct), allocatable :: orbit(:)
 type (normal_modes_struct) mode
 type (rad_int_all_ele_struct), target :: ri_cache, ri_no_cache
 type (rad_int1_struct), pointer :: rie1(:), rie2(:), rie3(:), rie4(:)
+type (ptc_rad_map_struct) rad_map
 
-real(rp) vec6(6)
-integer i, j, n, ib, ix_cache
+real(rp) vec6(6), emit(3), sigma_mat(6,6), m(6,6), vec0(6)
+
+integer i, j, n, ib, ix_cache, n1, n2, ie
+logical err
+character(100) file_name
 
 !
 
@@ -22,6 +29,20 @@ open (1, file = 'output.now', recl = 200)
 
 !
 
+file_name = 'sigma.bmad'
+call bmad_parser(file_name, lat)
+ptc_com%vertical_kick = 0
+
+call emit_6d(lat%ele(0), .true., mode, sigma_mat)
+
+write (1, '(a, 3es14.6)') '"emit_6d" REL 1e-6', mode%a%emittance, mode%b%emittance, mode%z%emittance
+do i = 1, 6
+  write (1, '(a, i0, a, 6es14.6)') '"sig_mat', i, '" REL 1e-6', sigma_mat(i,:)
+enddo
+
+!
+
+bmad_com%radiation_damping_on = .false.
 call bmad_parser('radiation_test.bmad', lat)
 
 branch => lat%branch(1)
@@ -58,7 +79,6 @@ do i = 1, branch%n_ele_max
   write (1, '(a, 4es14.6)') '"i5b-' // int_str(i) // '" REL 1E-6', rie1(i)%i5b, rie2(i)%i5b, rie3(i)%i5b, rie4(i)%i5b
   write (1, *)
 enddo
-
 
 !
 

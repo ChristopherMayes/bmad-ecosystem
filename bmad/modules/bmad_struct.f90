@@ -8,9 +8,7 @@ use random_mod
 use spline_mod
 use cubic_interpolation_mod
 
-use definition, only: 
-use ptc_spin, only: EXACT_MODEL, ALWAYS_EXACTMIS, OLD_INTEGRATOR, HIGHEST_FRINGE, &
-                    genfield, fibre, layout, c_damap, c_normal_form, c_taylor, probe_8, internal_state
+use ptc_spin, only: genfield, fibre, layout, c_damap, c_normal_form, c_taylor, probe_8, internal_state
 
 private next_in_branch
 
@@ -20,7 +18,7 @@ private next_in_branch
 ! IF YOU CHANGE THE LAT_STRUCT OR ANY ASSOCIATED STRUCTURES YOU MUST INCREASE THE VERSION NUMBER !!!
 ! THIS IS USED BY BMAD_PARSER TO MAKE SURE DIGESTED FILES ARE OK.
 
-integer, parameter :: bmad_inc_version$ = 269
+integer, parameter :: bmad_inc_version$ = 284
 
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -62,14 +60,14 @@ end type
 
 integer, parameter :: bmad_standard$ = 1, symp_lie_ptc$ = 2, runge_kutta$ = 3 
 integer, parameter :: linear$ = 4, tracking$ = 5, time_runge_kutta$ = 6
-integer, parameter :: fixed_step_runge_kutta$ = 9, symp_lie_bmad$ = 10, static$ = 11
+integer, parameter :: fixed_step_runge_kutta$ = 9, symp_lie_bmad$ = 10
 integer, parameter :: sprint$ = 12, fixed_step_time_runge_kutta$ = 13, mad$ = 14
 integer, parameter :: n_methods$ = 14
 
 character(28), parameter :: tracking_method_name(0:n_methods$) = [character(28) :: &
       'GARBAGE!', 'Bmad_Standard',               'Symp_Lie_PTC',     'Runge_Kutta', &
       'Linear',   'GARBAGE!',                    'Time_Runge_Kutta', 'Custom', &
-      'Taylor',   'Fixed_Step_Runge_Kutta',      'Symp_Lie_Bmad',    'Static', &
+      'Taylor',   'Fixed_Step_Runge_Kutta',      'Symp_Lie_Bmad',    'GARBAGE!', &
       'GARBAGE!', 'Fixed_Step_Time_Runge_kutta', 'MAD']
 
 character(16), parameter :: spin_tracking_method_name(0:n_methods$) = [ &
@@ -81,7 +79,7 @@ character(16), parameter :: spin_tracking_method_name(0:n_methods$) = [ &
 character(16), parameter :: mat6_calc_method_name(0:n_methods$) = [ &
       'GARBAGE!        ', 'Bmad_Standard   ', 'Symp_Lie_PTC    ', 'GARBAGE!        ', &
       'Linear          ', 'Tracking        ', 'GARBAGE!        ', 'Custom          ', &
-      'Taylor          ', 'GARBAGE!        ', 'Symp_Lie_Bmad   ', 'Static          ', &
+      'Taylor          ', 'GARBAGE!        ', 'Symp_Lie_Bmad   ', 'GARBAGE!        ', &
       'GARBAGE!        ', 'GARBAGE!        ', 'MAD             ']
 
 integer, parameter :: drift_kick$ = 1, matrix_kick$ = 2, ripken_kick$ = 3
@@ -182,7 +180,7 @@ end type
 
 ! Misc parameters
 
-integer, parameter :: include_kicks$ = 1
+integer, parameter :: include_kicks$ = 1, short$ = 8
 
 integer, parameter :: user_set$ = 0, first_pass$ = 1
 character(12), parameter :: multipass_ref_energy_name(0:1) = [character(12):: 'User_Set', 'First_Pass']
@@ -218,6 +216,9 @@ type photon_reflect_surface_struct
   integer :: ix_surface = -1
 end type
 
+integer, parameter :: incoherent$ = 1, coherent$ = 2
+character(16), parameter :: photon_type_name(1:2) = ['Incoherent', 'Coherent  ']
+
 !-------------------------------------------------------------------------
 
 integer, parameter :: ascii$ = 1, binary$ = 2, hdf5$ = 3, one_file$ = 4
@@ -237,8 +238,8 @@ character(20), parameter :: exact_multipoles_name(3) = [character(20):: 'Off', '
 integer, parameter :: one_dim$ = 2, steady_state_3d$ = 3
 character(20), parameter :: csr_method_name(3) = [character(20):: 'Off', '1_Dim', 'Steady_State_3D']
 
-integer, parameter :: slice$ = 2, fft_3D$ = 3
-character(20), parameter :: space_charge_method_name(3) = [character(20):: 'Off', 'Slice', 'fft_3D']
+integer, parameter :: slice$ = 2, fft_3D$ = 3, cathode_fft_3d$ = 4
+character(20), parameter :: space_charge_method_name(4) = [character(20):: 'Off', 'Slice', 'FFT_3D', 'Cathode_FFT_3D']
 
 ! Pauli matrices
 
@@ -298,6 +299,22 @@ type spin_orbit_map1_struct
   real(rp) :: spin_q(0:3,0:6) = 0   ! 0th and 1st order quaternion spin map
 end type
 
+! Structure for linear Invariant Spin Field map
+
+type linear_isf1_struct
+  real(rp) :: orb0(6) = 0          ! Closed orbit.
+  real(rp) :: isf(0:3, 0:6) = 0    ! Linear ISF map at a given point.
+  real(rp) :: s = 0                ! Offset from beginning of element.
+  !!! real(rp) :: m_1turn(6,6) = 0   ! Orbital 1-turn matrix.
+end type
+
+! Holds ISF info for one Bmad element.
+
+type linear_ele_isf_struct
+  type (linear_isf1_struct), allocatable :: node(:)   ! Array per PTC integration node.
+end type
+
+
 !
 
 real(rp), parameter :: x_unit_vec(3) = [1, 0, 0], y_unit_vec(3) = [0, 1, 0], z_unit_vec(3) = [0, 0, 1]
@@ -319,7 +336,7 @@ character(16), parameter :: mode_name(0:2) = [character(16) :: 'GARBAGE!', 'Refl
 integer, parameter :: anchor_beginning$ = 1, anchor_center$ = 2, anchor_end$ = 3
 character(12), parameter :: anchor_pt_name(0:3) = ['GARBAGE! ', 'Beginning', 'Center   ', 'End      ']
 
-! Note: upstream_end$ = entrance_end$ & downstream_end$ = exit_end$
+! Note: upstream_end$ = entrance_end$ & downstream_end$ = exit_end$ for ele with %orientation = 1.
 
 ! first_track_edge$ is the edge a particle enters the element at. 
 ! This edge will depend upon whether a particle is moving in +s or -s direction.
@@ -470,12 +487,12 @@ character(2), parameter :: field_plane_name(3) = ['Bx', 'By', 'Bz']
 ! Use coord_state_name for getting the string representation of coord%state
 
 integer, parameter :: moving_forward$ = -9
-
-integer, parameter :: alive$ = 1, lost$ = 2
+integer, parameter :: pre_born$ = 0    ! EG: before cathode emission. Conforms to OpenPMD standard.
+integer, parameter :: alive$ = 1       ! Conforms to OpenPMD standard.
+integer, parameter :: lost$ = 2
 integer, parameter :: lost_neg_x_aperture$ = 3, lost_pos_x_aperture$ = 4 
 integer, parameter :: lost_neg_y_aperture$ = 5, lost_pos_y_aperture$ = 6
 integer, parameter :: lost_pz_aperture$ = 7  ! Particle "turned around" when not tracking with time_runge_kutta.
-integer, parameter :: pre_born$ = 8    ! EG: For electrons not yet emitted from a cathode.
 integer, parameter :: lost_z_aperture$ = 9
 
 real(rp), parameter :: vec0$(6) = 0
@@ -488,12 +505,16 @@ real(rp), parameter :: vec0$(6) = 0
 type coord_struct                 ! Particle coordinates at a single point
   real(rp) :: vec(6) = 0          ! (x, px, y, py, z, pz)
   real(rp) :: s = 0               ! Longitudinal position 
-  real(rp) :: t = 0               ! Absolute time (not relative to reference).
+  real(rp) :: t = 0               ! Absolute time (not relative to reference). If bmad_private%rf_clock_frequency is
+                                  ! set, %t will be the RF clock time in the range [0, 1/rf_clock_freq] 
   real(rp) :: spin(3) = 0         ! Spin.
   real(rp) :: field(2) = 0        ! Photon E-field intensity (x,y).
-  real(rp) :: phase(2) = 0        ! Photon E-field phase (x,y)
+  real(rp) :: phase(2) = 0        ! Photon E-field phase (x,y). phase(1) is also used with 
+                                  !   RF-time tracking to record the number of RF cycles.
   real(rp) :: charge = 0          ! Macroparticle weight (in Coulombs).
-  real(rp) :: path_len = 0        ! path length (used by coherent photons).
+  real(rp) :: dt_ref = 0          ! Used in:
+                                  !   * time tracking for computing z.
+                                  !   * by coherent photons = path_length/c_light.
   real(rp) :: r = 0               ! For general use. Not used by Bmad. 
   real(rp) :: p0c = 0             ! For non-photons: Reference momentum.
                                   !     For photons: Photon momentum (not reference).
@@ -615,11 +636,12 @@ type ac_kicker_freq_struct
   real(rp) :: f = 0
   real(rp) :: amp = 0
   real(rp) :: phi = 0
+  integer :: rf_clock_harmonic = 0  ! When RF clock is used.
 end type
 
 type ac_kicker_struct
   type (ac_kicker_time_struct), allocatable :: amp_vs_time(:)
-  type (ac_kicker_freq_struct), allocatable :: frequencies(:)
+  type (ac_kicker_freq_struct), allocatable :: frequency(:)
 end type
 
 ! Cartesian field decomposition.
@@ -754,7 +776,7 @@ real(rp), parameter :: r0_vec$(3) = 0
 real(rp), parameter :: w_unit$(3,3) = reshape( [1, 0, 0, 0, 1, 0, 0, 0, 1], [3,3])
 
 type floor_position_struct
-  real(rp) :: r(3) = [0.0_rp, 0.0_rp, 0.0_rp] ! (x, y, z) offset from origin
+  real(rp) :: r(3) = 0                        ! (x, y, z) offset from origin
   real(rp) :: w(3,3) =  w_unit$               ! W matrix. Columns are unit vectors of the frame axes.
   real(rp) :: theta = 0, phi = 0, psi = 0     ! angular orientation consistent with W matrix
 end type
@@ -814,7 +836,7 @@ type lat_ele_order_struct
   type (lat_ele_order_array_struct), allocatable :: branch(:)
 end type
 
-! Structure to be used for an array of pointers to elements.
+! Structure to be used for an array of pointers to lattice elements.
 ! The id component is not set by any Bmad routines and can be used, for example, by programs that 
 ! handle multiple lattices to indicate which lattice the element pointer is pointing to.
 ! A pointer to an element in a lattice is not usable if the number of elements in the 
@@ -825,6 +847,18 @@ type ele_pointer_struct
   type (ele_struct), pointer :: ele => null()
   type (lat_ele_loc_struct) :: loc = lat_ele_loc_struct()
   integer :: id = -1                    ! For general use. Not used by Bmad.
+end type
+
+! Structure to be used for an array of pointers to branches.
+
+type branch_pointer_struct
+  type (branch_struct), pointer :: branch => null()
+end type
+
+! Structure to be used for an array of pointers to lattices.
+
+type lat_pointer_struct
+  type (lat_struct), pointer :: lat => null()
 end type
 
 ! The mode3_struct is used for normal mode analysis of the full 6x6 transfer matrix.
@@ -860,26 +894,32 @@ end type
 ! In one simulation 25% of the time was spent constructing multipole arrays.
 
 type multipole_cache_struct
-  real(rp) a_pole_mag(0:n_pole_maxx), b_pole_mag(0:n_pole_maxx)
-  real(rp) a_kick_mag(0:3), b_kick_mag(0:3)     ! From non-multipole parameters like k1, k2, hkick, etc.
+  real(rp) :: a_pole_mag(0:n_pole_maxx) = real_garbage$, b_pole_mag(0:n_pole_maxx) = real_garbage$
+  ! From non-multipole parameters like k1, k2, hkick, etc.
+  real(rp) :: a_kick_mag(0:3) = real_garbage$, b_kick_mag(0:3) = real_garbage$
   integer :: ix_pole_mag_max = invalid$
   integer :: ix_kick_mag_max = invalid$
-  real(rp) a_pole_elec(0:n_pole_maxx), b_pole_elec(0:n_pole_maxx)
-  real(rp) a_kick_elec(0:3), b_kick_elec(0:3)   ! From elseparator hkick and vkick.
+  real(rp) :: a_pole_elec(0:n_pole_maxx) = real_garbage$, b_pole_elec(0:n_pole_maxx) = real_garbage$
+  ! From elseparator hkick and vkick.
+  real(rp) :: a_kick_elec(0:3) = real_garbage$, b_kick_elec(0:3) = real_garbage$
   integer :: ix_pole_elec_max = invalid$
   integer :: ix_kick_elec_max = invalid$
 end type
 
-! Radiation integral data cache
+! Radiation damping and stochastic maps
+
+type rad_map_struct
+  real(rp) :: ref_orb(6) = -1          ! Reference point around which damp_mat is calculated.
+  real(rp) :: damp_vec(6) = 0          ! 0th order damping. 
+  real(rp) :: damp_mat(6,6) = 0        ! Transfer matrix = no_damp_mat + damp_correction.
+  real(rp) :: stoc_mat(6,6) = 0        ! Stochastic variance or "kick" (Cholesky decomposed) matrix.
+end type
 
 type rad_int_ele_cache_struct
-  real(rp) :: orb0(6) = 0       ! Reference orbit for the calculation
-  real(rp) :: g2_0 = 0          ! g2 factor when orbit = %vec0
-  real(rp) :: g3_0 = 0          ! g3 factor when orbit = %vec0
-  real(rp) :: dg2_dorb(6) = 0   ! variation of g2 with respect to orbit.
-  real(rp) :: dg3_dorb(6) = 0   ! Variation of g3 with respect to orbit.
+  ! 6D emit. In this structure rm0%stoc_mat and rm1%stoc_mat are the kick matrices.
+  type (rad_map_struct) rm0, rm1  ! Upstream half and downstream half matrices for an element.
   logical :: stale = .true.
-end type 
+end type
 
 ! Structure for surfaces of detectors, mirrors, crystals, etc.
 ! Rule: This structure is always allocated in the ele_struct for elements that can utilize it.
@@ -909,8 +949,8 @@ character(16), parameter :: surface_grid_type_name(0:3) = [character(16):: 'GARB
 
 ! Photon statistics at a detector
 
-type pixel_grid_pt_struct
-  integer :: n_photon = 0
+type pixel_pt_struct
+  integer(8) :: n_photon = 0
   complex(rp) :: E_x  = 0, E_y = 0
   real(rp) ::  intensity_x = 0, intensity_y = 0, intensity = 0
   real(rp) :: orbit(6) = 0            ! x, Vx/c, y, Vy/c, dummy, E - E_ref.
@@ -919,9 +959,12 @@ type pixel_grid_pt_struct
   real(rp) :: init_orbit_rms(6) = 0   ! Initial orbit at start of lattice RMS statistics.
 end type
 
-type pixel_grid_struct
+type pixel_detec_struct
   real(rp) :: dr(2) = 0, r0(2) = 0
-  type (pixel_grid_pt_struct), allocatable :: pt(:,:) 
+  integer(8) :: n_track_tot = 0       ! How many photons were launched from source element.
+  integer(8) :: n_hit_detec = 0         ! How many photons hit the detector.
+  integer(8) :: n_hit_pixel = 0       ! How many photons hit the pixel grid of the detector.
+  type (pixel_pt_struct), allocatable :: pt(:,:) ! Grid of pixels
 end type
 
 ! Surface container structure
@@ -964,7 +1007,7 @@ type photon_element_struct
   type (photon_target_struct) :: target = photon_target_struct()
   type (photon_material_struct) :: material = photon_material_struct()
   type (surface_grid_struct) :: grid = surface_grid_struct(.true., not_set$, 0, 0, null())
-  type (pixel_grid_struct) :: pixel = pixel_grid_struct(0, 0, null())
+  type (pixel_detec_struct) :: pixel = pixel_detec_struct([0.0_rp, 0.0_rp], [0.0_rp, 0.0_rp], 0, 0, 0, null())
 end type
 
 !------------------------------------------------------------------------------
@@ -973,14 +1016,18 @@ end type
 type bunch_struct
   type (coord_struct), allocatable :: particle(:)
   integer, allocatable :: ix_z(:)  ! bunch%ix_z(1) is index of head particle, etc.
-  real(rp) :: charge_tot = 0  ! Total charge in a bunch (Coul).
-  real(rp) :: charge_live = 0 ! Charge of live particles (Coul).
-  real(rp) :: z_center = 0    ! Longitudinal center of bunch (m). Note: Generally, z_center of 
-                              !   bunch #1 is 0 and z_center of the other bunches is negative.
-  real(rp) :: t_center = 0    ! Center of bunch creation time relative to head bunch.
-  integer :: ix_ele = 0       ! Nominal element this bunch is at. But, EG, dead particles can be someplace else.
-  integer :: ix_bunch = 0     ! Bunch index. Head bunch = 1, etc.
+  real(rp) :: charge_tot = 0      ! Total charge in a bunch (Coul).
+  real(rp) :: charge_live = 0     ! Charge of live particles (Coul).
+  real(rp) :: z_center = 0        ! Longitudinal center of bunch (m). Note: Generally, z_center of 
+                                  !   bunch #1 is 0 and z_center of the other bunches is negative.
+  real(rp) :: t_center = 0        ! Center of bunch creation time relative to head bunch.
+  real(rp) :: t0 = real_garbage$  ! Used by track1_bunch_space_charge for tracking so particles have constant t.
+  integer :: ix_ele = 0           ! Nominal element bunch is at. But, EG, dead particles can be someplace else.
+  integer :: ix_bunch = 0         ! Bunch index. Head bunch = 1, etc.
+  integer :: ix_turn = 0          ! Turn index for long term tracking. ix_turn = 0 before end of first turn, etc.
   integer :: n_live = 0
+  integer :: n_good = 0           ! Number of accepted steps when using adaptive step size control.
+  integer :: n_bad = 0            ! Number of rejected steps when using adaptive step size control.
 end type
 
 type beam_struct
@@ -1012,7 +1059,7 @@ type beam_init_struct
   character(200) :: position_file = ''       ! File with particle positions.
   character(200) :: file_name = ''           ! Old name for position file.
   character(16) :: distribution_type(3) = '' ! distribution type (in x-px, y-py, and z-pz planes)
-                                             ! "ELLIPSE", "KV", "GRID", "FILE", "", or "RAN_GAUSS" 
+                                             ! "ELLIPSE", "KV", "GRID", "FILE", "RAN_GAUSS" or "" = "RAN_GAUSS" 
   real(rp) :: spin(3) = 0                    ! Spin (x, y, z)
   type (ellipse_beam_init_struct) :: ellipse(3) = ellipse_beam_init_struct() ! Ellipse beam distribution
   type (kv_beam_init_struct) :: KV = kv_beam_init_struct()                   ! KV beam distribution
@@ -1043,13 +1090,14 @@ type beam_init_struct
   logical :: init_spin     = .true.          ! Not used. Deprecated.
   logical :: full_6D_coupling_calc = .false. ! Use V from 6x6 1-turn mat to match distribution?  
                                              !   Else use 4x4 1-turn mat used.
-  logical :: use_particle_start_for_center = .false. ! Slave beam_init%center(:) to lat%particle_start[...]?
+  logical :: use_particle_start = .false.    ! Use lat%particle_start instead of beam_init%center, %spin?
   logical :: use_t_coords = .false.          ! If true, the distributions will be taken as in t-coordinates  
   logical :: use_z_as_t   = .false.          ! Only used if  use_t_coords = .true.
                                              !   If true,  z describes the t distribution 
                                              !   If false, z describes the s distribution
   real(rp) :: sig_e_jitter     = 0.0         ! DEPRECATED. DO NOT USE. Replaced by sig_pz_jitter.
   real(rp) :: sig_e = 0                      ! DEPRECATED. DO NOT USE. Replaced by sig_pz.
+  logical :: use_particle_start_for_center = .false. ! DEPRECATED. DO NOT USE. Replaced by use_particle_start.
 end type
 
 
@@ -1070,6 +1118,7 @@ type bunch_params_struct
   real(rp) :: rel_max(6) = 0             ! Max orbit relative to centroid
   real(rp) :: rel_min(6) = 0             ! Min orbit relative to_centroid
   real(rp) :: s = -1                     ! Longitudinal position.
+  real(rp) :: t = -1                     ! Time.
   real(rp) :: charge_live = 0            ! Charge of all non-lost particle
   real(rp) :: charge_tot = 0             ! Charge of all particles.
   integer :: n_particle_tot = 0          ! Total number of particles
@@ -1078,6 +1127,14 @@ type bunch_params_struct
   logical :: twiss_valid = .false.       ! Is the data here valid? Note: IF there is no energy
                                          !   variation (RF off) twiss_valid may be true but in
                                          !   this case the z-twiss will not be valid.
+end type
+
+! Bunch_track_struct is the bunch alalogue of a particle track_struct
+
+type bunch_track_struct
+  type (bunch_params_struct), allocatable :: pt(:)     ! Array indexed from 0
+  real(rp) :: ds_save = 1d-2                           ! Min distance between points
+  integer :: n_pt = -1                                 ! Track upper bound
 end type
 
 !------------------------------------------------------------------------
@@ -1225,7 +1282,9 @@ type ele_struct
   type (photon_element_struct), pointer :: photon => null()
   type (multipole_cache_struct), allocatable :: multipole_cache
   type (rad_int_ele_cache_struct), pointer :: rad_int_cache => null() ! Radiation integral calc cached values 
+  ! Note: The reference orbits for spin and orbit Taylor maps are not necessarily the same
   type (taylor_struct) :: taylor(6) = taylor_struct()          ! Phase space Taylor map.
+  real(rp) :: spin_taylor_ref_orb_in(6) = real_garbage$
   type (taylor_struct) :: spin_taylor(0:3) = taylor_struct()   ! Quaternion Spin Taylor map.
   type (wake_struct), pointer :: wake => null()                ! Wakes
   type (wall3d_struct), pointer :: wall3d(:) => null()         ! Chamber or capillary wall
@@ -1241,14 +1300,14 @@ type ele_struct
   type (coord_struct) :: map_ref_orb_out = coord_struct()      ! Exit end transfer map ref orbit
   type (coord_struct) :: time_ref_orb_in = coord_struct()      ! Reference orbit at entrance end for ref_time calc.
   type (coord_struct) :: time_ref_orb_out = coord_struct()     ! Reference orbit at exit end for ref_time calc.
-  real(rp) :: spin_taylor_ref_orb_in(6) = 0                    ! spin_taylor entrance reference orbit.
   real(rp) :: value(num_ele_attrib$) = 0                       ! attribute values.
   real(rp) :: old_value(num_ele_attrib$) = 0                   ! Used to see if %value(:) array has changed.
+  ! Note: The reference orbit for spin/orbit matrices is %map_ref_orb_in/out
+  real(rp) :: spin_q(0:3,0:6) = real_garbage$                  ! 0th and 1st order Spin transport quaternion.
   real(rp) :: vec0(6) = 0                                      ! 0th order transport vector.
   real(rp) :: mat6(6,6) = 0                                    ! 1st order transport matrix.
   real(rp) :: c_mat(2,2) = 0                                   ! 2x2 C coupling matrix
   real(rp) :: gamma_c = 1                                      ! gamma associated with C matrix
-  real(rp) :: spin_q(0:3,0:6) = real_garbage$                  ! 0th and 1st order Spin transport quaternion.
   real(rp) :: s_start = 0                                      ! longitudinal ref position at entrance_end
   real(rp) :: s = 0                                            ! longitudinal ref position at the exit end.
   real(rp) :: ref_time = 0                                     ! Time ref particle passes exit end.
@@ -1276,7 +1335,7 @@ type ele_struct
   integer :: tracking_method = bmad_standard$     ! taylor$, linear$, etc.
   integer :: spin_tracking_method = tracking$     ! symp_lie_ptc$, etc.
   integer :: csr_method = off$                    ! or one_dim$ ("1_dim"), steady_state_3d$
-  integer :: space_charge_method = off$           ! slice$, slice_longitudinal$, slice_transverse$, fft_3D$
+  integer :: space_charge_method = off$           ! slice$, slice_longitudinal$, slice_transverse$, fft_3D$, cathode_fft_3d$
   integer :: ptc_integration_type = matrix_kick$  ! drift_kick$, matrix_kick$, or ripken_kick$
   integer :: field_calc = bmad_standard$          ! no_field$, fieldmap$, refer_to_lords$, or custom$
   integer :: aperture_at = exit_end$              ! Aperture location: entrance_end$, ...
@@ -1300,10 +1359,7 @@ contains
   !! final :: ele_finalizer
 end type
 
-! lat_param_struct should be called branch_param_struct [Present name is an historical artifact.]
-
-integer, parameter :: incoherent$ = 1, coherent$ = 2
-character(16), parameter :: photon_type_name(1:2) = ['Incoherent', 'Coherent  ']
+! The lat_param_struct should be called the branch_param_struct [Present name is a historical artifact.]
 
 type lat_param_struct
   real(rp) :: n_part = 0                       ! Particles/bunch (for BeamBeam elements).
@@ -1314,13 +1370,15 @@ type lat_param_struct
   real(rp) :: t1_no_RF(6,6) = 0                ! Full 1-turn matrix with RF off.
   real(rp) :: spin_tune = 0                    ! Closed orbit spin tune.
   integer :: particle = not_set$               ! Reference particle: positron$, electron$, etc.
-                                               !   Call lattice_bookkeeper if this is changed.
+                                               !     Call lattice_bookkeeper if this is changed.
   integer :: default_tracking_species = ref_particle$  ! Default particle type to use in tracking.
   integer :: geometry = 0                      ! open$ or closed$
   integer :: ixx = 0                           ! Integer for general use
-  logical :: high_energy_space_charge_on = .false. ! 
   logical :: stable = .false.                  ! is closed lat stable?
   logical :: live_branch = .true.              ! Should tracking be done on the branch?
+  real(rp) :: g1_integral = -1                 ! Approximate |g| (bending strength) integral of branch. 
+  real(rp) :: g2_integral = -1                 ! Approximate g^2 integral of branch. 
+  real(rp) :: g3_integral = -1                 ! Approximate g^2 integral of branch. 
   type (bookkeeping_state_struct) :: bookkeeping_state = bookkeeping_state_struct()
                                                ! Overall status for the branch.
   type (beam_init_struct) :: beam_init = beam_init_struct() ! For beam initialization.
@@ -1376,8 +1434,9 @@ type ptc_normal_form_struct
   type (probe_8) one_turn_map                ! One turn map
   real(rp) orb0(6)                           ! Closed orbit at element.
   type (c_normal_form) normal_form           ! Complex normal form
-  type (c_taylor) phase(3)                   ! Phase, chromaticity maps
-  type (c_taylor) spin                       ! Spin map
+  type (c_taylor) phase(3)                   ! Phase/chromaticity maps
+  type (c_taylor) path_length                ! Path length map. Gives momentum compaction.
+  type (c_taylor) spin_tune                  ! Spin map
   type (internal_state) state                ! PTC state
   logical :: valid_map = .false.
 end type
@@ -1449,7 +1508,6 @@ type lat_struct
   integer :: photon_type = incoherent$                ! Or coherent$. For X-ray simulations.
   integer :: creation_hash = 0                        ! Integer, set by bmad_parser, that will be different if 
                                                       !   any of the lattice files have been modified.
-  logical :: absolute_time_tracking = .false.         ! Use abs. time for RF phase? Call autoscale if toggled.
 end type
 
 character(2), parameter :: coord_name(6) = ['x ', 'px', 'y ', 'py', 'z ', 'pz']
@@ -1471,10 +1529,10 @@ integer, parameter :: pipe$ = 44, capillary$ = 45, multilayer_mirror$ = 46, e_gu
 integer, parameter :: floor_shift$ = 49, fiducial$ = 50, undulator$ = 51, diffraction_plate$ = 52
 integer, parameter :: photon_init$ = 53, sample$ = 54, detector$ = 55, sad_mult$ = 56, mask$ = 57
 integer, parameter :: ac_kicker$ = 58, lens$ = 59, beam_init$ = 60, crab_cavity$ = 61, ramper$ = 62
-integer, parameter :: def_ptc_com$ = 63
-integer, parameter :: n_key$ = 63
+integer, parameter :: def_ptc_com$ = 63, def_space_charge_com$ = 64
+integer, parameter :: n_key$ = 64
 
-! An "!" as the first character is to prevent name matching by the key_name_to_key_index routine.
+! A "!" as the first character is to prevent name matching by the key_name_to_key_index routine.
 
 character(20), parameter :: key_name(n_key$) = [ &
     'Drift             ', 'Sbend             ', 'Quadrupole        ', 'Group             ', 'Sextupole         ', &
@@ -1489,7 +1547,7 @@ character(20), parameter :: key_name(n_key$) = [ &
     'Multilayer_Mirror ', 'E_Gun             ', 'EM_Field          ', 'Floor_Shift       ', 'Fiducial          ', &
     'Undulator         ', 'Diffraction_Plate ', 'Photon_Init       ', 'Sample            ', 'Detector          ', &
     'Sad_Mult          ', 'Mask              ', 'AC_Kicker         ', 'Lens              ', 'Beam_Init         ', &
-    'Crab_Cavity       ', 'Ramper            ', '!PTC_Com          ']
+    'Crab_Cavity       ', 'Ramper            ', '!PTC_Com          ', '!Space_Charge_Com ']
 
 ! These logical arrays get set in init_attribute_name_array and are used
 ! to sort elements that have kick or orientation attributes from elements that do not.
@@ -1504,23 +1562,29 @@ logical has_kick_attributes(n_key$)
 
 ! Element attribute name logical definitions
 
-integer, parameter :: val1$=11, val2$=12, val3$=13, val4$=14, val5$=15, &
-          val6$=16, val7$=17, val8$=18, val9$=19, val10$=20, val11$=21, &
-          val12$=22
+integer, parameter :: val1$=19, val2$=20, val3$=21, val4$=22, val5$=23, &
+          val6$=24, val7$=25, val8$=26, val9$=27, val10$=28, val11$=29, &
+          val12$=30
 
+! Note: The following must not be varied without varying appropriate code:
+!   Range [beta_a0$, alpha_b0$] and [beta_a1$, alpha_b1$] hold all twiss.
+!   Range [eta_x0$, etap_y0$] and [eta_x1$, etap_y1$] hold all dispersion.
+!   Range [c11_mat0$, c22_mat0$] and [c11_mat1$, c22_mat1$] hold all C-matrix values
+    
 integer, parameter :: beta_a0$ = 2, alpha_a0$ = 3, beta_b0$ = 4, alpha_b0$ = 5
 integer, parameter :: beta_a1$ = 6, alpha_a1$ = 7, beta_b1$ = 8, alpha_b1$ = 9
 integer, parameter :: dphi_a$ = 10, dphi_b$ = 11
 integer, parameter :: eta_x0$ = 12, etap_x0$ = 13, eta_y0$ = 14, etap_y0$ = 15
 integer, parameter :: eta_x1$ = 16, etap_x1$ = 17, eta_y1$ = 18, etap_y1$ = 19
-integer, parameter :: c11_mat0$ = 20, c12_mat0$ = 21, c21_mat0$ = 22, c22_mat0$ = 23
-integer, parameter :: c11_mat1$ = 24, c12_mat1$ = 25, c21_mat1$ = 26, c22_mat1$ = 27
-integer, parameter :: x0$ = 28, px0$ = 29, y0$ = 30, py0$ = 31, z0$ = 32, pz0$ = 33
-integer, parameter :: x1$ = 34, px1$ = 35, y1$ = 36, py1$ = 37, z1$ = 38, pz1$ = 39
-integer, parameter :: phase_trombone_input$ = 40, phase_trombone$ = 41
-integer, parameter :: match_end_input$ = 42, match_end$ = 43
-integer, parameter :: match_end_orbit_input$ = 44, match_end_orbit$ = 45
-integer, parameter :: delta_time$ = 46
+integer, parameter :: c11_mat0$ = 20, c12_mat0$ = 21, c21_mat0$ = 22, c22_mat0$ = 23, mode_flip0$ = 24
+integer, parameter :: c11_mat1$ = 25, c12_mat1$ = 26, c21_mat1$ = 27, c22_mat1$ = 28, mode_flip1$ = 29
+
+integer, parameter :: x0$ = 30, px0$ = 31, y0$ = 32, py0$ = 33, z0$ = 34, pz0$ = 35
+integer, parameter :: x1$ = 36, px1$ = 37, y1$ = 38, py1$ = 39, z1$ = 40, pz1$ = 41
+integer, parameter :: phase_trombone_input$ = 42, phase_trombone$ = 43
+integer, parameter :: match_end_input$ = 44, match_end$ = 45
+integer, parameter :: match_end_orbit_input$ = 46, match_end_orbit$ = 47
+integer, parameter :: delta_time$ = 48
 
 integer, parameter :: x$ = 1, px$ = 2, y$ = 3, py$ = 4, z$ = 5, pz$ = 6
 integer, parameter :: t$ = 8
@@ -1534,10 +1598,10 @@ integer, parameter :: radius$ = 3, focal_strength$ = 5
 
 integer, parameter :: l$ = 1                          ! Assumed unique. Do not assign 1 to another attribute.
 integer, parameter :: tilt$ = 2, roll$ = 2, n_part$ = 2, inherit_from_fork$ = 2 ! Important: tilt$ = roll$
-integer, parameter :: ref_tilt$ = 3, rf_frequency$ = 3, direction$ = 3, ref_time_offset$ = 3
+integer, parameter :: ref_tilt$ = 3, rf_frequency$ = 3, direction$ = 3, repetition_frequency$ = 3
 integer, parameter :: kick$ = 3, x_gain_err$ = 3, taylor_order$ = 3, r_solenoid$ = 3
 integer, parameter :: rf_frequency_err$ = 4, k1$ = 4, kx$ = 4, harmon$ = 4, h_displace$ = 4, y_gain_err$ = 4
-integer, parameter :: critical_angle_factor$ = 4, tilt_corr$ = 4, ref_coords$ = 4, l_cathode_region$ = 4
+integer, parameter :: critical_angle_factor$ = 4, tilt_corr$ = 4, ref_coords$ = 4
 integer, parameter :: graze_angle$ = 5, k2$ = 5, b_max$ = 5, v_displace$ = 5, drift_id$ = 5, rf_wavelength$ = 5
 integer, parameter :: ks$ = 5, flexible$ = 5, crunch$ = 5, ref_orbit_follows$ = 5, pc_out_min$ = 5
 integer, parameter :: gradient$ = 6, k3$ = 6, noise$ = 6, new_branch$ = 6, ix_branch$ = 6, g_max$ = 6
@@ -1546,7 +1610,7 @@ integer, parameter :: dg$ = 7, bbi_const$ = 7, osc_amplitude$ = 7, ix_to_branch$
 integer, parameter :: gradient_err$ = 7, critical_angle$ = 7, sad_flag$ = 7, bragg_angle_in$ = 7
 integer, parameter :: rho$ = 8, delta_e_ref$ = 8, interpolation$ = 8, bragg_angle_out$ = 8, k1x$ = 8
 integer, parameter :: charge$ = 8, x_gain_calib$ = 8, ix_to_element$ = 8, voltage$ = 8
-integer, parameter :: eps_step_scale$ = 9, voltage_err$ = 9, bragg_angle$ = 9, k1y$ = 9
+integer, parameter :: eps_step_scale$ = 9, voltage_err$ = 9, bragg_angle$ = 9, k1y$ = 9, n_particle$ = 9
 integer, parameter :: fringe_type$ = 10, dbragg_angle_de$ = 10
 integer, parameter :: fringe_at$ = 11, gang$ = 11, darwin_width_sigma$ = 11
 integer, parameter :: higher_order_fringe_type$ = 12, darwin_width_pi$ = 12
@@ -1554,7 +1618,7 @@ integer, parameter :: spin_fringe_on$ = 13, pendellosung_period_sigma$ = 13
 integer, parameter :: sig_x$ = 14, exact_multipoles$ = 14, pendellosung_period_pi$ = 14
 integer, parameter :: sig_y$ = 15, graze_angle_in$ = 15, r0_elec$ = 15
 integer, parameter :: sig_z$ = 16, graze_angle_out$ = 16, r0_mag$ = 16
-integer, parameter :: sig_vx$ = 17
+integer, parameter :: sig_vx$ = 17, static_linear_map$ = 17
 integer, parameter :: sig_vy$ = 18, autoscale_amplitude$ = 18
 integer, parameter :: sig_e$ = 19, autoscale_phase$ = 19, sig_pz$ = 19
 integer, parameter :: d1_thickness$ = 20, default_tracking_species$ = 20, direction_particle_start$ = 20
@@ -1563,21 +1627,22 @@ integer, parameter :: longitudinal_mode$ = 20, sig_e2$ = 20
 integer, parameter :: fb1$ = 21, polarity$ = 21, crunch_calib$ = 21, alpha_angle$ = 21, d2_thickness$ = 21
 integer, parameter :: beta_a_strong$ = 21, beta_a_out$ = 21, e_loss$ = 21, gap$ = 21, spin_x$ = 21, E_center$ = 21
 integer, parameter :: fb2$ = 22, x_offset_calib$ = 22, v1_unitcell$ = 22, psi_angle$ = 22, dt_max$ = 22
-integer, parameter :: beta_b_strong$ = 22, beta_b_out$ = 22, spin_y$ = 22, E2_center$ = 22, n_period$ = 22
+integer, parameter :: phi0_max$ = 22, beta_b_strong$ = 22, beta_b_out$ = 22, spin_y$ = 22, E2_center$ = 22, n_period$ = 22
 integer, parameter :: y_offset_calib$ = 23, v_unitcell$ = 23, v2_unitcell$ = 23, spin_z$ = 23, l_period$ = 23
 integer, parameter :: fq1$ = 23, alpha_a_strong$ = 23, alpha_a_out$ = 23, cavity_type$ = 23, E2_probability$ = 23
 integer, parameter :: emit_fraction$ = 23
 integer, parameter :: fq2$ = 24, phi0$ = 24, tilt_calib$ = 24, E_center_relative_to_ref$ = 24
 integer, parameter :: alpha_b_strong$ = 24, alpha_b_out$ = 24, is_mosaic$ = 24, px_aperture_width2$ = 24
 integer, parameter :: phi0_err$ = 25, current$ = 25, mosaic_thickness$ = 25, px_aperture_center$ = 25
-integer, parameter :: eta_x_out$ = 25, quad_tilt$ = 25, de_eta_meas$ = 25, spatial_distribution$ = 25
+integer, parameter :: eta_x_out$ = 25, quad_tilt$ = 25, de_eta_meas$ = 25, spatial_distribution$ = 25, species_strong$ = 25
 integer, parameter :: eta_y_out$ = 26, bend_tilt$ = 26, mode$ = 26, velocity_distribution$ = 26, py_aperture_width2$ = 26
 integer, parameter :: phi0_multipass$ = 26, n_sample$ = 26, origin_ele_ref_pt$ = 26, mosaic_angle_rms_in_plane$ = 26
+integer, parameter :: E_tot_strong$ = 26
 integer, parameter :: etap_x_out$ = 27, phi0_autoscale$ = 27, dx_origin$ = 27, energy_distribution$ = 27
 integer, parameter :: x_quad$ = 27, ds_photon_slice$ = 27, mosaic_angle_rms_out_plane$ = 27
-integer, parameter :: py_aperture_center$ = 27, dpz_rad_damp_ave$ = 27, x_dispersion_err$ = 27
-integer, parameter :: etap_y_out$ = 28, phi0_max$ = 28, dy_origin$ = 28, y_quad$ = 28, e_field_x$ = 28
-integer, parameter :: y_dispersion_err$ = 28, z_aperture_width2$ = 28
+integer, parameter :: py_aperture_center$ = 27, x_dispersion_err$ = 27
+integer, parameter :: etap_y_out$ = 28, dy_origin$ = 28, y_quad$ = 28, e_field_x$ = 28
+integer, parameter :: y_dispersion_err$ = 28, z_aperture_width2$ = 28, user_sets_length$ = 28, rf_clock_harmonic$ = 28
 integer, parameter :: upstream_coord_dir$ = 29, dz_origin$ = 29, mosaic_diffraction_num$ = 29, z_aperture_center$ = 29
 integer, parameter :: cmat_11$ = 29, field_autoscale$ = 29, l_sagitta$ = 29, e_field_y$ = 29, x_dispersion_calib$ = 29
 integer, parameter :: cmat_12$ = 30, dtheta_origin$ = 30, b_param$ = 30, l_chord$ = 30, scale_field_to_one$ = 30
@@ -1585,7 +1650,7 @@ integer, parameter :: downstream_coord_dir$ = 30, pz_aperture_width2$ = 30, y_di
 integer, parameter :: cmat_21$ = 31, l_active$ = 31, dphi_origin$ = 31, ref_cap_gamma$ = 31
 integer, parameter :: l_soft_edge$ = 31, transverse_sigma_cut$ = 31, pz_aperture_center$ = 31
 integer, parameter :: cmat_22$ = 32, dpsi_origin$ = 32, t_offset$ = 32, ds_slice$ = 32
-integer, parameter :: angle$ = 33, n_cell$ = 33
+integer, parameter :: angle$ = 33, n_cell$ = 33, mode_flip$ = 33, z_crossing$ = 33
 integer, parameter :: x_pitch$ = 34
 integer, parameter :: y_pitch$ = 35  
 integer, parameter :: x_offset$ = 36
@@ -1595,13 +1660,13 @@ integer, parameter :: hkick$ = 39, d_spacing$ = 39, x_offset_mult$ = 39, emittan
 integer, parameter :: vkick$ = 40, y_offset_mult$ = 40, p0c_ref_init$ = 40, emittance_b$ = 40, crab_x2$ = 40
 integer, parameter :: BL_hkick$ = 41, x_pitch_mult$ = 41, e_tot_ref_init$ = 41, emittance_z$ = 41, crab_x3$ = 41
 integer, parameter :: BL_vkick$ = 42, y_pitch_mult$ = 42, crab_tilt$ = 42
-integer, parameter :: BL_kick$ = 43, B_field$ = 43, E_field$ = 43, high_energy_space_charge_on$ = 43
-integer, parameter :: photon_type$ = 44, coupler_phase$ = 44, dB_field$ = 44
+integer, parameter :: BL_kick$ = 43, B_field$ = 43, E_field$ = 43, high_energy_space_charge_on$ = 43, crab_x4$=43
+integer, parameter :: photon_type$ = 44, coupler_phase$ = 44, dB_field$ = 44, crab_x5$=44
 integer, parameter :: lattice_type$ = 45, B1_gradient$ = 45, E1_gradient$ = 45, coupler_angle$ = 45
 integer, parameter :: live_branch$ = 46, B2_gradient$ = 46, E2_gradient$ = 46, coupler_strength$ = 46
-integer, parameter :: geometry$ = 47, coupler_at$ = 47, E_tot_set$ = 47, ptc_canonical_coords$ = 47
-integer, parameter :: B3_gradient$ = 48, E3_gradient$ = 48, ptc_fringe_geometry$ = 48, p0c_set$ = 48
-integer, parameter :: Bs_field$ = 49, e_tot_offset$ = 49, ptc_field_geometry$ = 49
+integer, parameter :: geometry$ = 47, coupler_at$ = 47, E_tot_offset$ = 47, ptc_canonical_coords$ = 47
+integer, parameter :: B3_gradient$ = 48, E3_gradient$ = 48, ptc_fringe_geometry$ = 48, e_tot_set$ = 48
+integer, parameter :: Bs_field$ = 49, p0c_set$ = 49, ptc_field_geometry$ = 49
 integer, parameter :: delta_ref_time$ = 50
 integer, parameter :: p0c_start$ = 51
 integer, parameter :: e_tot_start$ = 52
@@ -1617,7 +1682,7 @@ integer, parameter :: ref_tilt_tot$ = 61
 integer, parameter :: multipass_ref_energy$ = 62
 ! Slot 63 is free for use
 integer, parameter :: ref_time_start$ = 64
-integer, parameter :: thickness$ = 65, integrator_order$ = 65   ! For Etiennes' PTC: 2, 4, or 6.
+integer, parameter :: thickness$ = 65, integrator_order$ = 65   ! For Etiennes' PTC: 2, 4, 6, or 8.
 integer, parameter :: num_steps$ = 66   ! Assumed unique by set_flags_for_changed_real_attribute
 integer, parameter :: ds_step$ = 67     ! Assumed unique by set_flags_for_changed_real_attribute
 integer, parameter :: csr_ds_step$ = 68
@@ -1632,18 +1697,6 @@ integer, parameter :: check_sum$ = 75
 integer, parameter :: g_err$ = dg$   ! For backwards compatibility.
 integer, parameter :: B_field_err$ = dB_field$  ! For backwards compatibility
 !!    = 1 + num_ele_attrib$
-
-integer, parameter :: max_aperture_limit$ = 81     ! bmad_com parameters
-integer, parameter :: default_ds_step$ = 82
-integer, parameter :: significant_length$ = 83
-integer, parameter :: rel_tol_tracking$ = 84
-integer, parameter :: abs_tol_tracking$ = 85
-integer, parameter :: rel_tol_adaptive_tracking$ = 86
-integer, parameter :: abs_tol_adaptive_tracking$ = 87
-integer, parameter :: init_ds_adaptive_tracking$ = 88
-integer, parameter :: min_ds_adaptive_tracking$ = 89
-integer, parameter :: fatal_ds_adaptive_tracking$ = 90
-integer, parameter :: max_num_runge_kutta_step$ = 91
 
 integer, parameter :: spherical_curvature$ = 81, distribution$ = 81
 integer, parameter :: tt$ = 81, x_knot$ = 81
@@ -1673,7 +1726,7 @@ integer, parameter :: term$ = 101, frequencies$ = 101, old_integrator$ = 101, cu
 integer, parameter :: x_position$ = 102, exact_model$ = 102
 integer, parameter :: symplectify$ = 103, y_position$ = 103, n_slice_spline$ = 103
 integer, parameter :: z_position$ = 104, amp_vs_time$ = 104
-integer, parameter :: is_on$ = 105, theta_position$ = 105
+integer, parameter :: is_on$ = 105, theta_position$ = 105, vertical_kick$ = 105
 integer, parameter :: field_calc$ = 106, phi_position$ = 106
 integer, parameter :: psi_position$ = 107, wall$ = 107
 integer, parameter :: aperture_at$ = 108, beta_a$ = 108
@@ -1732,16 +1785,17 @@ integer, parameter :: open$ = 1, closed$ = 2
 character(16), parameter :: lattice_type_name(0:2) = ['GARBAGE!        ', 'Linear_Lattice  ', 'Circular_Lattice']
 character(16), parameter :: geometry_name(0:2) = ['GARBAGE!    ', 'Open        ', 'Closed      ']
 
-! The linac_normal_mode_struct is basically the synchrotron integrals with the
-! energy factors thrown in. Useful for linacs.
+! The linac_normal_mode_struct is basically the synchrotron integrals with the energy factors thrown in.
+! Note: The b%emittance calc from radiation integrals will include the photon vertical opening angle in the calc.
 
 type anormal_mode_struct
-  real(rp) :: emittance = 0       ! Beam emittance
-  real(rp) :: synch_int(4:6) = 0  ! Synchrotron integrals
-  real(rp) :: j_damp = 0          ! damping partition number
-  real(rp) :: alpha_damp = 0      ! damping per turn
-  real(rp) :: chrom = 0           ! Chromaticity
-  real(rp) :: tune = 0            ! "Fractional" tune in radians
+  real(rp) :: emittance = 0         ! Beam emittance. Includes vertical photon opening angle.
+  real(rp) :: emittance_no_vert = 0 ! Beam emittance without the vertical photon opening angle taken into account.
+  real(rp) :: synch_int(4:6) = 0    ! Synchrotron integrals
+  real(rp) :: j_damp = 0            ! damping partition number
+  real(rp) :: alpha_damp = 0        ! damping per turn
+  real(rp) :: chrom = 0             ! Chromaticity
+  real(rp) :: tune = 0              ! "Fractional" tune in radians
 end type
 
 type linac_normal_mode_struct
@@ -1760,7 +1814,10 @@ type normal_modes_struct
   real(rp) :: sig_z = 0           ! Sigma_Z
   real(rp) :: e_loss = 0          ! Energy loss / turn (eV)
   real(rp) :: rf_voltage = 0      ! Total rfcavity voltage (eV)
-  real(rp) :: pz_aperture = 0     ! pz aperture limit
+  real(rp) :: pz_aperture = 0     ! pz aperture limit. Used with Touschek calculations.
+  real(rp) :: pz_average = 0      ! Average over branch due to damping.
+  real(rp) :: momentum_compaction = 0
+  real(rp) :: dpz_damp = 0        ! Change in pz without RF
   type (anormal_mode_struct) :: a = anormal_mode_struct()
   type (anormal_mode_struct) :: b = anormal_mode_struct()
   type (anormal_mode_struct) :: z = anormal_mode_struct()
@@ -1770,6 +1827,7 @@ end type
 integer, parameter :: bends$ = 201
 integer, parameter :: wigglers$ = 202
 integer, parameter :: all$ = 203
+integer, parameter :: upstream$ = 1, downstream$ = 2
 
 !---------------------------------------------------------------------------
 ! Units
@@ -1797,13 +1855,20 @@ character(30), parameter :: grid_field_geometry_name(0:2) = &
                           [character(30) :: 'GARBAGE!', 'rotationally_symmetric_rz', 'xyz']
 integer, parameter :: grid_field_dimension(2) = [2, 3] 
 
+! Structures for saving the track through an element.
 
-! Structure for saving the track through an element.
+type strong_beam_struct
+  integer :: ix_slice = 0                   ! 0 -> at element center and not at slice.
+  real(rp) :: x_center = 0, y_center = 0    ! Strong beam slice center.
+  real(rp) :: x_sigma = 0, y_sigma = 0      ! Strong beam slice sigma.
+  real(rp) :: dx = 0, dy = 0                ! Particle - beam slice distance.
+end type
 
 type track_point_struct
   real(rp) s_body                                 ! Longitudinal coords within the element body.
   type (coord_struct) orb                         ! An array of track points indexed from 0 (%orb(0:)).
   type (em_field_struct) field                    ! An array of em fields indexed from 0 (%field(0:)).
+  type (strong_beam_struct) strong_beam           ! Strong beam info for beambeam element.
   real(rp) vec0(6)                                ! 0th order part of xfer map from the beginning.
   real(rp) mat6(6,6)                              ! 1st order part of xfer map (transfer matrix).
 end type
@@ -1813,7 +1878,7 @@ end type
 type track_struct
   type (track_point_struct), allocatable :: pt(:) ! Array of track points indexed from 0.
   real(rp) :: ds_save = 1d-3  ! Min distance between points. Not positive => Save at all points.
-  integer :: n_pt = -1        ! Track upper bound for %orb(0:), etc. arrays.
+  integer :: n_pt = -1        ! Track upper bound for %pt(0:) array.
   ! n_bad and n_ok are used by adaptive trackers to record the number of times the step length had to be shortened.
   integer :: n_bad = 0        ! Number of "bad" steps where the step length was shortened.
   integer :: n_ok = 0         ! Number of "good" steps where the step length was not shortened.
@@ -1893,33 +1958,28 @@ type aperture_scan_struct
 end type
 
 !-------------------------------------------------------------------------
-! CSR parameters
+! Space charge parameters
 
-!+
-! Note: Shielding is simulated via the image current due to the 
-! top and bottom walls. The side walls are neglected.
-!-
-
-type csr_parameter_struct                  ! Common block for csr calc
-  real(rp) :: ds_track_step = 0            ! Tracking step size
-  real(rp) :: beam_chamber_height = 0      ! Used in shielding calculation.
-  real(rp) :: sigma_cutoff = 0.1           ! Cutoff for the lsc calc. If a bin sigma
-                                           !  is < cutoff * sigma_ave then ignore.
+type space_charge_common_struct                   ! Common block for space charge
+  real(rp) :: ds_track_step = 0                   ! CSR tracking step size
+  real(rp) :: dt_track_step = 1d-12               ! Time Runge kutta initial step.
+  real(rp) :: cathode_strength_cutoff = 0.01      ! Cutoff for the cathode field calc.
+  real(rp) :: rel_tol_tracking = 1d-8
+  real(rp) :: abs_tol_tracking = 1d-10            
+  real(rp) :: beam_chamber_height = 0             ! Used in shielding calculation.
+  real(rp) :: sigma_cutoff = 0.1                  ! Cutoff for the lsc calc. If a bin sigma
+                                                  !  is < cutoff * sigma_ave then ignore.
   integer :: space_charge_mesh_size(3) = [32, 32, 64]  ! Gird size for fft_3d space charge calc.
   integer :: csr3d_mesh_size(3) = [32, 32, 64]         ! Gird size for CSR.
-  integer :: n_bin = 0                     ! Number of bins used
-  integer :: particle_bin_span = 2         ! Longitudinal particle length / dz_bin
-  integer :: n_shield_images = 0           ! Chamber wall shielding. 0 = no shielding.
-  integer :: sc_min_in_bin = 10            ! Minimum number of particles in a bin for sigmas to be valid.
+  integer :: n_bin = 0                            ! Number of bins used
+  integer :: particle_bin_span = 2                ! Longitudinal particle length / dz_bin
+  integer :: n_shield_images = 0                  ! Chamber wall shielding. 0 = no shielding.
+  integer :: sc_min_in_bin = 10                   ! Minimum number of particles in a bin for sigmas to be valid.
   logical :: lsc_kick_transverse_dependence = .false.
-  logical :: print_taylor_warning = .true. ! Print warning if Taylor element is present?
-  logical :: write_csr_wake = .false.      ! Write the CSR wake to %wake_output_file for diagnostics?
-  logical :: use_csr_old = .false.         ! Use old CSR tracking? Should only be done for testing.
-  logical :: small_angle_approx = .true.   ! Use small angle approximation? ONLY USED WITH OLD CSR.
-  character(200) :: wake_output_file = 'csr_wake.dat'  
+  character(200) :: diagnostic_output_file = ''   ! If non-blank write a diagnostic (EG wake) file
 end type
 
-type (csr_parameter_struct), save, target :: csr_param
+type (space_charge_common_struct), save, target :: space_charge_com
 
 !------------------------------------------------------------------------------
 ! This is for debugging radiation damping and fluctuations.
@@ -1940,12 +2000,12 @@ integer, parameter :: is_struct$ = 6, unknown$ = 7
 integer, parameter :: patch_problem$ = 2, outside$ = 3, cannot_find$ = 4
 
 ! extra_parsing_info_struct is used by parsing routines.
-! %deterministic:
+! %deterministic settings:
 !   0 = Not, 1 = Ran state on input deterministic, 2 = ran state deterministice
 !   will be generated in exactly the same way every time?
-! %ran_function_was_called:
+! %ran_function_was_called setting:
 !   Only set True when ran function is called with ran_determinisitc = 0.
-! %determinisitc_ran_function_was_called:
+! %determinisitc_ran_function_was_called setting:
 !   Only set True when ran function is called with ran_determinisitc = 1.
 
 type extra_parsing_info_struct
@@ -1953,6 +2013,7 @@ type extra_parsing_info_struct
   integer :: deterministic                          = 0
   logical :: ran_function_was_called                = .false.
   logical :: deterministic_ran_function_was_called  = .false.
+  ! Used with bmad_com
   logical :: d_orb_set                              = .false.
   logical :: max_aperture_limit_set                 = .false.
   logical :: default_ds_step_set                    = .false.
@@ -1969,14 +2030,12 @@ type extra_parsing_info_struct
   logical :: autoscale_phase_tol_set                = .false.
   logical :: rf_phase_below_transition_ref_set      = .false.
   logical :: electric_dipole_moment_set             = .false.
-  logical :: ptc_cut_factor_set                     = .false.
   logical :: taylor_order_set                       = .false.
   logical :: runge_kutta_order_set                  = .false.
   logical :: default_integ_order_set                = .false.
   logical :: sr_wakes_on_set                        = .false.
   logical :: lr_wakes_on_set                        = .false.
-  logical :: ptc_use_orientation_patches_set        = .false.
-  logical :: auto_bookkeeper_set                    = .false.
+  logical :: high_energy_space_charge_on_set        = .false.
   logical :: csr_and_space_charge_on_set            = .false.
   logical :: spin_tracking_on_set                   = .false.
   logical :: backwards_time_tracking_on_set         = .false.
@@ -1985,15 +2044,40 @@ type extra_parsing_info_struct
   logical :: radiation_zero_average_set             = .false.
   logical :: radiation_fluctuations_on_set          = .false.
   logical :: conserve_taylor_maps_set               = .false.
-  logical :: absolute_time_tracking_default_set     = .false.
+  logical :: absolute_time_tracking_set             = .false.
+  logical :: absolute_time_ref_shift_set            = .false.
   logical :: convert_to_kinetic_momentum_set        = .false.
   logical :: aperture_limit_on_set                  = .false.
   logical :: sad_eps_scale_set                      = .false.
   logical :: sad_amp_max_set                        = .false.
   logical :: sad_n_div_max_set                      = .false.
   logical :: max_num_runge_kutta_step_set           = .false.
-  logical :: ptc_print_info_messages_set            = .false.
   logical :: debug_set                              = .false.
+  ! Used with space_charge_com
+  logical :: ds_track_step_set                      = .false.
+  logical :: dt_track_step_set                      = .false.
+  logical :: cathode_strength_cutoff_set            = .false.
+  logical :: sc_rel_tol_tracking_set                = .false.  ! For: space_charge_com%rel_tol_tracking
+  logical :: sc_abs_tol_tracking_set                = .false.  ! For: space_charge_com%abs_tol_tracking
+  logical :: beam_chamber_height_set                = .false.
+  logical :: sigma_cutoff_set                       = .false.
+  logical :: space_charge_mesh_size_set             = .false.
+  logical :: csr3d_mesh_size_set                    = .false.
+  logical :: n_bin_set                              = .false.
+  logical :: particle_bin_span_set                  = .false.
+  logical :: n_shield_images_set                    = .false.
+  logical :: sc_min_in_bin_set                      = .false.
+  logical :: lsc_kick_transverse_dependence_set     = .false.
+  logical :: diagnostic_output_file_set             = .false.
+  ! Used with ptc_com
+  logical :: old_integrator_set                     = .false.
+  logical :: use_orientation_patches_set            = .false.
+  logical :: print_info_messages_set                = .false.
+  logical :: max_fringe_order_set                   = .false.
+  logical :: exact_model_set                        = .false.
+  logical :: exact_misalign_set                     = .false.
+  logical :: vertical_kick_set                      = .false.
+  logical :: cut_factor_set                         = .false.
 end type
 
 !------------------------------------------------------------------------------
@@ -2008,7 +2092,7 @@ end type
 type bmad_common_struct
   real(rp) :: max_aperture_limit = 1d3                 ! Max Aperture.
   real(rp) :: d_orb(6)           = 1d-5                ! Orbit deltas for the mat6 via tracking calc.
-  real(rp) :: default_ds_step    = 0.2_rp              ! Integration step size.  
+  real(rp) :: default_ds_step    = 0.2_rp              ! Default integration step for eles without an explicit step calc.
   real(rp) :: significant_length = 1d-10               ! meter 
   real(rp) :: rel_tol_tracking = 1d-8                  ! Closed orbit relative tolerance.
   real(rp) :: abs_tol_tracking = 1d-11                 ! Closed orbit absolute tolerance.
@@ -2021,21 +2105,19 @@ type bmad_common_struct
   real(rp) :: autoscale_amp_rel_tol = 1d-6             ! Autoscale relative amplitude tolerance
   real(rp) :: autoscale_phase_tol = 1d-5               ! Autoscale phase tolerance.
   real(rp) :: electric_dipole_moment = 0               ! Particle's EDM. Call set_ptc to transfer value to PTC.
-  real(rp) :: ptc_cut_factor = 0.006                   ! Cut factor for PTC tracking
   real(rp) :: sad_eps_scale = 5.0d-3                   ! Used in sad_mult step length calc.
   real(rp) :: sad_amp_max = 5.0d-2                     ! Used in sad_mult step length calc.
   integer :: sad_n_div_max = 1000                      ! Used in sad_mult step length calc.
-  integer :: taylor_order = 0                          ! Input Taylor order. 0 -> default = ptc%taylor_order_saved
-                                                       !   ptc_com%taylor_order_ptc gives actual order in use. 
+  integer :: taylor_order = 0                          ! Taylor order to use. 0 -> default = ptc_private%taylor_order_saved.
   integer :: runge_kutta_order = 4                     ! Runge Kutta order.
   integer :: default_integ_order = 2                   ! PTC integration order. 
   integer :: max_num_runge_kutta_step = 10000          ! Maximum number of RK steps before particle is considered lost.
   logical :: rf_phase_below_transition_ref = .false.   ! Autoscale uses below transition stable point for RFCavities?
   logical :: sr_wakes_on = .true.                      ! Short range wakefields?
   logical :: lr_wakes_on = .true.                      ! Long range wakefields
-  logical :: ptc_use_orientation_patches = .true.      ! offset, pitch, and tilt attributes are put in ptc patch?
   logical :: auto_bookkeeper = .true.                  ! Automatic bookkeeping?
-  logical :: csr_and_space_charge_on = .false.         ! Space charge switch
+  logical :: high_energy_space_charge_on = .false.     ! High energy space charge effect switch.
+  logical :: csr_and_space_charge_on = .false.         ! Space charge switch.
   logical :: spin_tracking_on = .false.                ! spin tracking?
   logical :: backwards_time_tracking_on = .false.      ! Track backwards in time?
   logical :: spin_sokolov_ternov_flipping_on = .false. ! Spin flipping during synchrotron radiation emission?
@@ -2043,34 +2125,64 @@ type bmad_common_struct
   logical :: radiation_zero_average = .false.          ! Shift damping to be zero on the zero orbit to get rid of sawtooth?
   logical :: radiation_fluctuations_on = .false.       ! Radiation fluctuations toggle.
   logical :: conserve_taylor_maps = .true.             ! Enable bookkeeper to set ele%taylor_map_includes_offsets = F?
-  logical :: absolute_time_tracking_default = .false.  ! Default for lat%absolute_time_tracking
+  logical :: absolute_time_tracking = .false.          ! Absolute or relative time tracking?
+  logical :: absolute_time_ref_shift = .true.          ! Apply reference time shift when using absolute time tracking?
   logical :: convert_to_kinetic_momentum = .false.     ! Cancel kicks due to finite vector potential when doing symplectic tracking?
                                                        !   Set to True to test symp_lie_bmad against runge_kutta.
   logical :: aperture_limit_on = .true.                ! use apertures in tracking?
-  logical :: ptc_print_info_messages = .false.         ! Allow PTC to print informational messages (which can clutter the output)?
   logical :: debug = .false.                           ! Used for code debugging.
 end type
   
 type (bmad_common_struct), save, target :: bmad_com
 
+! Bmad global private structure
+! For communication between Bmad and Bmad based programs.
+
+type bmad_private_struct
+  real(rp) :: rf_clock_period = 0     ! The RF clock is used by the long_term_tracking program to avoid time round-off errors.
+end type
+
+type (bmad_private_struct), save, target :: bmad_private
+
 ! ptc_com common block.
-! %taylor_order_saved is what is used if bmad_com%taylor_order is not set ( =  0).
-! %taylor_order_saved is initially 3.
-! When parsing a lattice file, %taylor_order_saved will be set to the taylor order of the lattice.
+! Setup in: set_ptc_com_pointers
 
 type ptc_common_struct
-  integer :: taylor_order_ptc = 0       ! What has been set in PTC. 0 -> not yet set
-  integer :: taylor_order_saved = 3     ! Default to use.
-  logical :: complex_ptc_used = .true.  ! Complex PTC code in use? (EG for spin tracking, normal form anal, etc.)
-  logical :: use_totalpath = .false.    ! phase space z = time instead of time - ref_time?
-  type (internal_state) :: base_state   ! Base PTC state. 
   integer, pointer :: max_fringe_order  => null()  ! Points to PTC HIGHEST_FRINGE. 2 (default) => Quadrupole.
-  logical, pointer :: old_integrator    => null()  ! Points to PTC OLD_INTEGRATOR.
-  logical, pointer :: exact_model       => null()  ! Points to PTC EXACT_MODEL.
-  logical, pointer :: exact_misalign    => null()  ! Points to ptc ALWAYS_EXACTMIS. Notice different names.
+  integer, pointer :: old_integrator    => null()  ! Points to PTC OLD_INTEGRATOR. -1 = False, 1 = True.
+  logical, pointer :: exact_model       => null()  ! Points to PTC EXACT_MODEL. Default True.
+  logical, pointer :: exact_misalign    => null()  ! Points to PTC ALWAYS_EXACTMIS. Default True. Notice different names.
+  real(rp), pointer :: vertical_kick    => null()  ! Points to PTC VERTICAL_KICK for 6D emittance calc. 0 => off, 1 => on (default).
+  real(rp) :: cut_factor = 0.006                   ! Cut factor for PTC tracking
+  logical :: print_step_warning = .false.           ! Print warning if element uses too many steps.
+  ! Stuff that should not be set except by experts
+  logical :: use_orientation_patches = .true.      ! offset, pitch, and tilt attributes are put in ptc patch?
+  logical :: print_info_messages = .false.         ! Allow PTC to print informational messages (which can clutter the output)?
 end type
 
 type (ptc_common_struct), save, target :: ptc_com, ptc_com_default
+
+! PTC related parameters that should not be set by non-Bmad routines.
+!
+! %taylor_order_saved is what is used if bmad_com%taylor_order is not set ( =  0).
+! %taylor_order_saved is initially 3.
+! When parsing a lattice file, %taylor_order_saved will be set to the taylor order of the lattice.
+!
+! %taylor_order_ptc is used to keep track as to what has been actually set for PTC. 
+! If different from bmad_com[taylor_order], and bmad_com[taylor_order] is nonzero, the Bmad bookkeeping will 
+! set PTC's order to bmad_com[taylor_order] and then set %taylor_order_ptc to bmad_com[taylor_order].
+
+type ptc_private_struct
+  type (internal_state) :: base_state   ! Base PTC state. 
+  real(rp) :: e_tot_set = 0
+  integer :: taylor_order_ptc = 0       ! What has been set in PTC. 0 -> not yet set. See above.
+  integer :: taylor_order_saved = 3     ! Default to use at startup.
+  logical :: use_totalpath = .false.    ! phase space z = time instead of time - ref_time?
+  logical :: init_ptc_needed = .true.
+  logical :: init_spin_needed = .true.
+end type
+
+type (ptc_private_struct), save, target :: ptc_private
 
 real(rp), parameter :: small_rel_change$ = 1d-14
 
@@ -2256,6 +2368,7 @@ character(16) state_str
 !
 
 select case (coord_state)
+case (pre_born$);              state_str = 'Pre_Born'
 case (alive$);                 state_str = 'Alive'
 case (lost$);                  state_str = 'Lost'
 case (not_set$);               state_str = 'Not_Set'
@@ -2265,7 +2378,6 @@ case (lost_neg_y_aperture$);   state_str = 'Hit -Y Side'
 case (lost_pos_y_aperture$);   state_str = 'Hit +Y Side'
 case (lost_pz_aperture$);      state_str = 'Hit Energy Aper'
 case (lost_z_aperture$);       state_str = 'Hit Z Side'
-case (pre_born$);              state_str = 'Pre_Born'
 case default;                  state_str = 'UNKNOWN!'
 end select
 

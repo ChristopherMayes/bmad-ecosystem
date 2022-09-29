@@ -62,7 +62,7 @@ do i = 1, branch%n_ele_track
   call update_fibre_from_ele (ele, survey_needed)
   call update_ele_from_fibre (ele0)
   str = 'NO-DIFF'
-  call check_if_ele_different(ele0, ele)
+  call check_if_ele_different(ele0, ele, str)
 
   write (1, '(6a)') '"IN-OUT:', trim(ele%name), '" STR  "', trim(str), '"'
 enddo
@@ -89,7 +89,7 @@ enddo
 vec = matmul(rad_map%stoc_mat, vec)
 vec = vec + rad_map%ref1
 
-write (1, '(a, 6es16.8)') '"Stoc-Track"      REL 1E-5', orbit%vec
+write (1, '(a, 6es16.8)') '"Stoc-Track"      ABS 1E-13', orbit%vec
 write (1, '(a, 6es16.8)') '"Diff-Stoc-Track" ABS 1E-20', orbit%vec - vec
 
 call ptc_track_map_with_radiation (orbit, rad_map, .true., .false.)
@@ -155,12 +155,14 @@ call lat_to_ptc_layout (lat)
 call ptc_emit_calc (lat%ele(0), mode, sigma_mat, closed_orb)
 
 write (1, '(a, 3es16.8)') '"layout-tune" REL 1E-8', mode%a%tune, mode%b%tune, mode%z%tune
-write (1, '(a, 3es16.8)') '"layout-emit" REL 1E-8', mode%a%emittance, mode%b%emittance, mode%z%emittance
-write (1, '(a, 3es16.8)') '"layout-damp" REL 1E-8', mode%a%alpha_damp, mode%b%alpha_damp, mode%z%alpha_damp
-write (1, '(a, 6es16.8)') '"layout-orb"  REL 1E-8', closed_orb%vec
+write (1, '(a, 3es16.8)') '"layout-emit" REL 1E-3', mode%a%emittance, mode%b%emittance, mode%z%emittance
+write (1, '(a, 3es16.8)') '"layout-damp" REL 3E-5', mode%a%alpha_damp, mode%b%alpha_damp, mode%z%alpha_damp
+write (1, '(a, 6es16.8)') '"layout-orb"  ABS 1E-14', closed_orb%vec
 do i = 1, 6
-  write (1, '(a, i0, a, 6es16.8)') '"layout-sigma', i, '" REL 1E-8', sigma_mat(i,:)
+  write (1, '(a, i0, a, 6es16.8)') '"layout-sigma', i, '" ABS 2E-12', sigma_mat(i,:)
 enddo
+
+bmad_com%radiation_damping_on = .false.
 
 !-------------------------------------------------------
 
@@ -218,13 +220,13 @@ diff_mat = lat%ele(3)%mat6 - lat%ele(1)%mat6
 diff_vec = lat%ele(3)%vec0 - lat%ele(1)%vec0
 
 write (1, *)
-write (1, '(a, es20.10)') '"Bmad:vec(1)" REL  1E-10', end_orb1%vec(1)
-write (1, '(a, es20.10)') '"Bmad:vec(2)" REL  1E-10', end_orb1%vec(2)
-write (1, '(a, es20.10)') '"Bmad:vec(3)" REL  1E-10', end_orb1%vec(3)
-write (1, '(a, es20.10)') '"Bmad:vec(4)" REL  1E-10', end_orb1%vec(4)
-write (1, '(a, es20.10)') '"Bmad:vec(5)" REL  4E-06', end_orb1%vec(5)
-write (1, '(a, es20.10)') '"Bmad:vec(6)" REL  1E-10', end_orb1%vec(6)
-write (1, '(a, es20.10)') '"Bmad:orb%t " REL  1E-10', end_orb1%t
+write (1, '(a, es20.10)') '"Bmad:vec(1)" ABS  2E-16', end_orb1%vec(1)
+write (1, '(a, es20.10)') '"Bmad:vec(2)" ABS  2E-16', end_orb1%vec(2)
+write (1, '(a, es20.10)') '"Bmad:vec(3)" ABS  2E-16', end_orb1%vec(3)
+write (1, '(a, es20.10)') '"Bmad:vec(4)" ABS  2E-16', end_orb1%vec(4)
+write (1, '(a, es20.10)') '"Bmad:vec(5)" ABS  4E-16', end_orb1%vec(5)
+write (1, '(a, es20.10)') '"Bmad:vec(6)" ABS  2E-16', end_orb1%vec(6)
+write (1, '(a, es20.10)') '"Bmad:orb%t " ABS  2E-16', end_orb1%t
 
 write (1, *)
 write (1, '(a, 6es10.2)') '"Bmad2:dvec"   ABS  1E-11', end_orb1%vec - end_orb2%vec
@@ -344,12 +346,13 @@ end subroutine vary_ele_attributes
 !-----------------------------------------------------------------
 ! contains
 
-subroutine check_if_ele_different(ele, ele2)
+subroutine check_if_ele_different(ele, ele2, str)
 
 type (ele_struct) ele, ele2
 type (ele_attribute_struct) attrib
 real(rp) a_pole, b_pole, a_pole2, b_pole2
 integer j
+character(*) str
 
 !
 

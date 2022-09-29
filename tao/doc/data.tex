@@ -810,7 +810,7 @@ Taylor map order set in the lattice file by \vn{parameter[taylor_order]} (the de
 To save time when the calculation of chromatic terms is not needed, the \vn{one_turn_map_calc} parameter
 (\sref{s:init.lat}) for a universe can be toggled True or False as desired. The default is False.
 
-Note: The RF must be turned off for the calculation to work properly.
+Note: The \vn{show chromaticity} (\sref{s:show.chrom}) command can be used to see the series coefficients.
 
   %----------------------
   \item[curly_h.a, .b] \Newline \hlabel{curly.h}
@@ -954,7 +954,7 @@ non-expression datums have been evaluated. The evaluation for datums that contai
 with universe 1 and evaluates the expression containing datums of universe 1 in the order that can
 be seen with the \vn{show data} command (which is the same order as the datums are defined in the
 data init file). After this, expression containing datums in universe 2 are evaluated, etc.  It is
-important to keep this in mind since if an expression containing datum references another datum that
+important to keep this in mind since, if an expression containing datum references another datum that
 itself contains an expression, and if the referenced datum is evaluated after the the first datum,
 the evaluation of the first datum can be invalid.
 
@@ -1006,64 +1006,61 @@ Particle momentum amplitude.
 
   %----------------------
   \item[momentum_compaction] \Newline \hlabel{mom.comp}
-Momentum compaction factor. Also see \vn{r56_compaction} and \vn{momentum_compaction_ptc}.
+Momentum compaction factor. Also see \vn{r56_compaction} and \vn{slip_factor_ptc}.
 
   %----------------------
   \item[momentum_compaction_ptc.$N$, $N = 1, 2, 3, \ldots$] \Newline \hlabel{mom.comp.ptc}
-Momentum compaction factor. Also see \vn{r56_compaction}.
+Momentum compaction factor. Also see \vn{r56_compaction} and \vn{slip_factor_ptc}.
 
-Momentum compaction Taylor series, which is a function of phase space $p_z$, as calculated from
-Etienne Forest's PTC code. [See the \bmad manual for documentation on PTC.] $N$ is an integer which
-gives the order of the Taylor term
+The momentum compaction Taylor series is a function of phase space $p_z$. This Taylor series
+is calculated from Etienne Forest's PTC code. [See the \bmad manual for documentation on PTC.] $N$ is
+an integer which gives the order of the Taylor term
 \begin{equation}
-  \frac{-1}{L} \, \Delta z(p_z) = \alpha_1 \, p_z + \alpha_2 \, p_z^2 + \alpha_3 \, p_z^3 + \ldots
+  \frac{\Delta L(p_z)}{L_0} = \alpha_1 \, p_z + \alpha_2 \, p_z^2 + \alpha_3 \, p_z^3 + \ldots
 \end{equation}
-Where $\Delta z$ is the change in phase space $z$ over one turn and $L$ is the machine length.
-$N = 1$, that is \vn{momentum_compaction_ptc.1}, is the momentum compaction at $p_z = 0$, etc.
+Where $L$ is the transit distance over one turn and $L_0$ is reference transit distance.  $N = 1$,
+that is \vn{momentum_compaction_ptc.1} ($\alpha_1$) is the momentum compaction at $p_z = 0$, etc.
 
-Since there are differences in the tracking between PTC and \bmad, The momentum compaction
-\vn{momentum_compaction} which is calculated using \bmad will not exactly agree with
-the PTC values.
+Since there are differences in the tracking between PTC and \bmad, the momentum compaction as calculated
+with \bmad will not exactly agree with the PTC values.
 
-The momentum compaction Taylor series coefficients $\alpha_N$ are calculated up to order $N_T$ where $N_T$ is the
-Taylor map order set in the lattice file by \vn{parameter[taylor_order]} (the default is $N_T=3$). 
+The momentum compactionTaylor series coefficients $\alpha_N$ are calculated up to order $N_T$ where
+$N_T$ is the Taylor map order set in the lattice file by \vn{parameter[taylor_order]} (the default
+is $N_T=3$).
 
 To save time when the calculation of momentum compaction terms is not needed, the \vn{one_turn_map_calc} parameter
 (\sref{s:init.lat}) for a universe can be toggled True or False as desired. The default is False.
 
-Note: The RF must be turned off for the calculation to work properly.
+Note: The \vn{show chromaticity} (\sref{s:show.chrom}) command can be used to see the series coefficients.
 
   %----------------------
   \item[n_particle_loss] \Newline \hlabel{n.part.loss}
-If the reference element is not specified, \vn{n_particle_loss} gives
-the number of particles lost at the evaluation element. If the
-reference element is specified, \vn{n_particle_loss} gives the
-cumulative loss between the exit end of the reference element and the
-exit end of the evaluation element. That is, this sum does not count
-any losses at the reference element itself. If neither reference nor
-evaluation element is given then the total number of lost particles is
-given.
+If the reference element is not specified, \vn{n_particle_loss} gives the number of particles lost
+at the evaluation element. If the reference element is specified, \vn{n_particle_loss} gives the
+cumulative loss between the exit end of the reference element and the exit end of the evaluation
+element. That is, this sum does not count any losses at the reference element itself. If neither
+reference nor evaluation element is given then the total number of lost particles is given.
 
   %----------------------
   \item[norm_apparent_emit.x, .y] \Newline \hlabel{norm.app.emit}
-Energy normalized apparent emittance. The normalization is the standard gamma factor:
+Apparent emittance normalized with the standard gamma factor:
 \begin{equation}
-  \text{emit}_{\text{norm}} = \gamma \, \text{emit}
+  \text{emit}_{\text{norm}} = \gamma \cdot \text{emit}
 \end{equation}
 See the \vn{apparent_emit.x, .y} data type for more details.
 
   %----------------------
   \item[norm_emit.a, .b, .c] \Newline \hlabel{norm.emit.a}
-Energy normalized normal mode emittance. The normalization is the standard gamma factor:
+Normal mode emittance normalized with the standard gamma factor:
 \begin{equation}
-  \epsilon_{norm} = \gamma \, \epsilon
+  \epsilon_{norm} = \gamma \cdot \epsilon
 \end{equation}
 
   %----------------------
   \item[norm_emit.x, .y, .z] \Newline \hlabel{norm.emit.x}
-Energy normalized projected emittance. The normalization is the standard gamma factor:
+Projected emittance normalized with the standard gamma factor:
 \begin{equation}
-  \epsilon_{norm} = \gamma \, \epsilon
+  \epsilon_{norm} = \gamma \cdot \epsilon
 \end{equation}
 
   %----------------------
@@ -1444,11 +1441,43 @@ The datums \vn{sigma.x}, \vn{sigma.px}, etc., are just a shorthand notation for 
 \vn{sigma.22}, etc., and the angular momentum \vn{sigma.Lxy} is shorthand for $<x \, p_y - y \, p_x>$ 
 
 The sigma matrix is calculated from beam tracking if the \vn{data_source} is set to \vn{beam} and
-calculated from the linear Twiss parameters if the \vn{data_source} is set to \vn{lat}.
+calculated from the Twiss parameters if the \vn{data_source} is set to \vn{lat} (\sref{s:lat.sig.init}). 
 
 Irregardless of the setting of \vn{data_source}, the beam emittance and longitudinal sigma
 values will be taken from the \vn{beam_init} structure (\sref{s:beam.init}) and {\em not}
 any emittances or longitudinal sigma values specified in the lattice file.
+
+  %----------------------
+  \item[slip_factor_ptc.$N$, $N = 1, 2, 3, \ldots$] \Newline \hlabel{slip.ptc}
+Phase slip factor. Also see \vn{r56_compaction} and \vn{momentum_compaction}.
+
+Phase slip factor Taylor series is a function of phase space $p_z$. The Taylor series is calculated
+from Etienne Forest's PTC code. [See the \bmad manual for documentation on PTC.] $N$ is an integer
+which gives the order of the Taylor term
+\begin{equation}
+  \frac{\Delta T(p_z)}{T_0} = \alpha_1 \, p_z + \alpha_2 \, p_z^2 + \alpha_3 \, p_z^3 + \ldots
+\end{equation}
+Where $T$ is the transit time over one turn and $T_0$ is reference transit time.
+$N = 1$, that is \vn{slip_factor_ptc.1} ($\alpha_1$) is the slip factor at $p_z = 0$, etc.
+
+Since there are differences in the tracking between PTC and \bmad, The slip factor as calculated
+with \bmad will not exactly agree with the PTC values.
+
+The slip factor Taylor series coefficients $\alpha_N$ are calculated up to order $N_T$ where $N_T$ is the
+Taylor map order set in the lattice file by \vn{parameter[taylor_order]} (the default is $N_T=3$). 
+
+To save time when the calculation of momentum compaction terms is not needed, the \vn{one_turn_map_calc} parameter
+(\sref{s:init.lat}) for a universe can be toggled True or False as desired. The default is False.
+
+Note: The \vn{show chromaticity} (\sref{s:show.chrom}) command can be used to see the series coefficients.
+
+  %----------------------
+  \item[spin.polarization_limit, .polarization_rate, .depolarization_rate] \Newline \hlabel{spin.pol}
+The spin depolarization limit, $P_{dk}$, is calculated from the Derbenev-Kondratenko-Mane formula as
+discussed in the \vn{Spin Dynamics} chapter of the \bmad manual.  The \vn{Baier-Katkov-Strakhovenko}
+polarization rate, $\tau_{bks}^{-1}$, and the depolarization rate, $\tau_{dep}^{-1}$, are also
+discussed in the this chapter. Note: $\tau_{bks}^{-1}$ is generally a good approximation to the
+\vn{Sokolov-Ternov} polarization rate $\tau_{st}^{-1}$.
 
   %----------------------
   \item[spin_g_matrix.$ij$ \hspace{0.2in} $1 \le i \le 2, \quad 1 \le j \le 6$] \Newline \hlabel{spin.g.matrix}
@@ -1486,12 +1515,10 @@ to be the same as the initial coordinates and, in this case, $\bfD$, will be a r
 a rotation angle equal to the spin tune.
 
   %----------------------
-  \item[spin.polarization_limit, .polarization_rate, .depolarization_rate] \Newline \hlabel{spin.pol}
-The spin depolarization limit, $P_{dk}$, is calculated from the Derbenev-Kondratenko-Mane formula as
-discussed in the \vn{Spin Dynamics} chapter of the \bmad manual.  The \vn{Baier-Katkov-Strakhovenko}
-polarization rate, $\tau_{bks}^{-1}$, and the depolarization rate, $\tau_{dep}^{-1}$, are also
-discussed in the this chapter. Note: $\tau_{bks}^{-1}$ is generally a good approximation to the
-\vn{Sokolov-Ternov} polarization rate $\tau_{st}^{-1}$.
+  \item[spin_res.a1, .a2, .b1, .b2, .c1, .c2] \Newline \hlabel{spin.res}
+Spin resonance values. \vn{.a1}, \vn{.a2} are the resonance values for the $a$-mode, etc. The \vn{show
+spin -ele ...} command will print the values. If not present, the evaluation element for the datum
+is the beginning element of the lattice branch.
 
   %----------------------
   \item[spin_tune_ptc.$N$, $N = 0, 1, 2, \ldots$] \Newline \hlabel{spin.tune.ptc}
@@ -1505,6 +1532,11 @@ where $Q_s(p_z)$ is the spin tune in units of $2\pi$.
 
 The spin tune Taylor series coefficients $Q_N$ are calculated up to order $N_T$ where $N_T$ is the
 Taylor map order set in the lattice file by \vn{parameter[taylor_order]} (the default is $N_T=3$). 
+
+To save time when the calculation of chromatic terms is not needed, the \vn{one_turn_map_calc} parameter
+(\sref{s:init.lat}) for a universe can be toggled True or False as desired. The default is False.
+
+Note: The \vn{show chromaticity} (\sref{s:show.chrom}) command can be used to see the series coefficients.
 
   %----------------------
   \item[spin.x, .y, .z, .amp] \Newline \hlabel{spin}
@@ -1911,18 +1943,26 @@ See the previous section for a description of the data types.
                               \hspace{2em} .$ij$ \hspace{10pt} $1 \le i,j \le 6$, \\
                               \hspace{2em} .Lxy
                             \end{tabular}                       & Bunch size                                & lat, beam  & No  \\ \hline 
+  \pref{slip.ptc}         & \begin{tabular}{@{}l}
+                              slip_factor_ptc.$N$ \\
+                              \hspace{3em} $N = 0, 1, 2, \ldots$
+                            \end{tabular}                       & Slip factor Taylor terms                  & lat        & No  \\ \hline
   \pref{spin}             & spin.x, .y, .z                      & Particle spin                             & lat, beam  & No  \\ \hline 
   \pref{spin.pol}         & spin.depolarization_rate            & Spin depolarization rate.                 & lat        & No  \\ \hline
   \pref{spin.pol}         & spin.polarization_rate              & Spin polarization rate.                   & lat        & No  \\ \hline
   \pref{spin.pol}         & spin.polarization_limit             & Spin polarization limit.                  & lat        & No  \\ \hline
+  \pref{spin.g.matrix}    & \begin{tabular}{@{}l}
+                              spin_g_matrix.$ij$ \\
+                              \hspace{10pt} $1 \le i \le 2$, $1 \le j \le 6$ 
+                            \end{tabular}                       & Spin G-matrix components                  & lat        & No  \\ \hline
+  \pref{spin.res}         & \begin{tabular}{@{}l}
+                              spin_res.a1, .a2, \\
+                              \hspace{10pt} .b1, .b2, .c1, .c2
+                            \end{tabular}                       & Spin resonance strengths                  & lat        & No  \\ \hline
   \pref{spin.tune.ptc}    & \begin{tabular}{@{}l}
                               spin_tune_ptc.$N$, \\
                               \hspace{10pt} $N = 0, 1, \ldots$
                             \end{tabular}                       & Spin Tune Taylor terms                    & lat        & no  \\ \hline
-  \pref{spin.g.matrix}    & \begin{tabular}{@{}l}   
-                              spin_g_matrix.$ij$ \\
-                              \hspace{10pt} $1 \le i \le 2$, $1 \le j \le 6$ 
-                            \end{tabular}                       & Spin G-matrix components                  & lat        & No  \\ \hline
   \pref{srdt.h}           & srdt.h<monomial>.\{r,i,a\}          & \begin{tabular}{@{}l}
                                                                     Normal form driving terms \\
                                                                     calculated by summation 

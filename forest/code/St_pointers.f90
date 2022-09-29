@@ -8,6 +8,9 @@ module pointer_lattice
   ! stuff for main program
   type(layout),pointer :: my_ering => null(), my_fring => null()
   type(internal_state),pointer :: my_estate => null()
+  type(c_universal_taylor), pointer :: my_euni_1(:) => null(),my_euni_2(:) => null()
+  type(probe), pointer :: my_eprobe => null()
+  type(c_ray) my_eray
 !  type(internal_state),pointer :: my_old_state
   integer ,pointer :: my_start, MY_ORDER, MY_NP,MY_END,my_start_t
   real(dp), pointer :: my_fix(:),MY_DELTA
@@ -756,6 +759,10 @@ endif
           sagan_even=my_true
           THIN=-1
           CALL THIN_LENS_resplit(my_ering,THIN,lim=limit_int0)
+       case('MANUALTHINLENSWITHLMAX')
+          sagan_even=my_true
+          THIN=-1
+          CALL THIN_LENS_resplit(my_ering,THIN,lim=limit_int0,lmax0=lmax)
        case('THINLENS')
          sagan_even=my_true
           READ(MF,*) THIN
@@ -3097,11 +3104,11 @@ call read_tree_zhe(t_olek_map(1:3),mapfile)
   
  do i=1,bunch_zhe%n
  
-    bunch_zhe%xs(i)%q=1.e0_dp
+    bunch_zhe%xs(i)%q=1   !  etienne 2022 not sure
   
  enddo
 
-xs0_zhe=closed_orbit  
+xs0_zhe%x(1:6)=closed_orbit      !  etienne 2022 not sure
 write(6,*)  " XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX "
  xj=0
 j=0

@@ -156,7 +156,7 @@ real(rp) mat6(6,6), vec0(6), array(7)
 real(rp), allocatable :: real_arr(:), value_arr(:)
 
 type (tao_spin_map_struct), pointer :: sm
-real(rp) n0(3), qs, q, dq(3), xi_quat(3,2), xi_mat8(3,2)
+real(rp) n0(3), qs, q, dq, xi_quat(2)
 complex(rp) eval(6), evec(6,6), n_eigen(6,3)
 
 integer :: i, j, k, ib, id, iv, iv0, ie, ip, is, iu, nn, md, ct, nl2, n, ix, ix2, iu_write, data_type
@@ -168,7 +168,7 @@ integer, target :: nl
 integer, pointer :: nl_ptr
 
 logical :: err, print_flag, opened, doprint, free, matched, track_only, use_real_array_buffer, can_vary
-logical first_time, found_one, calc_ok, no_slaves, index_order
+logical first_time, found_one, calc_ok, no_slaves, index_order, ok
 logical, allocatable :: picked(:), logic_arr(:)
 
 character(*) input_str
@@ -176,14 +176,15 @@ character(len(input_str)) line
 character(n_char_show), allocatable, target :: li(:)
 character(n_char_show), pointer :: li_ptr(:)
 character(n_char_show) li2
-character(200) file_name, all_who
+character(300), allocatable :: name_arr(:)
+character(200) file_name, all_who, tail_str
 character(40) imt, jmt, rmt, lmt, amt, amt2, iamt, vamt, rmt2, ramt, cmt, label_name
 character(40) max_loc, ele_name, name1(40), name2(40), a_name, name, attrib_name, command
-character(20), allocatable :: name_list(:)
-character(20) cmd, tail_str, which, v_str, head
-character(20) switch, color, shape_shape
-character(300), allocatable :: name_arr(:)
 character(40), allocatable :: str_arr(:)
+character(20), allocatable :: name_list(:)
+character(20) cmd, which, v_str, head
+character(20) switch, color, shape_shape
+character(1) :: mode(3) = ['a', 'b', 'c']
 character(*), parameter :: r_name = 'tao_python_cmd'
 
 !
@@ -244,7 +245,7 @@ call match_word (cmd, [character(40) :: &
           'lat_branch_list', 'lat_calc_done', 'lat_ele_list', 'lat_general', 'lat_list', 'lat_param_units', &
           'matrix', 'merit', 'orbit_at_s', &
           'place_buffer', 'plot_curve', 'plot_graph', 'plot_histogram', 'plot_lat_layout', 'plot_line', &
-          'plot_plot_manage', 'plot_graph_manage', 'plot_curve_manage', &
+          'plot_template_manage', 'plot_graph_manage', 'plot_curve_manage', &
           'plot_list', 'plot_symbol', 'plot_transfer', 'plot1', 'ptc_com', 'ring_general', 'shape_list', &
           'shape_manage', 'shape_pattern_list', 'shape_pattern_manage', 'shape_pattern_point_manage', 'shape_set', &
           'show', 'species_to_int', 'species_to_str', 'spin_polarization', 'spin_resonance', 'super_universe', &
@@ -280,7 +281,9 @@ nl_ptr => nl   ! To get around ifort bug
 
 select case (command)
 
-!%% beam -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% beam
 ! Output beam parameters that are not in the beam_init structure.
 !
 ! Notes
@@ -313,14 +316,15 @@ case ('beam')
   u => point_to_uni(line, .false., err); if (err) return
 
   nl=incr(nl); write (li(nl), lmt) 'always_reinit;LOGIC;T;',           u%beam%always_reinit
-  nl=incr(nl); write (li(nl), amt) 'track_data_file;STR;T;',           trim(u%beam%track_data_file)
   nl=incr(nl); write (li(nl), amt) 'track_start;STR;T;',               trim(u%model_branch(0)%beam%track_start)
   nl=incr(nl); write (li(nl), amt) 'track_end;STR;T;',                 trim(u%model_branch(0)%beam%track_end)
   nl=incr(nl); write (li(nl), amt) 'saved_at;STR;T;',                  trim(u%beam%saved_at)
   nl=incr(nl); write (li(nl), amt) 'dump_at;STR;T;',                   trim(u%beam%dump_at)
   nl=incr(nl); write (li(nl), amt) 'dump_file;STR;T;',                 trim(u%beam%dump_file)
 
-!%% beam_init -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% beam_init
 ! Output beam_init parameters.
 !
 ! Notes
@@ -375,11 +379,13 @@ case ('beam_init')
   nl=incr(nl); write (li(nl), amt) 'species;SPECIES;T;',                       trim(beam_init%species)
   nl=incr(nl); write (li(nl), lmt) 'init_spin;LOGIC;T;',                       beam_init%init_spin
   nl=incr(nl); write (li(nl), lmt) 'full_6d_coupling_calc;LOGIC;T;',           beam_init%full_6D_coupling_calc
-  nl=incr(nl); write (li(nl), lmt) 'use_particle_start_for_center;LOGIC;T;',   beam_init%use_particle_start_for_center
+  nl=incr(nl); write (li(nl), lmt) 'use_particle_start;LOGIC;T;',              beam_init%use_particle_start
   nl=incr(nl); write (li(nl), lmt) 'use_t_coords;LOGIC;T;',                    beam_init%use_t_coords
   nl=incr(nl); write (li(nl), lmt) 'use_z_as_t;LOGIC;T;',                      beam_init%use_z_as_t
 
-!%% bmad_com -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% bmad_com
 ! Output bmad_com structure components.
 !
 ! Notes
@@ -387,9 +393,6 @@ case ('beam_init')
 ! Command syntax:
 !   python bmad_com
 ! 
-! Parameters
-! ----------
-!
 ! Returns
 ! -------
 ! string_list 
@@ -417,7 +420,6 @@ case ('bmad_com')
   nl=incr(nl); write (li(nl), rmt) 'autoscale_amp_rel_tol;REAL;T;',              bmad_com%autoscale_amp_rel_tol
   nl=incr(nl); write (li(nl), rmt) 'autoscale_phase_tol;REAL;T;',                bmad_com%autoscale_phase_tol
   nl=incr(nl); write (li(nl), rmt) 'electric_dipole_moment;REAL;T;',             bmad_com%electric_dipole_moment
-  nl=incr(nl); write (li(nl), rmt) 'ptc_cut_factor;REAL;T;',                     bmad_com%ptc_cut_factor
   nl=incr(nl); write (li(nl), rmt) 'sad_eps_scale;REAL;T;',                      bmad_com%sad_eps_scale
   nl=incr(nl); write (li(nl), rmt) 'sad_amp_max;REAL;T;',                        bmad_com%sad_amp_max
   nl=incr(nl); write (li(nl), imt) 'sad_n_div_max;INT;T;',                       bmad_com%sad_n_div_max
@@ -436,13 +438,14 @@ case ('bmad_com')
   nl=incr(nl); write (li(nl), lmt) 'radiation_damping_on;LOGIC;T;',              bmad_com%radiation_damping_on
   nl=incr(nl); write (li(nl), lmt) 'radiation_fluctuations_on;LOGIC;T;',         bmad_com%radiation_fluctuations_on
   nl=incr(nl); write (li(nl), lmt) 'conserve_taylor_maps;LOGIC;T;',              bmad_com%conserve_taylor_maps
-  nl=incr(nl); write (li(nl), lmt) 'absolute_time_tracking_default;LOGIC;T;',    bmad_com%absolute_time_tracking_default
+  nl=incr(nl); write (li(nl), lmt) 'absolute_time_tracking;LOGIC;T;',            bmad_com%absolute_time_tracking
   nl=incr(nl); write (li(nl), lmt) 'convert_to_kinetic_momentum;LOGIC;T;',       bmad_com%convert_to_kinetic_momentum
   nl=incr(nl); write (li(nl), lmt) 'aperture_limit_on;LOGIC;T;',                 bmad_com%aperture_limit_on
-  nl=incr(nl); write (li(nl), lmt) 'ptc_print_info_messages;LOGIC;T;',           bmad_com%ptc_print_info_messages
   nl=incr(nl); write (li(nl), lmt) 'debug;LOGIC;T;',                             bmad_com%debug
 
-!%% branch1 -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% branch1
 ! Output lattice branch information for a particular lattice branch.
 !
 ! Notes
@@ -490,7 +493,9 @@ case ('branch1')
   nl=incr(nl); write (li(nl), amt) 'param.geometry;ENUM;T;',                    trim(geometry_name(branch%param%geometry))
   nl=incr(nl); write (li(nl), lmt) 'param.stable;LOGIC;F;',                     branch%param%stable
 
-!%% bunch_params -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% bunch_params
 ! Outputs bunch parameters at the exit end of a given lattice element.
 !
 ! Notes
@@ -567,7 +572,9 @@ case ('bunch_params')
   nl=incr(nl); write (li(nl), lmt) 'beam_saved;LOGIC;T;',                      allocated(beam%bunch)
 
 
-!%% bunch1 -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% bunch1
 ! Outputs Bunch parameters at the exit end of a given lattice element.
 !
 ! Notes
@@ -625,7 +632,9 @@ case ('bunch1')
 
   call coord_out(beam%bunch(ix_bunch), tail_str)
 
-!%% building_wall_list -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% building_wall_list
 ! Output List of building wall sections or section points
 !
 ! Notes
@@ -684,17 +693,20 @@ case ('building_wall_list')
     endif
   endif
 
-!%% building_wall_graph -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% building_wall_graph
 ! Output (x, y) points for drawing the building wall for a particular graph.
 !
 ! Notes
 ! -----
-! The graph defines the coordinate system for the (x, y) points.
 ! Command syntax:
 !   python building_wall_graph {graph}
 !
 ! Where:
 !   {graph} is a plot region graph name.
+!
+! Note: The graph defines the coordinate system for the (x, y) points.
 !
 ! Parameters
 ! ----------
@@ -738,7 +750,9 @@ case ('building_wall_graph')
     enddo
   enddo
 
-!%% building_wall_point -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% building_wall_point
 ! add or delete a building wall point
 !
 ! Notes
@@ -818,7 +832,9 @@ case ('building_wall_point')
     bws%point(ip)%x_center = parse_real(name1(7), err);  if (err) return
   end select
 
-!%% building_wall_section -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% building_wall_section
 ! Add or delete a building wall section
 !
 ! Notes
@@ -881,7 +897,9 @@ case ('building_wall_section')
     bws%constraint = name1(3)
   end select
 
-!%% constraints -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% constraints
 ! Output optimization data and variable parameters that contribute to the merit function.
 !
 ! Notes
@@ -975,7 +993,9 @@ case ('constraints')
     return
   end select
 
-!%% da_aperture -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% da_aperture
 ! Output dynamic aperture data
 !
 ! Notes
@@ -1014,7 +1034,9 @@ case ('da_aperture')
     enddo
   enddo
 
-!%% da_params -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% da_params
 ! Output dynamic aperture input parameters
 !
 ! Notes
@@ -1056,7 +1078,9 @@ case ('da_params')
   nl=incr(nl); write (li(nl), rmt)  'abs_accuracy;REAL;T;', da%param%abs_accuracy
   nl=incr(nl); write (li(nl), ramt) 'pz;REAL_ARR;T',        (';', da%pz(i), i = 1, size(da%pz))
 
-!%% data -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% data
 ! Output Individual datum parameters.
 !
 ! Notes
@@ -1158,7 +1182,207 @@ case ('data')
   nl=incr(nl); write (li(nl), lmt) 'useit_plot;LOGIC;F;',                     d_ptr%useit_plot
   nl=incr(nl); write (li(nl), lmt) 'useit_opt;LOGIC;F;',                      d_ptr%useit_opt
 
-!%% data_d2_create -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% data_d_array
+! Output list of datums for a given d1_data structure.
+!
+! Notes
+! -----
+! Command syntax:
+!   python data_d_array {ix_uni}@{d2_name}.{d1_name}
+!
+! Where:
+!   {ix_uni} is a universe index. Defaults to s%global%default_universe.
+!   {d2_name} is the name of the containing d2_data structure.
+!   {d1_name} is the name of the d1_data structure containing the array of datums.
+!
+! Example:
+!   python data_d_array 1@orbit.x
+! 
+! Parameters
+! ----------
+! d2_name
+! d1_name
+! ix_uni : optional
+!
+! Returns
+! -------
+! string_list
+!
+! Examples
+! --------
+! Example: 1
+!  init: -init $ACC_ROOT_DIR/regression_tests/python_test/tao.init_optics_matching
+!  args:
+!    ix_uni: 1 
+!    d2_name: twiss
+!    d1_name: end
+
+
+case ('data_d_array')
+
+
+  call tao_find_data (err, line, d_array = d_array)
+
+  if (.not. allocated(d_array)) then
+    call invalid ('Not a valid d1_datum name.')
+    return
+  endif
+
+  do i = 1, size(d_array)
+    d_ptr => d_array(i)%d
+    name = tao_constraint_type_name(d_ptr)
+    nl=incr(nl); write(li(nl), '(i0, 11a, 3(es22.14, a), 3(l1, a), es22.14, a, l1)') d_ptr%ix_d1, ';', &
+              trim(d_ptr%data_type), ';', trim(d_ptr%merit_type), ';', &
+              trim(d_ptr%ele_ref_name), ';', trim(d_ptr%ele_start_name), ';', trim(d_ptr%ele_name), ';', &
+              d_ptr%meas_value, ';', d_ptr%model_value, ';', d_ptr%design_value, ';', &
+              d_ptr%useit_opt, ';', d_ptr%useit_plot, ';', d_ptr%good_user, ';', d_ptr%weight, ';', d_ptr%exists
+  enddo
+
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% data_d1_array
+! Output list of d1 arrays for a given data_d2.
+!
+! Notes
+! -----
+! Command syntax:
+!   python data_d1_array {d2_datum}
+!
+! {d2_datum} should be of the form
+!   {ix_uni}@{d2_datum_name}
+! 
+! Parameters
+! ----------
+! d2_datum
+! ix_uni : optional
+!
+! Returns
+! -------
+! string_list 
+!
+! Examples
+! --------
+! Example: 1
+!  init: -init $ACC_ROOT_DIR/regression_tests/python_test/tao.init_optics_matching
+!  args:
+!    ix_uni: 1 
+!    d2_datum: twiss
+
+case ('data_d1_array')
+
+  call tao_find_data (err, line, d2_array = d2_array)
+
+  if (err .or. .not. allocated(d2_array)) then
+    call invalid ('Not a valid d2 data name')
+    return
+  endif
+
+  d2_ptr => d2_array(1)%d2
+  do i = lbound(d2_ptr%d1, 1), ubound(d2_ptr%d1, 1)
+    d1_ptr => d2_ptr%d1(i)
+    call location_encode (line, d1_ptr%d%useit_opt, d1_ptr%d%exists, lbound(d1_ptr%d, 1))
+    nl=incr(nl); write (li(nl), '(a, i0, 5a, i0, a, i0)') 'd1[', i, '];STR2;F;', trim(d1_ptr%name), ';', trim(line), ';', &
+                                                                                     lbound(d1_ptr%d, 1), ';', ubound(d1_ptr%d, 1)
+  enddo
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% data_d2
+! Output information on a d2_datum.
+!
+! Notes
+! -----
+! Command syntax:
+!   python data_d2 {ix_uni}@{d2_name}
+!
+! Where:
+!   {ix_uni} is a universe index. Defaults to s%global%default_universe.
+!   {d2_name} is the name of the d2_data structure.
+!
+! Parameters
+! ----------
+! d2_name
+! ix_uni : optional
+!
+! Returns
+! -------
+! string_list 
+!
+! Examples
+! --------
+! Example: 1
+!  init: -init $ACC_ROOT_DIR/regression_tests/python_test/tao.init_optics_matching
+!  args:
+!    ix_uni: 1
+!    d2_name: twiss
+
+case ('data_d2')
+
+  call tao_find_data (err, line, d2_array = d2_array)
+
+  if (err .or. .not. allocated(d2_array)) then
+    call invalid ('Not a valid d2 data name')
+    return
+  endif
+
+  d2_ptr => d2_array(1)%d2
+
+  nl=incr(nl); write (li(nl), imt) 'n_d1;INT;F;',                             size(d2_ptr%d1)
+  nl=incr(nl); write (li(nl), imt) 'ix_d2_data;INT;F;',                       d2_ptr%ix_d2_data
+  nl=incr(nl); write (li(nl), amt) 'name;STR;T;',                             trim(d2_ptr%name)
+  nl=incr(nl); write (li(nl), amt) 'data_file_name;FILE;F;',                  trim(d2_ptr%data_file_name)
+  nl=incr(nl); write (li(nl), amt) 'ref_file_name;FILE;F;',                   trim(d2_ptr%ref_file_name)
+  nl=incr(nl); write (li(nl), amt) 'data_date;STR;T;',                        trim(d2_ptr%data_date)
+  nl=incr(nl); write (li(nl), amt) 'ref_date;STR;T;',                         trim(d2_ptr%ref_date)
+  nl=incr(nl); write (li(nl), imt) 'ix_universe;INUM;T;',                     d2_ptr%ix_universe
+  nl=incr(nl); write (li(nl), imt) 'ix_ref;INT;F;',                           d2_ptr%ix_ref
+  nl=incr(nl); write (li(nl), lmt) 'data_read_in;LOGIC;F;',                   d2_ptr%data_read_in
+  nl=incr(nl); write (li(nl), lmt) 'ref_read_in;LOGIC;F;',                    d2_ptr%ref_read_in
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% data_d2_array
+! Output data d2 info for a given universe.
+!
+! Notes
+! -----
+! Command syntax:
+!   python data_d2_array {ix_uni}
+!
+! Example:
+!   python data_d2_array 1
+! 
+! Parameters
+! ----------
+! ix_uni
+! 
+! Returns
+! -------
+! string_list  
+!
+! Examples
+! --------
+! Example: 1
+!  init: -init $ACC_ROOT_DIR/regression_tests/python_test/cesr/tao.init
+!  args:
+!    ix_uni : 1 
+
+case ('data_d2_array')
+
+  u => point_to_uni(line, .false., err); if (err) return
+
+  do i = 1, u%n_d2_data_used
+    d2_ptr => u%d2_data(i)
+    if (d2_ptr%name == '') cycle
+    nl=incr(nl); write (li(nl), '(a)') d2_ptr%name
+  enddo
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% data_d2_create
 ! Create a d2 data structure along with associated d1 and data arrays.
 !
 ! Notes
@@ -1310,7 +1534,9 @@ case ('data_d2_create')
     call tao_point_d1_to_data (d1_ptr, u%data(i1:i2), ix_min(j))
   enddo
 
-!%% data_d2_destroy -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% data_d2_destroy
 ! Destroy a d2 data structure along with associated d1 and data arrays.
 !
 ! Notes
@@ -1346,161 +1572,9 @@ case ('data_d2_destroy')
 
 call destroy_this_data_d2(line)
 
-!%% data_d2 -----------------------
-! Output information on a d2_datum.
-!
-! Notes
-! -----
-! Command syntax:
-!   python data_d2 {ix_uni}@{d2_name}
-!
-! Where:
-!   {ix_uni} is a universe index. Defaults to s%global%default_universe.
-!   {d2_name} is the name of the d2_data structure.
-!
-! Parameters
-! ----------
-! d2_name
-! ix_uni : optional
-!
-! Returns
-! -------
-! string_list 
-!
-! Examples
-! --------
-! Example: 1
-!  init: -init $ACC_ROOT_DIR/regression_tests/python_test/tao.init_optics_matching
-!  args:
-!    ix_uni: 1
-!    d2_name: twiss
-
-case ('data_d2')
-
-  call tao_find_data (err, line, d2_array = d2_array)
-
-  if (err .or. .not. allocated(d2_array)) then
-    call invalid ('Not a valid d2 data name')
-    return
-  endif
-
-  d2_ptr => d2_array(1)%d2
-
-  nl=incr(nl); write (li(nl), imt) 'n_d1;INT;F;',                             size(d2_ptr%d1)
-  nl=incr(nl); write (li(nl), imt) 'ix_d2_data;INT;F;',                       d2_ptr%ix_d2_data
-  nl=incr(nl); write (li(nl), amt) 'name;STR;T;',                             trim(d2_ptr%name)
-  nl=incr(nl); write (li(nl), amt) 'data_file_name;FILE;F;',                  trim(d2_ptr%data_file_name)
-  nl=incr(nl); write (li(nl), amt) 'ref_file_name;FILE;F;',                   trim(d2_ptr%ref_file_name)
-  nl=incr(nl); write (li(nl), amt) 'data_date;STR;T;',                        trim(d2_ptr%data_date)
-  nl=incr(nl); write (li(nl), amt) 'ref_date;STR;T;',                         trim(d2_ptr%ref_date)
-  nl=incr(nl); write (li(nl), imt) 'ix_universe;INUM;T;',                     d2_ptr%ix_universe
-  nl=incr(nl); write (li(nl), imt) 'ix_ref;INT;F;',                           d2_ptr%ix_ref
-  nl=incr(nl); write (li(nl), lmt) 'data_read_in;LOGIC;F;',                   d2_ptr%data_read_in
-  nl=incr(nl); write (li(nl), lmt) 'ref_read_in;LOGIC;F;',                    d2_ptr%ref_read_in
-
-!%% data_d_array -----------------------
-! Output list of datums for a given d1_data structure.
-!
-! Notes
-! -----
-! Command syntax:
-!   python data_d_array {ix_uni}@{d2_name}.{d1_name}
-!
-! Where:
-!   {ix_uni} is a universe index. Defaults to s%global%default_universe.
-!   {d2_name} is the name of the containing d2_data structure.
-!   {d1_name} is the name of the d1_data structure containing the array of datums.
-!
-! Example:
-!   python data_d_array 1@orbit.x
-! 
-! Parameters
-! ----------
-! d2_name
-! d1_name
-! ix_uni : optional
-!
-! Returns
-! -------
-! string_list
-!
-! Examples
-! --------
-! Example: 1
-!  init: -init $ACC_ROOT_DIR/regression_tests/python_test/tao.init_optics_matching
-!  args:
-!    ix_uni: 1 
-!    d2_name: twiss
-!    d1_name: end
-
-
-case ('data_d_array')
-
-
-  call tao_find_data (err, line, d_array = d_array)
-
-  if (.not. allocated(d_array)) then
-    call invalid ('Not a valid d1_datum name.')
-    return
-  endif
-
-  do i = 1, size(d_array)
-    d_ptr => d_array(i)%d
-    name = tao_constraint_type_name(d_ptr)
-    nl=incr(nl); write(li(nl), '(i0, 11a, 3(es22.14, a), 3(l1, a), es22.14, a, l1)') d_ptr%ix_d1, ';', &
-              trim(d_ptr%data_type), ';', trim(d_ptr%merit_type), ';', &
-              trim(d_ptr%ele_ref_name), ';', trim(d_ptr%ele_start_name), ';', trim(d_ptr%ele_name), ';', &
-              d_ptr%meas_value, ';', d_ptr%model_value, ';', d_ptr%design_value, ';', &
-              d_ptr%useit_opt, ';', d_ptr%useit_plot, ';', d_ptr%good_user, ';', d_ptr%weight, ';', d_ptr%exists
-  enddo
-
-
-!%% data_d1_array -----------------------
-! Output list of d1 arrays for a given data_d2.
-!
-! Notes
-! -----
-! Command syntax:
-!   python data_d1_array {d2_datum}
-!
-! {d2_datum} should be of the form
-!   {ix_uni}@{d2_datum_name}
-! 
-! Parameters
-! ----------
-! d2_datum
-! ix_uni : optional
-!
-! Returns
-! -------
-! string_list 
-!
-! Examples
-! --------
-! Example: 1
-!  init: -init $ACC_ROOT_DIR/regression_tests/python_test/tao.init_optics_matching
-!  args:
-!    ix_uni: 1 
-!    d2_datum: twiss
-
-case ('data_d1_array')
-
-  call tao_find_data (err, line, d2_array = d2_array)
-
-  if (err .or. .not. allocated(d2_array)) then
-    call invalid ('Not a valid d2 data name')
-    return
-  endif
-
-  d2_ptr => d2_array(1)%d2
-  do i = lbound(d2_ptr%d1, 1), ubound(d2_ptr%d1, 1)
-    d1_ptr => d2_ptr%d1(i)
-    call location_encode (line, d1_ptr%d%useit_opt, d1_ptr%d%exists, lbound(d1_ptr%d, 1))
-    nl=incr(nl); write (li(nl), '(a, i0, 5a, i0, a, i0)') 'd1[', i, '];STR2;F;', trim(d1_ptr%name), ';', trim(line), ';', &
-                                                                                     lbound(d1_ptr%d, 1), ';', ubound(d1_ptr%d, 1)
-  enddo
-
-!%% data_parameter -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% data_parameter
 ! Output an array of values for a particular datum parameter for a given array of datums, 
 !
 ! Notes
@@ -1645,44 +1719,9 @@ case ('data_parameter')
     enddo
   endif
 
-!%% data_d2_array -----------------------
-! Output data d2 info for a given universe.
-!
-! Notes
-! -----
-! Command syntax:
-!   python data_d2_array {ix_uni}
-!
-! Example:
-!   python data_d2_array 1
-! 
-! Parameters
-! ----------
-! ix_uni
-! 
-! Returns
-! -------
-! string_list  
-!
-! Examples
-! --------
-! Example: 1
-!  init: -init $ACC_ROOT_DIR/regression_tests/python_test/cesr/tao.init
-!  args:
-!    ix_uni : 1 
-
-
-case ('data_d2_array')
-
-  u => point_to_uni(line, .false., err); if (err) return
-
-  do i = 1, u%n_d2_data_used
-    d2_ptr => u%d2_data(i)
-    if (d2_ptr%name == '') cycle
-    nl=incr(nl); write (li(nl), '(a)') d2_ptr%name
-  enddo
-
-!%% data_set_design_value -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% data_set_design_value
 ! Set the design (and base & model) values for all datums.
 !
 ! Notes
@@ -1695,9 +1734,6 @@ case ('data_d2_array')
 ! 
 ! Note: Use the "data_d2_create" and "datum_create" first to create datums.
 ! 
-! Parameters
-! ----------
-!
 ! Returns
 ! -------
 ! None
@@ -1743,7 +1779,9 @@ case ('data_set_design_value')
   s%u%calc%lattice = .true.
   call tao_lattice_calc (calc_ok)
 
-!%% datum_create -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% datum_create
 ! Create a datum.
 !
 ! Notes
@@ -1861,7 +1899,10 @@ case ('datum_create')
   d_ptr%ele_name = ele_name
   if (ele_name /= '') then
     call lat_ele_locator (ele_name, u%model%lat, eles, n_loc, err)
-    if (err .or. n_loc /= 1) then
+    if (err .or. n_loc == 0) then
+      call invalid('LATTICE ELEMENT NOT FOUND FOR: ' // ele_name)
+      return
+    elseif (n_loc > 1) then
       call invalid('UNIQUE LATTICE ELEMENT NOT FOUND FOR: ' // ele_name)
       return
     endif
@@ -1870,6 +1911,7 @@ case ('datum_create')
   endif
 
   d_ptr%merit_type  = name_arr(6)
+  if (d_ptr%merit_type == '') d_ptr%merit_type = 'target'
   d_ptr%meas_value  = real_val(name_arr(7), 0.0_rp, err);      if (err) return
   d_ptr%good_meas   = logic_val(name_arr(8), .false., err);    if (err) return
   d_ptr%ref_value   = real_val(name_arr(9), 0.0_rp, err);      if (err) return
@@ -1899,7 +1941,9 @@ case ('datum_create')
   d_ptr%exists = tao_data_sanity_check (d_ptr, d_ptr%exists, '')
   if (tao_chrom_calc_needed(d_ptr%data_type, d_ptr%data_source)) u%calc%chrom_for_data = .true.
 
-!%% datum_has_ele -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% datum_has_ele
 ! Output whether a datum type has an associated lattice element
 !
 ! Notes
@@ -1931,7 +1975,9 @@ case ('datum_has_ele')
   case (provisional$);    nl=incr(nl); li(nl) = 'provisional'
   end select
 
-!%% derivative -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% derivative
 ! Output optimization derivatives
 !
 ! Notes
@@ -1942,9 +1988,6 @@ case ('datum_has_ele')
 ! Note: To save time, this command will not recalculate derivatives. 
 ! Use the "derivative" command beforehand to recalcuate if needed.
 ! 
-! Parameters
-! ----------
-!
 ! Returns
 ! -------
 ! string_list
@@ -1970,7 +2013,9 @@ case ('derivative')
     enddo
   enddo
 
-!%% ele:ac_kicker -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:ac_kicker
 ! Output element ac_kicker parameters
 !
 ! Notes
@@ -2020,13 +2065,15 @@ case ('ele:ac_kicker')
 
   else
     nl=incr(nl); write (li(nl), '(a)') 'has#frequencies'
-    do i = 1, size(ac%frequencies)
+    do i = 1, size(ac%frequency)
       nl=incr(nl); write (li(nl), '(i0, 3(a, es22.14))') i, ';', &
-                      ac%frequencies(i)%f, ';', ac%frequencies(i)%amp, ';', ac%frequencies(i)%phi
+                      ac%frequency(i)%f, ';', ac%frequency(i)%amp, ';', ac%frequency(i)%phi
     enddo
   endif
 
-!%% ele:cartesian_map -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:cartesian_map
 ! Output element cartesian_map parameters
 !
 ! Notes
@@ -2085,7 +2132,7 @@ case ('ele:cartesian_map')
     nl=incr(nl); write (li(nl), ramt) 'r0;REAL_ARR;T',                         (';', ct_map%r0(i), i = 1, 3)
     name = attribute_name(ele, ct_map%master_parameter)
     if (name(1:1) == '!') name = '<None>'
-    nl=incr(nl); write (li(nl), amt) 'master_parameter;ELE_PARAMM;T;',        trim(name)
+    nl=incr(nl); write (li(nl), amt) 'master_parameter;ELE_PARAM;T;',        trim(name)
     nl=incr(nl); write (li(nl), amt) 'ele_anchor_pt;ENUM;T;',                 trim(anchor_pt_name(ct_map%ele_anchor_pt))
     nl=incr(nl); write (li(nl), amt) 'nongrid^field_type;ENUM;T;',            trim(em_field_type_name(ct_map%field_type))
 
@@ -2102,7 +2149,9 @@ case ('ele:cartesian_map')
     return
   end select
 
-!%% ele:chamber_wall -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:chamber_wall
 ! Output element beam chamber wall parameters
 !
 ! Notes
@@ -2169,7 +2218,9 @@ case ('ele:chamber_wall')
     nl=incr(nl); write (li(nl), '(i0, 3(a, es14.6))') i, ';', wall3d%section(i)%s, ';', z1, ';', -z2
   enddo
 
-!%% ele:control_var -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:control_var
 ! Output list of element control variables.
 ! Used for group, overlay and ramper type elements.
 !
@@ -2228,7 +2279,9 @@ case ('ele:control_var')
     enddo
   endif
 
-!%% ele:cylindrical_map -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:cylindrical_map
 ! Output element cylindrical_map
 !
 ! Notes
@@ -2292,7 +2345,7 @@ case ('ele:cylindrical_map')
     nl=incr(nl); write (li(nl), ramt) 'r0;REAL_ARR;T',                         (';', cy_map%r0(i), i = 1, 3)
     name = attribute_name(ele, cy_map%master_parameter)
     if (name(1:1) == '!') name = '<None>'
-    nl=incr(nl); write (li(nl), amt) 'master_parameter;ELE_PARAMM;T;',        trim(name)
+    nl=incr(nl); write (li(nl), amt) 'master_parameter;ELE_PARAM;T;',        trim(name)
     nl=incr(nl); write (li(nl), amt) 'ele_anchor_pt;ENUM;T;',                 trim(anchor_pt_name(cy_map%ele_anchor_pt))
 
   case ('terms')
@@ -2306,7 +2359,9 @@ case ('ele:cylindrical_map')
     return
   end select
 
-!%% ele:elec_multipoles -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:elec_multipoles
 ! Output element electric multipoles
 !
 ! Notes
@@ -2367,7 +2422,9 @@ case ('ele:elec_multipoles')
     nl=incr(nl); write (li(nl), '(i0, 4(a, es22.14))') i, ';', ele%a_pole_elec(i), ';', ele%b_pole_elec(i), ';', a(i), ';', b(i)
   enddo
 
-!%% ele:floor -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:floor
 ! Output element floor coordinates. The output gives two lines. "Reference" is
 ! without element misalignments and "Actual" is with misalignments.
 !
@@ -2458,7 +2515,9 @@ case ('ele:floor')
   nl=incr(nl); write (li(nl), rmt2) 'Actual;REAL_ARR;', .false., (';', floor2%r(i), i = 1, 3), ';', floor2%theta, ';', floor2%phi, ';', floor2%psi
   nl=incr(nl); write (li(nl), rmt2) 'Actual-W;REAL_ARR;', .false., ((';', floor2%w(i,j), i = 1, 3), j = 1, 3)
 
-!%% ele:grid_field -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:grid_field
 ! Output element grid_field
 !
 ! Notes
@@ -2516,7 +2575,7 @@ case ('ele:grid_field')
     nl=incr(nl); write (li(nl), ramt) 'r0;REAL_ARR;T',                         (';', g_field%r0(i), i = 1, 3)
     name = attribute_name(ele, g_field%master_parameter)
     if (name(1:1) == '!') name = '<None>'
-    nl=incr(nl); write (li(nl), amt) 'master_parameter;ELE_PARAMM;T;',        trim(name)
+    nl=incr(nl); write (li(nl), amt) 'master_parameter;ELE_PARAM;T;',        trim(name)
     nl=incr(nl); write (li(nl), amt) 'ele_anchor_pt;ENUM;T;',                 trim(anchor_pt_name(g_field%ele_anchor_pt))
     nl=incr(nl); write (li(nl), amt) 'field_type;ENUM;T;',                    trim(em_field_type_name(g_field%field_type))
     nl=incr(nl); write (li(nl), amt) 'grid_field^geometry;ENUM;T;',           trim(grid_field_geometry_name(g_field%geometry))
@@ -2557,7 +2616,9 @@ case ('ele:grid_field')
     enddo; enddo; enddo
   end select
 
-!%% ele:gen_attribs -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:gen_attribs
 ! Output element general attributes
 !
 ! Notes
@@ -2634,7 +2695,9 @@ case ('ele:gen_attribs')
     nl=incr(nl); write (li(nl), lmt) 'field_master;LOGIC;T;',                   ele%field_master
   endif
 
-!%% ele:head -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:head
 ! Output "head" Element attributes
 !
 ! Notes
@@ -2719,7 +2782,9 @@ case ('ele:head')
   nl=incr(nl); write (li(nl), lmt) 'has#photon;LOGIC;F;',           associated(ele%photon)
   nl=incr(nl); write (li(nl), lmt) 'has#lord_slave;LOGIC;F;',       .true.
 
-!%% ele:lord_slave -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:lord_slave
 ! Output the lord/slave tree of an element.
 !
 ! Notes
@@ -2785,7 +2850,9 @@ case ('ele:lord_slave')
     enddo
   enddo
 
-!%% ele:mat6 -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:mat6
 ! Output element mat6
 !
 ! Notes
@@ -2844,7 +2911,9 @@ case ('ele:mat6')
     return
   end select
 
-!%% ele:methods -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:methods
 ! Output element methods
 !
 ! Notes
@@ -2931,7 +3000,9 @@ case ('ele:methods')
     nl=incr(nl); write (li(nl), imt) 'longitudinal_orientation;INT;F;',              ele%orientation
   endif
 
-!%% ele:multipoles -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:multipoles
 ! Output element multipoles
 !
 ! Notes
@@ -3015,7 +3086,9 @@ case ('ele:multipoles')
     endif
   enddo
 
-!%% ele:orbit -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:orbit
 ! Output element orbit
 !
 ! Notes
@@ -3056,7 +3129,9 @@ case ('ele:orbit')
 
   call orbit_out (tao_lat%tao_branch(ele%ix_branch)%orbit(ele%ix_ele))
 
-!%% ele:param -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:param
 ! Output lattice element parameter
 !
 ! Notes
@@ -3067,7 +3142,7 @@ case ('ele:orbit')
 ! Where: 
 !   {ele_id} is an element name or index.
 !   {which} is one of: "model", "base" or "design"
-!   {who} values are the same as {who} values for "python lat_list" except for "ele:mat6" and "ele:vec0".
+!   {who} values are the same as {who} values for "python lat_list".
 !         Note: Here {who} must be a single parameter and not a list.
 !
 ! Example:
@@ -3105,16 +3180,36 @@ case ('ele:param')
   ele => point_to_ele(line, tao_lat%lat, err); if (err) return
   orbit => tao_lat%tao_branch(ele%ix_branch)%orbit(ele%ix_ele)
 
-  value = ele_param_value(tail_str, ele, orbit, data_type, err); if (err) return
+  data_type = is_real$
+
+  select case (tail_str)
+  case ('ele.mat6')
+    n_add = 36
+    do ix = 1, 6
+      values(6*(ix-1)+1:6*ix) = ele%mat6(ix,:)
+    enddo
+  case ('ele.vec0')
+    n_add = 6
+    values(1:6) = ele%vec0
+  case ('ele.c_mat')
+    n_add = 4
+    values(1:4) = [ele%c_mat(1,1), ele%c_mat(1,2), ele%c_mat(2,1), ele%c_mat(2,2)]
+  case default
+    n_add = 1
+    values(1) = ele_param_value(tail_str, ele, orbit, data_type, err); if (err) return
+  end select
+
 
   select case (data_type)
   case (is_real$)
-    nl=incr(nl); write (li(nl), rmt) trim(tail_str) // ';REAL;F;',                  value
+    nl=incr(nl); write (li(nl), amt) trim(tail_str) // ';REAL;F',    (';', re_str(values(k), 8), k = 1, n_add)
   case (is_integer$)
-    nl=incr(nl); write (li(nl), imt) trim(tail_str) // ';INT;F;',                   nint(value)
+    nl=incr(nl); write (li(nl), imt) trim(tail_str) // ';INT;F;',     nint(values(1))
   end select
 
-!%% ele:photon -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:photon
 ! Output element photon parameters
 !
 ! Notes
@@ -3189,7 +3284,9 @@ case ('ele:photon')
     enddo
   end select
 
-!%% ele:spin_taylor -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:spin_taylor
 ! Output element spin_taylor parameters
 !
 ! Notes
@@ -3239,7 +3336,9 @@ case ('ele:spin_taylor')
     enddo
   enddo
 
-!%% ele:taylor -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:taylor
 ! Output element taylor map 
 !
 ! Notes
@@ -3295,7 +3394,9 @@ case ('ele:taylor')
     enddo
   enddo
 
-!%% ele:taylor_field -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:taylor_field
 ! Output element taylor_field 
 !
 ! Notes
@@ -3355,7 +3456,7 @@ case ('ele:taylor_field')
     nl=incr(nl); write (li(nl), rmt) 'dz;REAL;T;',                            t_field%dz
     name = attribute_name(ele, t_field%master_parameter)
     if (name(1:1) == '!') name = '<None>'
-    nl=incr(nl); write (li(nl), amt) 'master_parameter;ELE_PARAMM;T;',        trim(name)
+    nl=incr(nl); write (li(nl), amt) 'master_parameter;ELE_PARAM;T;',        trim(name)
     nl=incr(nl); write (li(nl), amt) 'ele_anchor_pt;ENUM;T;',                 trim(anchor_pt_name(t_field%ele_anchor_pt))
     nl=incr(nl); write (li(nl), amt) 'nongrid^field_type;ENUM;T;',            trim(em_field_type_name(t_field%field_type))
     nl=incr(nl); write (li(nl), lmt) 'curved_ref_frame;LOGIC;T;',             t_field%curved_ref_frame
@@ -3374,7 +3475,9 @@ case ('ele:taylor_field')
     enddo
   end select
 
-!%% ele:twiss -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:twiss
 ! Output element Twiss parameters
 !
 ! Notes
@@ -3423,7 +3526,9 @@ case ('ele:twiss')
   call xy_disp_out (ele%x, 'x', can_vary = free)
   call xy_disp_out (ele%y, 'y', can_vary = free)
 
-!%% ele:wake -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:wake
 ! Output element wake.
 !
 ! Notes
@@ -3523,7 +3628,9 @@ case ('ele:wake')
     return
   end select
 
-!%% ele:wall3d -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ele:wall3d
 ! Output element wall3d parameters.
 !
 ! Notes
@@ -3609,7 +3716,9 @@ case ('ele:wall3d')
     return
   end select
 
-!%% evaluate -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% evaluate
 ! Output the value of an expression. The result may be a vector.
 !
 ! Notes
@@ -3622,9 +3731,9 @@ case ('ele:wall3d')
 ! 
 ! Parameters
 ! ----------
-! expression
+! expression :
 ! flags : default=-array_out
-!   If -array_out, the output will be available in the tao_c_interface_com%c_real.!
+!   If -array_out, the output will be available in the tao_c_interface_com%c_real.
 !
 ! Returns
 ! -------
@@ -3650,6 +3759,12 @@ case ('evaluate')
     use_real_array_buffer = .true.
   endif
 
+  if (index(line, 'chrom') /= 0) then
+    s%com%force_chrom_calc = .true.
+    s%u%calc%lattice = .true.
+    call tao_lattice_calc(ok)
+  endif
+
   call tao_evaluate_expression (line, 0, .false., value_arr, err)
   if (err) then
     call invalid ('Invalid expression')
@@ -3668,7 +3783,9 @@ case ('evaluate')
     enddo
   endif
 
-!%% em_field -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% em_field
 ! Output EM field at a given point generated by a given element.
 !
 ! Notes
@@ -3719,7 +3836,7 @@ case ('em_field')
   orb%vec(1)  = parse_real(name1(1), err);  if (err) return
   orb%vec(3)  = parse_real(name1(2), err);  if (err) return
   z           = parse_real(name1(3), err);  if (err) return
-  if (ele%branch%lat%absolute_time_tracking) then
+  if (bmad_com%absolute_time_tracking) then
     orb%t = parse_real(name1(4), err);  if (err) return
   else
     orb%vec(5) = parse_real(name1(4), err);  if (err) return
@@ -3728,7 +3845,9 @@ case ('em_field')
   call em_field_calc (ele, ele%branch%param, z, orb, .false., field, err_flag = err);  if (err) return
   nl=incr(nl); write (li(nl), '(6(es22.14, a))') (field%B(i), ';',  i = 1, 3), (field%E(i), ';',  i = 1, 2), field%E(3)
 
-!%% enum -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% enum
 ! Output list of possible values for enumerated numbers.
 !
 ! Notes
@@ -3890,7 +4009,9 @@ case ('enum')
     enddo
   end select
 
-!%% floor_plan -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% floor_plan
 ! Output (x,y) points and other information that can be used for drawing a floor_plan.
 !
 ! Notes
@@ -3979,7 +4100,9 @@ case ('floor_plan')
     enddo
   enddo
 
-!%% floor_orbit -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% floor_orbit
 ! Output (x, y) coordinates for drawing the particle orbit on a floor plan.
 !
 ! Notes
@@ -4131,7 +4254,9 @@ case ('floor_orbit')
     enddo
   enddo
 
-!%% global -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% global
 ! Output global parameters.
 !
 ! Notes
@@ -4147,9 +4272,6 @@ case ('floor_orbit')
 !   single_step
 !   prompt_color
 !   prompt_string
-!
-! Parameters
-! ----------
 !
 ! Returns
 ! -------
@@ -4196,7 +4318,6 @@ case ('global')
   nl=incr(nl); write (li(nl), lmt) 'concatenate_maps;LOGIC;T;',               s%global%concatenate_maps
   nl=incr(nl); write (li(nl), lmt) 'derivative_recalc;LOGIC;T;',              s%global%derivative_recalc
   nl=incr(nl); write (li(nl), lmt) 'derivative_uses_design;LOGIC;T;',         s%global%derivative_uses_design
-  nl=incr(nl); write (li(nl), lmt) 'orm_analysis;LOGIC;T;',                   s%global%orm_analysis
   nl=incr(nl); write (li(nl), lmt) 'plot_on;LOGIC;T;',                        s%global%plot_on
   nl=incr(nl); write (li(nl), lmt) 'lattice_calc_on;LOGIC;T;',                s%global%lattice_calc_on
   nl=incr(nl); write (li(nl), lmt) 'svd_retreat_on_merit_increase;LOGIC;T;',  s%global%svd_retreat_on_merit_increase
@@ -4214,16 +4335,15 @@ case ('global')
   nl=incr(nl); write (li(nl), lmt) 'debug_on;LOGIC;T;',                       s%global%debug_on
 
 
-!%% help -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% help
 ! Output list of "help xxx" topics
 !
 ! Notes
 ! -----
 ! Command syntax:
 !   python help
-!
-! Parameters
-! ----------
 !
 ! Returns
 ! -------
@@ -4253,7 +4373,9 @@ case ('help')
   li(nl+1:nl+nl2) = name2(1:nl2)
   nl = nl + nl2
 
-!%% inum -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% inum
 ! Output list of possible values for an INUM parameter.
 ! For example, possible index numbers for the branches of a lattice.
 !
@@ -4315,7 +4437,9 @@ case ('inum')
     call invalid ('Not a recognized inum')
   end select
 
-!%% lat_calc_done -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% lat_calc_done
 ! Output if a lattice recalculation has been proformed since the last 
 !   time "python lat_calc_done" was called.
 !
@@ -4344,7 +4468,9 @@ case ('lat_calc_done')
   nl=incr(nl); write (li(nl), '(l1)') s%com%lattice_calc_done
   s%com%lattice_calc_done = .false.
 
-!%% lat_ele_list -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% lat_ele_list
 ! Output lattice element list.
 !
 ! Notes
@@ -4380,7 +4506,9 @@ case ('lat_ele_list')
     nl=incr(nl); write (li(nl), '(i0, 2a)') i, ';', branch%ele(i)%name
   enddo
 
-!%% lat_branch_list -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% lat_branch_list
 ! Output lattice branch list
 !
 ! Notes
@@ -4416,7 +4544,9 @@ case ('lat_branch_list', 'lat_general')  ! lat_general is deprecated.
     nl=incr(nl); write (li(nl), '(i0, 3a, 2(i0, a))') i, ';', trim(branch%name), ';', branch%n_ele_track, ';', branch%n_ele_max
   enddo
 
-!%% lat_list -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% lat_list
 ! Output list of parameters at ends of lattice elements
 !
 ! Notes
@@ -4447,10 +4577,14 @@ case ('lat_branch_list', 'lat_general')  ! lat_general is deprecated.
 !     ele.b.beta, ele.b.alpha, ele.b.eta, ele.b.etap, ele.b.gamma, ele.b.phi,
 !     ele.x.eta, ele.x.etap,
 !     ele.y.eta, ele.y.etap,
+!     ele.ref_time, ele.ref_time_start
 !     ele.s, ele.l
 !     ele.e_tot, ele.p0c
-!     ele.mat6, ele.vec0
+!     ele.mat6      ! Output: mat6(1,:), mat6(2,:), ... mat6(6,:)
+!     ele.vec0      ! Output: vec0(1), ... vec0(6)
 !     ele.{attribute} Where {attribute} is a Bmad syntax element attribute. (EG: ele.beta_a, ele.k1, etc.)
+!     ele.c_mat     ! Output: c_mat11, c_mat12, c_mat21, c_mat22.
+!     ele.gamma_c   ! Parameter associated with coupling c-matrix.
 ! 
 !   {elements} is a string to match element names to.
 !     Use "*" to match to all elements.
@@ -4459,7 +4593,6 @@ case ('lat_branch_list', 'lat_general')  ! lat_general is deprecated.
 !   python lat_list -track 3@0>>Q*|base ele.s,orbit.vec.2
 !   python lat_list 3@0>>Q*|base real:ele.s    
 ! 
-! Note: vector layout of mat6(6,6) is: [mat6(1,:), mat6(2,:), ...mat6(6,:)]
 ! Also see: "python ele:param"
 !
 ! Parameters
@@ -4594,6 +4727,9 @@ case ('lat_list')
       case ('ele.vec0')
         n_add = 6
         values(1:6) = ele%vec0
+      case ('ele.c_mat')
+        n_add = 4
+        values(1:4) = [ele%c_mat(1,1), ele%c_mat(1,2), ele%c_mat(2,1), ele%c_mat(2,2)]
       case ('ele.name')
         nl=incr(nl); li(nl) = ele%name
         cycle
@@ -4650,7 +4786,9 @@ case ('lat_list')
     endif
   endif
 
-!%% lat_param_units -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% lat_param_units
 ! Output units of a parameter associated with a lattice or lattice element.
 !
 ! Notes
@@ -4679,7 +4817,9 @@ case ('lat_param_units')
   a_name = attribute_units(name)
   nl=incr(nl); write(li(nl), '(a)') a_name
 
-!%% matrix -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% matrix
 ! Output matrix value from the exit end of one element to the exit end of the other.
 !
 ! Notes
@@ -4736,7 +4876,9 @@ case ('matrix')
     nl=incr(nl); write (li(nl), ramt) int_str(i), (';', array(j), j = 1, 7)
   enddo
 
-!%% merit -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% merit
 ! Output merit value.
 !
 ! Notes
@@ -4744,9 +4886,6 @@ case ('matrix')
 ! Command syntax:
 !   python merit
 ! 
-! Parameters
-! ----------
-!
 ! Returns
 ! -------
 ! string_list
@@ -4761,7 +4900,9 @@ case ('merit')
 
   nl=incr(nl); write (li(nl), '(es22.14)') tao_merit()
 
-!%% orbit_at_s -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% orbit_at_s
 ! Output twiss at given s position.
 !
 ! Notes
@@ -4810,7 +4951,9 @@ case ('orbit_at_s')
   call twiss_and_track_at_s (tao_lat%lat, s_pos, orb = tao_lat%tao_branch(ix_branch)%orbit, orb_at_s = orb, ix_branch = ix_branch)
   call orbit_out (orb)
 
-!%% place_buffer -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% place_buffer
 ! Output place command buffer and reset the buffer.
 ! The contents of the buffer are the place commands that the user has issued.
 !
@@ -4819,9 +4962,6 @@ case ('orbit_at_s')
 ! Command syntax:
 !   python place_buffer
 ! 
-! Parameters
-! ----------
-!
 ! Returns
 ! -------
 ! None
@@ -4842,7 +4982,9 @@ case ('place_buffer')
 
   deallocate(s%com%plot_place_buffer)
 
-!%% plot_curve -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot_curve
 ! Output curve information for a plot
 !
 !
@@ -4915,7 +5057,9 @@ case ('plot_curve')
 
   nl=incr(nl); write (li(nl), imt)  'symbol.line_width;INT;T;',               c%symbol%line_width
 
-!%% plot_lat_layout -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot_lat_layout
 ! Output plot Lat_layout info
 !
 ! Notes
@@ -4965,7 +5109,9 @@ case ('plot_lat_layout')
     enddo
   enddo
 
-!%% plot_list -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot_list
 ! Output list of plot templates or plot regions.
 !
 ! Notes
@@ -4974,8 +5120,8 @@ case ('plot_lat_layout')
 !   python plot_list {r_or_g}
 !
 ! where "{r/g}" is:
-!   "r"      ! list regions
-!   "t"      ! list template plots
+!   "r"      ! list regions of the form ix;region_name;plot_name;visible;x1;x2;y1;y2
+!   "t"      ! list template plots of the form ix;name
 ! 
 ! Parameters
 ! ----------
@@ -5015,7 +5161,9 @@ case ('plot_list')
     call invalid ('Expect "r" or "t"')
   endif
 
-!%% plot_graph -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot_graph
 ! Output graph info.
 !
 ! Notes
@@ -5142,7 +5290,9 @@ case ('plot_graph')
 
   endif
 
-!%% plot_histogram -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot_histogram
 ! Output plot histogram info.
 !
 ! Notes
@@ -5184,28 +5334,31 @@ case ('plot_histogram')
   nl=incr(nl); write (li(nl), rmt) 'center;REAL;T;',                       c%hist%center
   nl=incr(nl); write (li(nl), imt) 'number;REAL;T;',                       c%hist%number
 
-!%% plot_plot_manage -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot_template_manage
 ! Template plot creation or destruction.
 !
 ! Notes
 ! -----
 ! Command syntax:
-!   python plot_plot_manage {plot_location}^^{plot_name}^^
-!                          {n_graph}^^{graph1_name}^^{graph2_name}^^{graphN_name}
+!   python plot_template_manage {template_location}^^{template_name}^^
+!                          {n_graph}^^{graph_names}
 !
-! Use "@Tnnn" sytax for {plot_location} to place a plot. A plot may be placed in a 
-! spot where there is already a template.
-! Extra graph names can be included with ^^ connection. 
-! If {n_graph} is set to -1 then just delete the plot.
-! 
+! Where:
+!   {template_location} is the location to place or delete a template plot. Use "@Tnnn" syntax for the location.
+!   {template_name} is the name of the template plot. If deleting a plot this name is immaterial.
+!   {n_graph} is the number of associated graphs. If set to -1 then any existing template plot is deleted.
+!   {graph_names} are the names of the graphs.  graph_names should be in the form:
+!      graph1_name^^graph2_name^^...^^graphN_name
+!   for N=n_graph names
+!
 ! Parameters
 ! ----------
-! plot_location
-! plot_name
-! n_graph
-! graph1_name
-! graph2_name
-! graphN_name
+! template_location
+! template_name
+! n_graph : default=-1
+! graph_names : default=
 !
 ! Returns
 ! -------
@@ -5216,14 +5369,13 @@ case ('plot_histogram')
 ! Example: 1
 !  init: -init $ACC_ROOT_DIR/regression_tests/python_test/tao.init_optics_matching
 !  args:
-!    plot_location: @T1
-!    plot_name: beta
-!    n_graph: 1
-!    graph1_name: g1
-!    graph2_name: g2
-!    graphN_name: gN
+!    template_location: @T1
+!    template_name: beta
+!    n_graph: 2
+!    graph_names: g1^^g2
 
-case ('plot_plot_manage')
+
+case ('plot_template_manage')
 
   call split_this_line (line, name1, -1, err);         if (err) return
 
@@ -5265,7 +5417,9 @@ case ('plot_plot_manage')
     p%graph(i)%p => p
   enddo
 
-!%% plot_curve_manage -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot_curve_manage
 ! Template plot curve creation/destruction
 !
 ! Notes
@@ -5338,7 +5492,9 @@ case ('plot_curve_manage')
     g%curve(n:n1-1) = curve_temp(n+1:n1)
   endif
 
-!%% plot_graph_manage -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot_graph_manage
 ! Template plot graph creation/destruction
 !
 ! Notes
@@ -5411,7 +5567,9 @@ case ('plot_graph_manage')
     p%graph(n:n1-1) = graph_temp(n+1:n1)
   endif
 
-!%% plot_line -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot_line
 ! Output points used to construct the "line" associated with a plot curve.
 !
 ! Notes
@@ -5510,7 +5668,9 @@ endif
   end select
 
 
-!%% plot_symbol -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot_symbol
 ! Output locations to draw symbols for a plot curve.
 !
 ! Notes
@@ -5609,7 +5769,9 @@ case ('plot_symbol')
     call invalid ('word after curve name not "x" nor "y"')
   end select
 
-!%% plot_transfer -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot_transfer
 ! Output transfer plot parameters from the "from plot" to the "to plot" (or plots).
 !
 ! Notes
@@ -5676,7 +5838,9 @@ case ('plot_transfer')
     enddo
   endif
 
-!%% plot1 -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% plot1
 ! Output info on a given plot.
 !
 ! Notes
@@ -5730,7 +5894,9 @@ case ('plot1')
   nl=incr(nl); write (li(nl), imt) 'n_curve_pts;INT;T;',                      p%n_curve_pts
 
 
-!%% ptc_com -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ptc_com
 ! Output Ptc_com structure components.
 !
 ! Notes
@@ -5738,9 +5904,6 @@ case ('plot1')
 ! Command syntax:
 !   python ptc_com
 ! 
-! Parameters
-! ----------
-!
 ! Returns
 ! -------
 ! string_list 
@@ -5754,12 +5917,14 @@ case ('plot1')
 case ('ptc_com')
 
   nl=incr(nl); write (li(nl), imt) 'max_fringe_order;INT;T;',               ptc_com%max_fringe_order
-  nl=incr(nl); write (li(nl), lmt) 'old_integrator;LOGIC;T;',               ptc_com%old_integrator
+  nl=incr(nl); write (li(nl), imt) 'old_integrator;INT;T;',                 ptc_com%old_integrator
   nl=incr(nl); write (li(nl), lmt) 'exact_model;LOGIC;T;',                  ptc_com%exact_model
   nl=incr(nl); write (li(nl), lmt) 'exact_misalign;LOGIC;T;',               ptc_com%exact_misalign
 
 
-!%% ring_general -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% ring_general
 ! Output lattice branch with closed geometry info (emittances, etc.)
 !
 ! Notes
@@ -5809,8 +5974,8 @@ case ('ring_general')
 
   call chrom_calc (branch%lat, s%global%delta_e_chrom, tao_branch%a%chrom, tao_branch%b%chrom, &
                                                   pz = tao_branch%orbit(0)%vec(6), ix_branch = branch%ix_branch)
-  call calc_z_tune(branch%lat, branch%ix_branch)
-  call radiation_integrals (branch%lat, tao_branch%orbit, tao_branch%modes, tao_branch%ix_rad_int_cache, branch%ix_branch)
+  call calc_z_tune(branch)
+  call radiation_integrals (branch%lat, tao_branch%orbit, tao_branch%modes_ri, tao_branch%ix_rad_int_cache, branch%ix_branch)
 
   n = branch%n_ele_track
   time1 = branch%ele(n)%ref_time
@@ -5823,31 +5988,33 @@ case ('ring_general')
   nl=incr(nl); write (li(nl), rmt) 'Q_spin;REAL;F;',                            branch%param%spin_tune/twopi
   nl=incr(nl); write (li(nl), rmt) 'chrom_a;REAL;F;',                           tao_branch%a%chrom
   nl=incr(nl); write (li(nl), rmt) 'chrom_b;REAL;F;',                           tao_branch%b%chrom
-  nl=incr(nl); write (li(nl), rmt) 'J_damp_a;REAL;F;',                          tao_branch%modes%a%j_damp
-  nl=incr(nl); write (li(nl), rmt) 'J_damp_b;REAL;F;',                          tao_branch%modes%b%j_damp
-  nl=incr(nl); write (li(nl), rmt) 'J_damp_z;REAL;F;',                          tao_branch%modes%z%j_damp
-  nl=incr(nl); write (li(nl), rmt) 'emit_a;REAL;F;',                            tao_branch%modes%a%emittance
-  nl=incr(nl); write (li(nl), rmt) 'emit_b;REAL;F;',                            tao_branch%modes%b%emittance
-  nl=incr(nl); write (li(nl), rmt) 'alpha_damp_a;REAL;F;',                      tao_branch%modes%a%alpha_damp
-  nl=incr(nl); write (li(nl), rmt) 'alpha_damp_b;REAL;F;',                      tao_branch%modes%b%alpha_damp
-  nl=incr(nl); write (li(nl), rmt) 'alpha_damp_z;REAL;F;',                      tao_branch%modes%z%alpha_damp
-  nl=incr(nl); write (li(nl), rmt) 'damping_time_a;REAL;F;',                    time1/tao_branch%modes%a%alpha_damp
-  nl=incr(nl); write (li(nl), rmt) 'damping_time_b;REAL;F;',                    time1/tao_branch%modes%b%alpha_damp
-  nl=incr(nl); write (li(nl), rmt) 'damping_time_z;REAL;F;',                    time1/tao_branch%modes%z%alpha_damp
-  nl=incr(nl); write (li(nl), rmt) 'sigE_E;REAL;F;',                            tao_branch%modes%sigE_E
-  nl=incr(nl); write (li(nl), rmt) 'sig_z;REAL;F;',                             tao_branch%modes%sig_z
-  nl=incr(nl); write (li(nl), rmt) 'energy_loss;REAL;F;',                       tao_branch%modes%e_loss
-  nl=incr(nl); write (li(nl), rmt) 'I0;REAL;F;',                                tao_branch%modes%synch_int(0)
-  nl=incr(nl); write (li(nl), rmt) 'I1;REAL;F;',                                tao_branch%modes%synch_int(1)
-  nl=incr(nl); write (li(nl), rmt) 'I2;REAL;F;',                                tao_branch%modes%synch_int(2)
-  nl=incr(nl); write (li(nl), rmt) 'I3;REAL;F;',                                tao_branch%modes%synch_int(3)
-  nl=incr(nl); write (li(nl), rmt) 'I4_a;REAL;F;',                              tao_branch%modes%a%synch_int(4)
-  nl=incr(nl); write (li(nl), rmt) 'I4_b;REAL;F;',                              tao_branch%modes%b%synch_int(4)
-  nl=incr(nl); write (li(nl), rmt) 'I5_a;REAL;F;',                              tao_branch%modes%a%synch_int(5)
-  nl=incr(nl); write (li(nl), rmt) 'I5_b;REAL;F;',                              tao_branch%modes%b%synch_int(5)
-  nl=incr(nl); write (li(nl), rmt) 'I6_g2_b;REAL;F;',                           tao_branch%modes%b%synch_int(6) / gamma**2
+  nl=incr(nl); write (li(nl), rmt) 'J_damp_a;REAL;F;',                          tao_branch%modes_ri%a%j_damp
+  nl=incr(nl); write (li(nl), rmt) 'J_damp_b;REAL;F;',                          tao_branch%modes_ri%b%j_damp
+  nl=incr(nl); write (li(nl), rmt) 'J_damp_z;REAL;F;',                          tao_branch%modes_ri%z%j_damp
+  nl=incr(nl); write (li(nl), rmt) 'emit_a;REAL;F;',                            tao_branch%modes_ri%a%emittance
+  nl=incr(nl); write (li(nl), rmt) 'emit_b;REAL;F;',                            tao_branch%modes_ri%b%emittance
+  nl=incr(nl); write (li(nl), rmt) 'alpha_damp_a;REAL;F;',                      tao_branch%modes_ri%a%alpha_damp
+  nl=incr(nl); write (li(nl), rmt) 'alpha_damp_b;REAL;F;',                      tao_branch%modes_ri%b%alpha_damp
+  nl=incr(nl); write (li(nl), rmt) 'alpha_damp_z;REAL;F;',                      tao_branch%modes_ri%z%alpha_damp
+  nl=incr(nl); write (li(nl), rmt) 'damping_time_a;REAL;F;',                    time1/tao_branch%modes_ri%a%alpha_damp
+  nl=incr(nl); write (li(nl), rmt) 'damping_time_b;REAL;F;',                    time1/tao_branch%modes_ri%b%alpha_damp
+  nl=incr(nl); write (li(nl), rmt) 'damping_time_z;REAL;F;',                    time1/tao_branch%modes_ri%z%alpha_damp
+  nl=incr(nl); write (li(nl), rmt) 'sigE_E;REAL;F;',                            tao_branch%modes_ri%sigE_E
+  nl=incr(nl); write (li(nl), rmt) 'sig_z;REAL;F;',                             tao_branch%modes_ri%sig_z
+  nl=incr(nl); write (li(nl), rmt) 'energy_loss;REAL;F;',                       tao_branch%modes_ri%e_loss
+  nl=incr(nl); write (li(nl), rmt) 'I0;REAL;F;',                                tao_branch%modes_ri%synch_int(0)
+  nl=incr(nl); write (li(nl), rmt) 'I1;REAL;F;',                                tao_branch%modes_ri%synch_int(1)
+  nl=incr(nl); write (li(nl), rmt) 'I2;REAL;F;',                                tao_branch%modes_ri%synch_int(2)
+  nl=incr(nl); write (li(nl), rmt) 'I3;REAL;F;',                                tao_branch%modes_ri%synch_int(3)
+  nl=incr(nl); write (li(nl), rmt) 'I4_a;REAL;F;',                              tao_branch%modes_ri%a%synch_int(4)
+  nl=incr(nl); write (li(nl), rmt) 'I4_b;REAL;F;',                              tao_branch%modes_ri%b%synch_int(4)
+  nl=incr(nl); write (li(nl), rmt) 'I5_a;REAL;F;',                              tao_branch%modes_ri%a%synch_int(5)
+  nl=incr(nl); write (li(nl), rmt) 'I5_b;REAL;F;',                              tao_branch%modes_ri%b%synch_int(5)
+  nl=incr(nl); write (li(nl), rmt) 'I6_g2_b;REAL;F;',                           tao_branch%modes_ri%b%synch_int(6) / gamma**2
 
-!%% shape_list -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% shape_list
 ! Output lat_layout or floor_plan shapes list
 !
 ! Notes
@@ -5895,7 +6062,9 @@ case ('shape_list')
   enddo
 
 
-!%% shape_manage -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% shape_manage
 ! Element shape creation or destruction
 !
 ! Notes
@@ -5969,7 +6138,9 @@ case ('shape_manage')
     return
   end select
 
-!%% shape_pattern_list -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% shape_pattern_list
 ! Output list of shape patterns or shape pattern points
 !
 ! Notes
@@ -6011,7 +6182,9 @@ case ('shape_pattern_list')
     enddo
   endif
 
-!%% shape_pattern_manage -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% shape_pattern_manage
 ! Add or remove shape pattern
 !
 ! Notes
@@ -6070,7 +6243,9 @@ case ('shape_pattern_manage')
     pattern%line%width = parse_int(name1(3), err, 1)
   end select
 
-!%% shape_pattern_point_manage -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% shape_pattern_point_manage
 ! Add or remove shape pattern point
 !
 ! Notes
@@ -6135,7 +6310,9 @@ case ('shape_pattern_point_manage')
     pattern%pt(ip)%x = parse_real(name1(4), err);  if (err) return
   end select
 
-!%% shape_set -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% shape_set
 ! Set lat_layout or floor_plan shape parameters.
 !
 ! Notes
@@ -6212,7 +6389,9 @@ case ('shape_set')
   drawing%ele_shape(ix) = tao_ele_shape_input_to_struct (shape_input)
   call tao_shape_init(drawing%ele_shape(ix), err, .true.)
 
-!%% show -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% show
 ! Output the output from a show command.
 !
 ! Notes
@@ -6243,7 +6422,9 @@ case ('show')
 
   call tao_show_this(trim(line), name, li, nl)
 
-!%% species_to_int -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% species_to_int
 ! Convert species name to corresponding integer
 !
 ! Notes
@@ -6279,7 +6460,9 @@ case ('species_to_int')
 
   nl=incr(nl); write (li(nl), '(i0)') n
 
-!%% species_to_str -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% species_to_str
 ! Convert species integer id to corresponding
 !
 ! Notes
@@ -6317,7 +6500,9 @@ case ('species_to_str')
 
   nl=incr(nl); write (li(nl), '(a)') trim(name)
 
-!%% spin_polarization -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% spin_polarization
 ! Output spin polarization information
 !
 ! Notes
@@ -6364,19 +6549,28 @@ case ('spin_polarization')
   if (.not. tao_branch%spin_valid) call tao_spin_polarization_calc (branch, tao_branch)
 
   z = anomalous_moment_of(branch%param%particle) * branch%ele(0)%value(e_tot$) / mass_of(branch%param%particle)
-  nl=incr(nl); write (li(nl), rmt) 'anom_moment_times_gamma;REAL;F;',          z
+  nl=incr(nl); write (li(nl), rmt) 'anom_moment_times_gamma;REAL;F;',           z
+  nl=incr(nl); write (li(nl), rmt) 'spin_tune;REAL;F;',                         branch%param%spin_tune/twopi
   nl=incr(nl); write (li(nl), rmt) 'polarization_limit_st;REAL;F;',             tao_branch%spin%pol_limit_st
-  nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dkm;REAL;F;',            tao_branch%spin%pol_limit_dkm
-  nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dkm_partial_a;REAL;F;',  tao_branch%spin%pol_limit_dkm_partial(1)
-  nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dkm_partial_b;REAL;F;',  tao_branch%spin%pol_limit_dkm_partial(2)
-  nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dkm_partial_c;REAL;F;',  tao_branch%spin%pol_limit_dkm_partial(3)
+  nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dk;REAL;F;',             tao_branch%spin%pol_limit_dk
+  nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dk_partial_a;REAL;F;',   tao_branch%spin%pol_limit_dk_partial(1)
+  nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dk_partial_b;REAL;F;',   tao_branch%spin%pol_limit_dk_partial(2)
+  nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dk_partial_c;REAL;F;',   tao_branch%spin%pol_limit_dk_partial(3)
+  nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dk_partial2_a;REAL;F;',  tao_branch%spin%pol_limit_dk_partial2(1)
+  nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dk_partial2_b;REAL;F;',  tao_branch%spin%pol_limit_dk_partial2(2)
+  nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dk_partial2_c;REAL;F;',  tao_branch%spin%pol_limit_dk_partial2(3)
   nl=incr(nl); write (li(nl), rmt) 'polarization_rate_bks;REAL;F;',             tao_branch%spin%pol_rate_bks
   nl=incr(nl); write (li(nl), rmt) 'depolarization_rate;REAL;F;',               tao_branch%spin%depol_rate
   nl=incr(nl); write (li(nl), rmt) 'depolarization_rate_partial_a;REAL;F;',     tao_branch%spin%depol_rate_partial(1)
   nl=incr(nl); write (li(nl), rmt) 'depolarization_rate_partial_b;REAL;F;',     tao_branch%spin%depol_rate_partial(2)
   nl=incr(nl); write (li(nl), rmt) 'depolarization_rate_partial_c;REAL;F;',     tao_branch%spin%depol_rate_partial(3)
+  nl=incr(nl); write (li(nl), rmt) 'depolarization_rate_partial2_a;REAL;F;',    tao_branch%spin%depol_rate_partial2(1)
+  nl=incr(nl); write (li(nl), rmt) 'depolarization_rate_partial2_b;REAL;F;',    tao_branch%spin%depol_rate_partial2(2)
+  nl=incr(nl); write (li(nl), rmt) 'depolarization_rate_partial2_c;REAL;F;',    tao_branch%spin%depol_rate_partial2(3)
 
-!%% spin_resonance -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% spin_resonance
 ! Output spin resonance information
 !
 ! Notes 
@@ -6398,6 +6592,12 @@ case ('spin_polarization')
 ! ref_ele : default=0
 !   Reference element to calculate at.
 !
+! Returns
+! -------
+! q_spin                        -- Spin tune
+! dq_a_min, dq_b_min, dq_c_min  -- Minimum tune separation between a,b,c mode tunes and spin tune.
+! xi_res_a, xi_res_b, xi_res_c  -- The linear spin/orbit "sum" and "difference" resonance strengths for a,b,c modes.
+!
 ! Examples
 ! --------
 !
@@ -6407,9 +6607,6 @@ case ('spin_polarization')
 !    ix_uni: 1
 !    ix_branch: 0
 !    which: model
-!
-!
-
 
 case ('spin_resonance')
 
@@ -6437,22 +6634,20 @@ case ('spin_resonance')
   if (dot_product(n0, sm%axis0%n0) < 0) n_eigen = -n_eigen
 
   qs = branch%param%spin_tune/twopi
+  nl=incr(nl); write (li(nl), rmt) 'spin_tune;REAL;F;',   qs
+
   do i = 1, 3
     j = 2 * i - 1
     q = atan2(aimag(eval(j)), real(eval(j),rp)) / twopi
-    dq(i) = min(abs(modulo2(q-qs, 0.5_rp)), abs(modulo2(q+qs, 0.5_rp)))
-    call spin_quat_resonance_strengths(evec(j,:), sm%map1%spin_q, xi_quat(i,:))
-    call spin_mat8_resonance_strengths(evec(j,:), sm%mat8, xi_mat8(i,:))
+    dq = min(abs(modulo2(q-qs, 0.5_rp)), abs(modulo2(q+qs, 0.5_rp)))
+    nl=incr(nl); write (li(nl), amt) 'dq_', mode(i), ';REAL;F;', re_str(dq, 6)
+    call spin_quat_resonance_strengths(evec(j,:), sm%map1%spin_q, xi_quat)
+    nl=incr(nl); write (li(nl), amt) 'xi_res_', mode(i), ';REAL_ARR;F;', re_str(xi_quat(1), 6), ';', re_str(xi_quat(2), 6) 
   enddo
 
-  nl=incr(nl); write (li(nl), rmt) 'spin_tune;REAL;F;',   qs
-  nl=incr(nl); write (li(nl), amt) 'dq;REAL_ARR;F',   (';', re_str(dq(k), 6), k = 1, 3)
-  nl=incr(nl); write (li(nl), amt) 'xi_res1_quat;REAL_ARR;F',   (';', re_str(xi_quat(k,1), 6), k = 1, 3)
-  nl=incr(nl); write (li(nl), amt) 'xi_res2_quat;REAL_ARR;F',   (';', re_str(xi_quat(k,2), 6), k = 1, 3)
-  nl=incr(nl); write (li(nl), amt) 'xi_res1_mat8;REAL_ARR;F',   (';', re_str(xi_mat8(k,1), 6), k = 1, 3)
-  nl=incr(nl); write (li(nl), amt) 'xi_res2_mat8;REAL_ARR;F',   (';', re_str(xi_mat8(k,2), 6), k = 1, 3)
-
-!%% super_universe -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% super_universe
 ! Output super_Universe parameters.
 !
 ! Notes
@@ -6460,9 +6655,6 @@ case ('spin_resonance')
 ! Command syntax:
 !   python super_universe
 ! 
-! Parameters
-! ----------
-!
 ! Returns
 ! -------
 ! string_list
@@ -6479,7 +6671,9 @@ case ('super_universe')
   nl=incr(nl); write (li(nl), imt) 'n_v1_var_used;INT;F',              s%n_v1_var_used
   nl=incr(nl); write (li(nl), imt) 'n_var_used;INT;F;',                s%n_var_used
 
-!%% twiss_at_s -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% twiss_at_s
 ! Output twiss parameters at given s position.
 !
 ! Notes
@@ -6526,7 +6720,9 @@ case ('twiss_at_s')
   call twiss_out (this_ele%a, 'a')
   call twiss_out (this_ele%b, 'b')
 
-!%% universe -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% universe
 ! Output universe info.
 !
 ! Notes
@@ -6560,7 +6756,9 @@ case ('universe')
   nl=incr(nl); write (li(nl), imt) 'n_data_used;INT;F;',                      u%n_data_used
   nl=incr(nl); write (li(nl), lmt) 'is_on;LOGIC;T;',                          u%is_on
 
-!%% var -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% var
 ! Output parameters of a given variable.
 !
 ! Notes
@@ -6653,7 +6851,9 @@ case ('var')
     return
   end select
 
-!%% var_create -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% var_create
 ! Create a single variable
 !
 ! Notes
@@ -6789,7 +6989,9 @@ case ('var_create')
   enddo
 
 
-!%% var_general -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% var_general
 ! Output list of all variable v1 arrays
 !
 ! Notes
@@ -6799,9 +7001,6 @@ case ('var_create')
 !
 ! Output syntax:
 !   {v1_var name};{v1_var%v lower bound};{v1_var%v upper bound}
-!
-! Parameters
-! ----------
 !
 ! Returns
 ! -------
@@ -6822,7 +7021,9 @@ case ('var_general')
     nl=incr(nl); write (li(nl), '(4a, 2(i0, a))') trim(v1_ptr%name), ';', trim(line), ';', lbound(v1_ptr%v, 1), ';', ubound(v1_ptr%v, 1)
   enddo
 
-!%% var_v_array -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% var_v_array
 ! Output list of variables for a given data_v1.
 !
 ! Notes
@@ -6866,7 +7067,9 @@ case ('var_v_array')
   enddo
 
 
-!%% var_v1_array -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% var_v1_array
 ! Output list of variables in a given variable v1 array
 !
 ! Notes
@@ -6911,7 +7114,9 @@ case ('var_v1_array')
 
   nl=incr(nl); write (li(nl), imt) 'ix_v1_var;INT;F;',                       v1_ptr%ix_v1_var
 
-!%% var_v1_create -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% var_v1_create
 ! Create a v1 variable structure along with associated var array.
 !
 ! Notes
@@ -7009,7 +7214,9 @@ case ('var_v1_create')
   i2 = i2 + n_delta
   call tao_point_v1_to_var (s%v1_var(nn), s%var(i1:i2), ix_min(1))
 
-!%% var_v1_destroy -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% var_v1_destroy
 ! Destroy a v1 var structure along with associated var sub-array.
 !
 ! Notes
@@ -7036,7 +7243,9 @@ case ('var_v1_destroy')
 
   call destroy_this_var_v1(line)
 
-!%% wave -----------------------
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+!%% wave
 ! Output Wave analysis info.
 !
 ! Notes
@@ -7493,7 +7702,7 @@ nl=incr(nl); write (li(nl), ramt) 'phase;REAL_ARR;F',                        (';
 nl=incr(nl); write (li(nl), rmt) 's;REAL;F;',                                orbit%s
 nl=incr(nl); write (li(nl), rmt) 't;REAL;F;',                                orbit%t
 nl=incr(nl); write (li(nl), rmt) 'charge;REAL;F;',                           orbit%charge
-nl=incr(nl); write (li(nl), rmt) 'path_len;REAL;F;',                         orbit%path_len
+nl=incr(nl); write (li(nl), rmt) 'dt_ref;REAL;F;',                           orbit%dt_ref
 nl=incr(nl); write (li(nl), rmt) 'p0c;REAL;F;',                              orbit%p0c
 nl=incr(nl); write (li(nl), rmt) 'beta;REAL;F;',                             orbit%beta
 nl=incr(nl); write (li(nl), imt) 'ix_ele;INT;F;',                            orbit%ix_ele
@@ -8023,7 +8232,7 @@ data_type = is_real$
 select case (name)
 case ('orbit.floor.x', 'orbit.floor.y', 'orbit.floor.z')
   floor%r = [orbit%vec(1), orbit%vec(3), ele%value(l$)]
-  floor1 = coords_local_curvilinear_to_floor (floor, ele, .true.)
+  floor1 = coords_local_curvilinear_to_floor (floor, ele, .false.)
   select case (name)
   case ('orbit.floor.x')
     value = floor1%r(1)
@@ -8057,9 +8266,9 @@ case ('orbit.beta')
 case ('orbit.state')
   value = orbit%state
   data_type = is_integer$
-case ('orbit.energy')
+case ('orbit.pc')  
   value = (1 + orbit%vec(6)) * orbit%p0c
-case ('orbit.pc')
+case ('orbit.energy')
   call convert_pc_to ((1 + orbit%vec(6)) * orbit%p0c, orbit%species, E_tot = value)
 case ('ele.ix_ele')
   value = ele%ix_ele
@@ -8094,6 +8303,10 @@ case ('ele.e_tot')
   value = ele%value(e_tot$)
 case ('ele.p0c')
   value = ele%value(p0c$)
+case ('ele.ref_time')
+  value = ele%ref_time
+case ('ele.ref_time_start')
+  value = ele%value(ref_time_start$)
 case ('ele.x.eta')
   value = ele%x%eta
 case ('ele.x.etap')
@@ -8106,6 +8319,8 @@ case ('ele.s')
   value = ele%s
 case ('ele.l')
   value = ele%value(l$)
+case ('ele.gamma_c')
+  value = ele%gamma_c
 case default
   call str_upcase (attrib_name, name)
   ix = index(attrib_name, '.')

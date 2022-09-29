@@ -87,10 +87,20 @@ def WrapWrite(line):
 # Adds parenteses around expressions with '+' or '-' operators.
 # Otherwise just returns the expression.
 # Eg: '7+3' ->  '(7+3)'
-#     '7*3  ->  '7*3'     If slash_here = False
-#     '7*3  ->  '(7*3)'   If slash_here = True
+#     '7*3  ->  '7*3'     If operand = '/'
+#     '7*3  ->  '(7*3)'   If operand != '/'
 
-def add_parens (str, slash_here):
+def add_parens (str, operand):
+
+  if operand == '-':
+    if str.lstrip()[0] == '-':
+      return '(' + str + ')'
+    else:
+      return str
+
+  #
+  slash_here = (operand == '/')
+
   for ix in range(1, len(str)):
     if slash_here and (str[ix] == '*' or str[ix] == '/'): return '(' + str + ')'
     if str[ix] != '+' and str[ix] != '-': continue
@@ -113,6 +123,7 @@ ele_type_to_bmad = {
   'sol':       'marker',
   'cavi':      'rfcavity',
   'moni':      'monitor',
+  'map':       'marker',
   'mark':      'marker',
   'beambeam':  'beambeam',
   'apert':     'rcollimator',
@@ -136,6 +147,7 @@ ele_param_translate = {
     'sext:k2': ['k2', ' / @l@'],
     'oct:k3': ['k3', ' / @l@'],
     'bend:rotate': ['ref_tilt', ' * -1'],
+    'bend:drotate': ['roll', ' * -1'],
     'l': 'l',
     'radius': 'aperture',
     'offset': 'offset',
@@ -374,6 +386,11 @@ def output_lattice_line (sad_line, sad_info, sol_status, bz, rf_list):
 
     bmad_ele_def = b_ele.name + ': ' + b_ele.type
     for param in iter(b_ele.param):
+      try:
+        val = float(b_ele.param[param])
+        if val == 0: continue
+      except:
+        pass
       bmad_ele_def += ', ' + param + ' = ' + b_ele.param[param]
 
     WrapWrite(bmad_ele_def)
@@ -402,11 +419,7 @@ def sad_ele_to_bmad (sad_ele, bmad_ele, sol_status, bz, reversed):
 
   bmad_ele.name = sad_ele.name
 
-  if not sad_ele.type in ele_type_to_bmad:
-    print ('TYPE OF ELEMENT NOT RECOGNIZED: ' + sad_ele.type + '\n' + '    FOR ELEMENT: ' + sad_ele.name)
-    return
-
-  bmad_ele.type = ele_type_to_bmad[sad_ele.type]
+  #
 
   if 'l' in sad_ele.param:
     try:
@@ -425,6 +438,14 @@ def sad_ele_to_bmad (sad_ele, bmad_ele, sol_status, bz, reversed):
       zero_field = False
   else:
     zero_field = True
+
+  #
+
+  if not sad_ele.type in ele_type_to_bmad:
+    print ('TYPE OF ELEMENT NOT RECOGNIZED: ' + sad_ele.type + '\n' + '    FOR ELEMENT: ' + sad_ele.name)
+    return
+
+  bmad_ele.type = ele_type_to_bmad[sad_ele.type]
 
   # SAD sol with misalignments becomes a Bmad patch
 
@@ -484,8 +505,6 @@ def sad_ele_to_bmad (sad_ele, bmad_ele, sol_status, bz, reversed):
       elif 'fb2' in sad_ele.param:
         bmad_ele.param['hgapx'] = '(' + sad_ele.param['fb2'] + ')/6, fintx = 0.5'
 
-
-
   # Loop over all parameters
 
   for sad_param_name in sad_ele.param:
@@ -530,7 +549,15 @@ def sad_ele_to_bmad (sad_ele, bmad_ele, sol_status, bz, reversed):
     value_suffix = ''
     bmad_name = sad_param_name
 
-    if sad_param_name == 'k1' and sad_ele.type == 'quad' and zero_length:
+    if sad_param_name == 'k0' and sad_ele.type == 'bend' and zero_length:
+      bmad_ele.type = 'multipole'
+      bmad_name = 'k0l'
+
+    elif sad_param_name == 'k1' and sad_ele.type == 'bend' and zero_length:
+      bmad_ele.type = 'multipole'
+      bmad_name = 'k1l'
+
+    elif sad_param_name == 'k1' and sad_ele.type == 'quad' and zero_length:
       bmad_ele.type = 'multipole'
       bmad_name = 'k1l'
 
@@ -560,12 +587,12 @@ def sad_ele_to_bmad (sad_ele, bmad_ele, sol_status, bz, reversed):
     elif type(result) is list:   # EG: result = ['k1', ' / @l@']
       bmad_name = result[0]
       value_suffix = result[1]
-      value = add_parens(value, False)
+      value = add_parens(value, '')
       if '@' in value_suffix:
         val_parts = value_suffix.split('@')
         if val_parts[1] in sad_ele.param:
-          has_slash = ('/' in val_parts[0])
-          value_suffix = val_parts[0] + add_parens(sad_ele.param[val_parts[1]], has_slash) + val_parts[2]
+          operand = '/' if '/' in val_parts[0] else ''
+          value_suffix = val_parts[0] + add_parens(sad_ele.param[val_parts[1]], operand) + val_parts[2]
         elif '/' not in val_parts[0]:      # Assume zero
           value_suffix = val_parts[0] + '0' + val_parts[2]
         else:
@@ -604,7 +631,7 @@ def sad_ele_to_bmad (sad_ele, bmad_ele, sol_status, bz, reversed):
 
   # If a SAD mult element has acceleration then it become an rfcavity or lcavity.
 
-  if sad_ele.type == 'mult' and 'volt' in sad_ele.param: bmad_ele.type = 'rfcavity'
+  if sad_ele.type == 'mult' and ('freq' in sad_ele.param or 'phi' in sad_ele.param): bmad_ele.type = 'rfcavity'
 
   # Use ptc_standard type cavities
 
@@ -618,8 +645,8 @@ def sad_ele_to_bmad (sad_ele, bmad_ele, sol_status, bz, reversed):
   if bmad_ele.type == 'rfcavity':
     if 'phi0' in bmad_ele.param and 'harmon' not in bmad_ele.param: # If has harmon then must be in a ring
       bmad_ele.type = 'lcavity'
-      bmad_ele.param['phi0'] = '0.25 - ' + add_parens(bmad_ele.param['phi0'], False)
-      if 'phi0_err' in bmad_ele.param: bmad_ele.param['phi0_err'] = '-' + add_parens(bmad_ele.param['phi0_err'], False)
+      bmad_ele.param['phi0'] = '0.25 + ' + add_parens(bmad_ele.param['phi0'], '')
+      if 'phi0_err' in bmad_ele.param: bmad_ele.param['phi0_err'] = '+' + add_parens(bmad_ele.param['phi0_err'], '')
 
     elif 'phi0_err' in bmad_ele.param:
       if 'phi0' in bmad_ele.param:
@@ -1081,7 +1108,7 @@ f_in = open(sad_lattice_file, 'r')
 f_out = open(bmad_lattice_file, 'w')
 f_out.write ('! Translated from SAD file: ' + sad_lattice_file + "\n\n")
 
-sad_ele_type_names = ("drift", "bend", "quad", "sext", "oct", "mult", "sol", "cavi", "moni", "line", "beambeam", "apert", "mark", "coord")
+sad_ele_type_names = ("drift", "bend", "quad", "sext", "oct", "mult", "sol", "cavi", "map", "moni", "line", "beambeam", "apert", "mark", "coord")
 
 #------------------------------------------------------------------
 # Read in SAD file line-by-line.  Assemble lines into directives, which are delimited by a ; (colon).
@@ -1144,7 +1171,6 @@ for i in range(100):
   ele0_name = sad_info.lat_line_list[ele0_name].list[0].name
 
 ele0 = sad_info.ele_list[ele0_name]
-print ('ele0: ' + ele0.name)
 for key in ele0.param:
   if key in sad_ele0_param_names:
     sad_info.param_list[key] = ele0.param[key]

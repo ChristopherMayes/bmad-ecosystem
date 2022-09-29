@@ -26,12 +26,17 @@ directory:
 \index{command line}
 \label{s:command.line} 
 
+\vn{OpenMP} is a standard that enables programs to run calculations with multiple threads which will
+reduce computation time. Certain calculations done by \tao, including beam tracking and dynamic
+aperture calculations, can be run multithreaded via OpenMP if the \tao executable file has been
+properly compiled. See \sref{s:openmp} for more details.
+
 The syntax of the command line for starting \tao is:
 \begin{example}
   EXE-DIRECTORY/tao \{OPTIONS\}
 \end{example}
 where \vn{EXE-DIRECTORY} is the directory where the tao executable lives. If this directory is
-listed in your \vn{PATH} environmental variable then the directory specification may be omitted.
+listed in your \vn{PATH} environment variable then the directory specification may be omitted.
 
 The optional arguments, which will always supersede equivalent parameters set in an initialization
 file are:
@@ -39,24 +44,20 @@ file are:
 %
 \item[-beam_file <file_name>] \Newline
 Sets the name of the file containing the \vn{tao_beam_init} namelist (\sref{s:beam.init}).
-Overrides the setting of \vn{beam_file} (\sref{s:init.global}) specified in the \tao initialization
+Overrides the setting of \vn{beam_file} (\sref{s:init.begin}) specified in the \tao initialization
 file.
-%
-\item[-beam_track_data_file <file_name>] \Newline
-Overrides the setting of \vn{beam_track_data_file} (\sref{s:beam.init}) specified in the
-\vn{tao_beam_init} namelist.
 %
 \item[-beam_init_position_file <file_name>] \Newline
 Specifies the file containing initial particle positions.  Overrides the setting of
 \vn{beam_init%position_file} (\sref{s:beam.init}) specified in the \vn{tao_beam_init} namelist.
 %
 \item[-building_wall_file <file_name>] \Newline
-Overrides the \vn{building_wall_file} (\sref{s:init.global}) specified in the \tao initialization
+Overrides the \vn{building_wall_file} (\sref{s:init.begin}) specified in the \tao initialization
 file.
 %
 \item[-command <command_list>] \Newline
 List of commands to run at startup. This will be in addition to the commands run by the startup file
-(\sref{s:init.global}). The startup file commands will be run before the commands specified by
+(\sref{s:init.begin}). The startup file commands will be run before the commands specified by
 \vn{-command}. Put the \vn{<command_list>} in quotes in order to embed blanks or if semicolons are
 used to separate multiple commands. The \vn{-command} option is useful when running \tao from a
 script. Example:
@@ -67,7 +68,7 @@ In this example \tao will print some information on lattice elements 12 through 
 output of the \vn{show} command can be captured by a script and processed.
 %
 \item[-data_file <file_name>] \Newline
-Overrides the \vn{data_file} (\sref{s:init.global}) specified in the \tao initialization file.
+Overrides the \vn{data_file} (\sref{s:init.begin}) specified in the \tao initialization file.
 %
 \item[-disable_smooth_line_calc] \Newline
 Disable computation of the ``smooth curves'' used in plotting.  This can be used to speed up \tao as
@@ -125,17 +126,18 @@ things as emittances, etc. Generally the calculation is not a problem but in som
 circumstances the calculation can take appreciable time.
 %
 \item[-plot_file <file_name>] \Newline
-Overrides the \vn{plot_file} (\sref{s:init.global}) specified in the \tao initialization file.
+Overrides the \vn{plot_file} (\sref{s:init.begin}) specified in the \tao initialization file.
 %
 \item[-prompt_color] \Newline
 Sets the prompt string color to Blue. For different colors, use the \vn{set global prompt_color}
 command (\sref{s:set}).
 %
 \item[-rf_on]
-Leaves \vn{rfcavity} elements on. Normally \tao turns off these elements since Twiss and dispersion
-calculations do not make sense with them on.  Note: If you want to see orbit changes with RF
-frequency changes then you will need to set \vn{parameter[absolute_time_tracking]} to True. See the
-``Relative Versus Absolute Time Tracking'' section in the\bmad manual for more details.
+Leaves \vn{rfcavity} elements on. RF on is currently the default so using \vn{-rf_on} will not do
+anything.  To turn the cavities off, use the negation (see below) \vn{-{}-rf_on}. Note: If you want
+to see orbit changes with RF frequency changes then you will need to set
+\vn{parameter[absolute_time_tracking]} to True. See the ``Relative Versus Absolute Time Tracking''
+section in the\bmad manual for more details.
 %
 \item[-slice_lattice <element_list>]
 If present, discard from the lattice all lattice elements that are not in the \vn{<element_list>}.
@@ -148,7 +150,7 @@ elements the same. This is useful, for example, in storage rings. Note A \vn{sta
 command may also be put directly in the lattice file. See the \bmad manual for more documentation.
 %
 \item[-startup_file <file_name>]
-Overrides the \vn{startup_file} (\sref{s:init.global}) specified in the
+Overrides the \vn{startup_file} (\sref{s:init.begin}) specified in the
 \tao initialization file.
 %
 \item[-symbol_import]
@@ -157,7 +159,7 @@ imported lower cased. Also see \vn{global%symbol_import} (\sref{s:tao.global.str
 details.
 %
 \item[-var_file <file_name>] \Newline
-Overrides the \vn{var_file} (\sref{s:init.global}) specified in the
+Overrides the \vn{var_file} (\sref{s:init.begin}) specified in the
 \tao initialization file.
 
 \end{description}
@@ -166,9 +168,10 @@ To negate an argument, use a two dash prefix instead of a single dash prefix. Fo
 \begin{example}
   tao -noplot --noplot
 \end{example}
-The \vn{-noplot} argument turns off plotting and the following \vn{--noplot} argument negates the
+The \vn{-noplot} argument turns off plotting and the following \vn{-{}-noplot} argument negates the
 effect of \vn{-noplot} and turns plotting back on. This is useful with the \vn{reinit tao} command
-(\sref{s:reinit}) to negate saved command line argument settings.
+(\sref{s:reinit}) to negate saved command line argument settings. Also \vn{-{}-rf_on} is used to
+turn off the RF.
 
 %-----------------------------------------------------------------
 \section{Namelist Syntax}
@@ -289,7 +292,7 @@ with the \vn{multi} structure component for \vn{ele_shape(3)}.
 %-----------------------------------------------------------------
 \section{Beginning Initialization}
 \index{Initialization!beginning}
-\label{s:init.global} 
+\label{s:init.begin} 
 
 \index{tao_start}\index{tao.init}\index{lattice_file}
 \index{data_file}\index{var_file}\index{plot_file}
@@ -382,19 +385,18 @@ first file on the list. All files, however, can contain \vn{tao_template_plot} a
 \section{Lattice Initialization}\index{initialization!lattice}
 \label{s:init.lat} 
 
-In the \vn{tao_start} namelist (\sref{s:init.global}), the \vn{lattice_file} variable gives the name
+In the \vn{tao_start} namelist (\sref{s:init.begin}), the \vn{lattice_file} variable gives the name
 of the file that contains the \vn{tao_design_lattice} namelist. The default, if \vn{lattice_file} is
 not present is to look in the \tao root initialization file. The \vn{tao_design_lattice} namelist
 defines where the lattice input files are. The variables that are set in the \vn{tao_design_lattice}
 namelist are:
 \index{tao_design_lattice}\index{design_lattice}\index{design_lattice!file}
-\index{design_lattice!parser}\index{n_universes}\index{common_lattice}
+\index{design_lattice!parser}\index{n_universes}
 \begin{example}
   &tao_design_lattice
     n_universes        = <integer>      ! Number of universes. Default = 1.
     unique_name_suffix = "<string>"
     combine_consecutive_elements_of_like_name = <logical>
-    common_lattice = <logical>                        ! Default = False
     design_lattice(N) = "<lattice_file>", \{"<lattice2_file>"\}
     design_lattice(N)%one_turn_map_calc = <logical>     ! Default = False
     design_lattice(N)%dynamic_aperture_calc = <logical> ! Default = False
@@ -403,9 +405,8 @@ namelist are:
   /
 \end{example}
 
-\vn{n_universes} is the number of universes to be created not counting the possible common universe
-created when using \vn{CRL} analysis. The default is 1.  \vn{design_lattice(N)} gives the lattice
-file name for universe \vn{i}.  The syntax for \vn{<lattice_file>} is:
+\vn{n_universes} is the number of universes to be created. The default is 1.  \vn{design_lattice(N)}
+gives the lattice file name for universe \vn{i}. The syntax for \vn{<lattice_file>} is:
 \begin{example}
   \{<parser>::\}<lattice_file>\{@<use_line>\}
 \end{example}
@@ -533,20 +534,20 @@ using the \vn{set symbolic_number} command (\sref{s:set.symbolic}) and a list of
 can be printed using the \vn{show symbolic_number} command (\sref{s:show.symbolic}).
 
 %-----------------------------------------------------------------
-\section{Initializing Global Parameters}
+\section{Global Parameter Initialization}
 \index{initialization!globals}
 \label{s:globals} 
 
-\index{tao_params}\index{global}\index{bmad_com}\index{csr_param}\index{opti_de_param}
+\index{tao_params}\index{global}\index{bmad_com}\index{space_charge_com}\index{opti_de_param}
 Global parameters are grouped into a number of structures. Four global structures are of interest here:
 \begin{center}
 \tt
 \begin{tabular}{llll} \toprule
-  {\it Instance Name}  & {\it Structure}       & {\it Notes}              &                               \\ \midrule
-  global               & tao_global_struct     & Tao global parameters    & \sref{s:tao.global.struct}    \\
-  bmad_com             & bmad_common_struct    & Bmad global parameters   & \sref{s:bmad.com.struct}      \\
-  csr_param            & csr_parameter_struct  & CSR global parameters    & \sref{s:csr.param.struct}     \\
-  opti_de_param        & opti_de_param_struct  & DE optimizer parameters  & \sref{s:opti.de.param.struct} \\ \bottomrule
+  {\it Instance Name}  & {\it Structure}            & {\it Notes}              &                               \\ \midrule
+  global               & tao_global_struct          & Tao global parameters    & \sref{s:tao.global.struct}    \\
+  bmad_com             & bmad_common_struct         & Bmad global parameters   & \sref{s:bmad.com.struct}      \\
+  space_charge_com     & space_charge_common_struct & CSR global parameters    & \sref{s:csr.param.struct}     \\
+  opti_de_param        & opti_de_param_struct       & DE optimizer parameters  & \sref{s:opti.de.param.struct} \\ \bottomrule
 \end{tabular}
 \end{center}
 These instances are initialized in the root initialization file using a namelist named
@@ -562,8 +563,8 @@ The \vn{show global} command (\sref{s:show.global}) can be used to show global p
 \vn{show optimizer} (\sref{s:show}) commands.
 
 The \vn{tao_params} namelist is read after reading of the lattice file so settings of \vn{bmad_com}
-and \vn{csr_param} structures in the lattice file will be overwritten by settings in the
-\vn{tao_params} namelist. And settings in any startup command file (\sref{s:init.global}) will
+and \vn{space_charge_com} structures in the lattice file will be overwritten by settings in the
+\vn{tao_params} namelist. And settings in any startup command file (\sref{s:init.begin}) will
 supersede everything else.
 
 %-----------------------------------------------------------------
@@ -587,21 +588,21 @@ type tao_global_struct:
   lm_opt_deriv_reinit = -1         ! Derivative matrix cutoff. -1 => ignore this.
   de_lm_step_ratio = 1             ! Step sizes between DE and LM optimizers.
   de_var_to_population_factor = 5 
-  lmdif_eps = 1e-12                ! tolerance for lmdif optimizer.
+  lmdif_eps = 1e-12                ! Tolerance for lmdif optimizer.
   lmdif_negligible_merit = 1d-30   ! lmdif stops if merit is smaller.
   svd_cutoff = 1e-5                ! SVD singular value cutoff limit.
   unstable_penalty = 1e-3          ! Used in unstable.lattice datum merit calculation.
   merit_stop_value = -1            ! Value below which an optimizer will stop.
   dmerit_stop_value = 0            ! Fractional change below which an optimizer will stop.
   random_sigma_cutoff = -1         ! Cut-off in sigmas.
-  delta_e_chrom = 0                ! delta E used from chromaticity calc.
+  delta_e_chrom = 0                ! Delta E used from chromaticity calc.
   n_opti_cycles = 20               ! number of optimization cycles
   n_opti_loops = 1                 ! number of optimization loops
   n_lat_layout_label_rows = 1      ! How many rows with a lat_layout
   datum_err_messages_max = 10      ! Max number of error messages per cycle.
   phase_units = radians\$           ! Phase units on output.
   bunch_to_plot = 1                ! Which bunch to plot
-  random_seed = 0                  ! use system clock by default
+  random_seed = 0                  ! Use system clock by default
   n_top10_merit = 10               ! Number of top constraints to print.
   random_engine = "pseudo"         ! Random number engine to use
   random_gauss_converter = "exact" ! Uniform to gauss conversion method
@@ -619,6 +620,7 @@ type tao_global_struct:
   disable_smooth_line_calc = F     ! Disable the plotting smooth line calc?
   draw_curve_off_scale_warn = T    ! Display warning on graphs when any part of the 
                                    !   curve is out-of-bounds
+  init_lat_sigma_from_beam = F     ! Init sigma mat set equal to beam distribution? 
   label_lattice_elements = T       ! For lat_layout plots
   label_keys = T                   ! For lat_layout plots
   lattice_calc_on = T              ! Turn on/off beam and single particle calculations.
@@ -652,7 +654,7 @@ will only have an associate map if the \vn{tracking_method} or \vn{make_mat6_met
 of the lattice element are such that a map is needed for tracking (see the \bmad manual for more
 details).
 %
-  \item{\vn{datum_err_messages_max}} \Newline
+  \item{\vn{global%datum_err_messages_max}} \Newline
 Sets the maximum number of error messages per cycle generated when evaluating all datums. A
 ``cycle'', which generally happens after most commands or every optimization cycle, consists of the
 reevaluation of lattice parameters and subsequent datum evaluations. Limiting the number of error
@@ -698,10 +700,18 @@ the up-arrow key and eve recalled between run sessions. The default is to save t
 to the file \vn{\~/.history_tao}. Sometimes is is convenient to have multiple history files and
 in this case the setting of \vn{global%history_file} can varied from init file to init file.
 %
+  \item{\vn{global%init_lat_sigma_from_beam}} \Newline
+In parallel to calculating the beam sigma matrix from the beam distribution, \tao will calculate the
+sigma matrix using lattice twiss parameters and transport matrices (\sref{s:lat.sig.init}). If the
+\vn{global%init_lat_sigma_from_beam} parameter is set True, the initial $6\times6$ sigma matrix at
+the beginning of any lattice branch is set equal to the sigma matrix as calculated from the beam. If
+set False (the default), the initial sigma matrix calculation uses the lattice independent of any
+beam tracking.
+%
   \item{\vn{global%merit_stop_value}} \Newline
-The \vn{global%merit_stop_value} establishes a point such that, during optimization, if
-the merit function falls below that value, the optimization stops. If the value is
-negative (the default), \vn{global%merit_stop_value} is ignored. Also see \vn{global%dmerit_stop_value}.
+The value of \vn{global%merit_stop_value} establishes a point such that, during optimization, if the
+merit function falls below that value, the optimization stops. If the value is negative (the
+default), \vn{global%merit_stop_value} is ignored. Also see \vn{global%dmerit_stop_value}.
 %
   \item{\vn{global%opt_with_ref}} \Newline
 Use the \vn{reference} data and variable values in the calculation of the merit function
@@ -879,13 +889,13 @@ The \vn{bmad_com_struct} holds bmad global variables.
 See the \bmad manual for more details.
 
 %-----------------------------------------------------------------
-\subsection{csr\_param\_struct Structure}
+\subsection{space\_charge\_common\_struct Structure}
 \label{s:csr.param.struct} 
 
-The \vn{csr_parameter_struct} holds global variables for the coherent
-synchrotron radiation calculations. 
+The \vn{space_charge_command_struct} holds global variables for space charge, including coherent
+synchrotron radiation (CSR), calculations. 
 \begin{example}
-  type csr_parameter_struct:
+  type space_charge_common_struct:
     real(rp) ds_track_step = 0          ! Tracking step size
     real(rp) beam_chamber_height = 0    ! Used in shielding calculation.
     real(rp) sigma_cutoff = 0.1         ! Cutoff for the lsc calc. If a bin sigma
@@ -898,19 +908,9 @@ synchrotron radiation calculations.
     logical write_csr_wake = False      ! Write the CSR wake? For diagnostics.
     logical lsc_kick_transverse_dependence = F
 \end{example}
-See the \bmad manual on the \vn{csr_parameter_struct} for more details. In \tao,
-Besides setting the \vn{csr_parameter_struct} components, the following must
-be done to enable CSR computations:
-\begin{Itemize}
-\item 
-The \vn{global%track_type} (see above this section) must be set to \vn{"beam"} and the appropriate
-beam initialization parameters (\sref{s:beam.init}) must be set.
-\item 
-The parameter \vn{bmad_com%coherent_synch_radiation} (see above this section) must be set to \vn{True}.
-\item
-In the \bmad lattice file, \vn{csr_calc_on} must be set for the elements where CSR tracking is to be
-done (see the \bmad manual).
-\end{Itemize}
+It is important to note that space charge / CSR calculations also depend upon settings in the
+\vn{bmad_common_struct} structure as well as individual lattice element parameters.  See the \bmad
+manual for more details.
 
 %-----------------------------------------------------------------
 \subsection{opti\_de\_param\_struct Structure}
@@ -939,9 +939,18 @@ See \sref{s:lat.correction} for more details on \vn{global%n_opti_cycles} and
 \vn{global%n_opti_loops}.
 
 %-----------------------------------------------------------------
-\section{Initializing Particle Beams}
+\section{Particle Beam Initialization}
 \index{initialization!beams}
 \label{s:beam.init}
+
+Beam tracking involves tracking some number of particles through the lattice to gather statistics
+about the expected distribution of particles in an actual machine.
+
+Beam tracking is started in \vn{root} lattice branches (a root branch is a branch where no other
+branch forks to that branch). Beams will be propagated to through \vn{fork} elements to all
+downstream branches provided that the downstream branch has the same reference particle as the
+upstream branch (this prevents, for example, an electron bunch being injected into an X-ray beam
+line). 
 
 The default is single particle tracking. To turn on particle tracking the \vn{global%track_type}
 parameter must be set to \vn{"beam"}. This can be placed in the \vn{tao_params} namelist above, for
@@ -955,7 +964,7 @@ example,
 
 A particle beam is initialized in the \vn{tao_beam_init} namelist block.  The file that \tao looks
 in to find this namelist is set by the \vn{beam_file} component of the \vn{tao_start} namelist
-(\sref{s:init.global}). The default, if \vn{beam_file} is not set, is the root initialization file.
+(\sref{s:init.begin}). The default, if \vn{beam_file} is not set, is the root initialization file.
 
 The syntax of the \vn{tao_beam_init} namelist is:
 \index{tao_beam_init}\index{ix_universe}
@@ -972,12 +981,12 @@ The syntax of the \vn{tao_beam_init} namelist is:
   &tao_beam_init
     ix_universe               = <integer>     ! Universe to apply to.
     always_reinit             = <logical>     ! Always reinit the particle distribution?
-    track_data_file           = <string>      ! File used in place of beam tracking.
     saved_at                  = "<ele_list>"  ! At what elements to save beam info.
     dump_file                 = "<file_name>" ! File for saving beam info.
     dump_at                   = "<ele_list>"  ! Save beam info at these elements.
     track_start               = "<ele_id>"    ! Beam tracking start element.
     track_end                 = "<ele_id>"    ! Beam tracking end element.
+    comb_ds_step              = <real>        ! Step size for beam parameter evaluation.
     beam_init%position_file   = <string>      ! Beam position init file.
     beam_init%distribution_type(3) = "<type>" ! "ELLIPSE", "KV", "GRID", or 
                                               !   "RAN_GAUSS" (default).
@@ -1034,6 +1043,13 @@ Note that if the initial distribution is read in from a file, no random number g
 variations of the initial distribution will cause values calculated from the beam to ``jitter''. This
 can be especially problematical when doing an optimization as it may hinder finding the merit function minimum.
 %
+  \item[comb_ds_step] \Newline
+When tracking a beam, the beam parameters (like centroid, beam size matrix, etc) can be saved at 
+equally spaced points by setting \vn{comb_ds_step} to a positive number representing the
+spacing between points. Default is -1 (no comb generated). Using a comb can give better detail 
+when plotting beam parameters as a function of $s$. Note: The actual spacing between points will
+be adjusted to give an integer number of points over the region of travel.
+%
 \item[beam_init] \Newline
 The \vn{beam_init} parameter is an instance of a \vn{beam_init_struct} structure which holds
 parameters (for example, the beam emittances) from which a distribution of particles can be
@@ -1059,9 +1075,6 @@ initializing the beam distribution.  For circular lattices the Twiss parameters 
 the closed orbit, and the emittance will be calculated using the \bmad routine
 \vn{radiation_integrals}.
 
-The charge per particle is
-set to $\vn{bunch_charge} / \vn{n_particle}$ and is used when calculating wakefield effects.
-
 If spin tracking is desired then \vn{beam_init%init_spin} must be set to true.  
 
 The three random number generator parameters (\vn{%random_engine}, \vn{%random_gauss_converter}, and
@@ -1079,15 +1092,15 @@ If the beam size is large or the number of elements at which the beam is to be s
 may be problematic to store all the beam particle position information in memory until the end of
 tracking. If this is the case, the beam particle position information can be written directly to a
 file during tracking (and not saved in memory) by setting \vn{dump_at} to a list of elements at
-which the position information is to be saved and setting \vn{dump_file} to the name of the
-data file. The data file should have an ".h5" or ".hdf5" suffix to save the data in HDF5
+which the position information is to be saved and setting \vn{dump_file} to the name of the data
+file. The data file should have an ".h5" or ".hdf5" suffix to save the data in HDF5
 format. Otherwise, an ASCII file will be produced. The syntax for \vn{dump_at} is the same at
-\vn{saved_at}. Saving directly to a file using \vn{dump_at} is separate from saving to
-memory using \vn{saved_at}. Example
+\vn{saved_at}. Saving directly to a file using \vn{dump_at} is separate from saving to memory using
+\vn{saved_at}. Example
 \begin{example}
   &tao_beam_init
     dump_at = "marker::m* *34w*" ! Save beam at all markers starting with "m"
-                                      !   and all elements that have "34w" in their name. 
+                                 !  and all elements with "34w" in their name. 
     dump_file = "beam_dump.h5"
   /
 \end{example}
@@ -1108,22 +1121,13 @@ beginning position and end position of beam tracking and at \vn{fork} and \vn{ph
 \begin{example}
   &tao_beam_init
     saved_at = "marker::m* *34w*" ! Save beam at all markers starting with "m"
-                                       !   and all elements that have "34w" in their name. 
+                                  !   and all elements with "34w" in their name. 
   /
 \end{example}
 The elements where the beam is saved may be modified while \tao is running by using the \vn{set beam
 saved_at}, \vn{set beam add_saved_at}, and \vn{set beam subtract_saved_at} commands
 (\sref{s:set.beam}). To write the beam particle positions use the \vn{write beam} command
 (\sref{s:write.beam}).
-%
-\item[track_data_file] \Newline
-The \vn{track_data_file} component specifies a beam tracking data file (which can be created
-with the \vn{write beam} command) which contains the particle coordinates of the tracked beam at
-every element where the beam distribution is saved at. This causes \tao to use the data from the
-file in lieu of actual tracking. This can be helpful when to reanalyze old data if the time for \tao
-to track a bunch through the lattice becomes long. The file name can be overridden by using the
-\vn{-track_data_file} argument on the command line (\sref{s:command.line}). Note: \tao will set
-the variable \vn{use_saved_in_tracking} to \vn{True} to prevent actual tracking.
 %
 \item[track_start, track_end] \Newline
 \vn{track_start} and \vn{track_end} are used when it is desired to only track the beam
@@ -1142,13 +1146,64 @@ After initialization, the \vn{set beam_init} (\sref{s:set.beam.init}) command ca
 \end{description}
 
 %-----------------------------------------------------------------
-\section{Initializing Variables}\index{initialization!variables}
+\section{Lattice Sigma Matrix Initialization}
+\index{initialization!lattice sigma matrix}
+\label{s:lat.sig.init}
+
+\tao will calculate a $6\times6$ ``beam sigma matrix'' from the lattice Twiss parameters and element
+transfer matrices. This can be useful for comparisons with the sigma matrix calculated from the
+distribution of a tracked beam (\sref{s:beam.init}) or for fast optimizations (the sigma matrix as
+calculated from the lattice can be done faster than tracking a beam). The ``\vn{show beam
+-lattice}'' command (\sref{s:show.beam}) will display the lattice derived sigma matrix. For
+optimizations, the \vn{sigma} data type (pg.~\pref{sigma}) with \vn{data_source} is set to \vn{lat}
+can be used.
+
+Like tracking particle beams, the calculation of the lattice sigma matrix starts at the lattice
+element defined by the \vn{beam_start} parameter in the \vn{tao_beam_init} namelist
+(\sref{s:beam.init}). Once the initial sigma matrix $\bfsig_0$ is calculated, the sigma matrix
+$\bfsig(s)$ at a point downstream is calculated using the standard formula
+\begin{equation}
+  \bfsig(s) = \bfM \, \bfsig_0 \, \bfM^t
+\end{equation}
+where $\bfM$ is the transfer matrix from the beginning to $s$ and the $t$ exponent means
+transpose. This calculation in \tao ignores radiation effects. Again like tracking particle beams,
+lattice sigma matrices will be propagated through any fork lattice elements to downstream branches.
+
+The calculation of the lattice based sigma matrix starts at the beginning of a \vn{root} lattice
+branch (a root branch is a branch where no other branch forks to that branch). If \vn{global}
+parameter \vn{init_lat_sigma_from_beam} (\sref{s:tao.global.struct}) is set to True, the beginning
+sigma matrix is set equal to the initial sigma matrix as calculated from the beam
+(\sref{s:beam.init}).
+
+If the \vn{global} parameter \vn{init_lat_sigma_from_beam} (\sref{s:tao.global.struct}) is set to
+False, the calculation of the beginning sigma matrix depends upon the branch geometry.  If the
+branch has a closed geometry, the initial sigma matrix is calculated from the eigen modes of the one
+turn matrix along with the following parameters from the \vn{beam_init} structure:
+(\sref{s:beam.init}) are used:
+\begin{example}
+  beam_init%a_emit or beam_init%a_norm_emit
+  beam_init%b_emit or beam_init%b_norm_emit
+  beam_init%sig_z
+  beam_init%sig_pz
+  beam_init%dpz_dz
+\end{example}
+If the branch has an open geometry, the calculation of the initial sigma matrix uses the parameters
+of the \vn{beam_init} structure as listed above along with the initial Twiss and coupling parameters
+set in the lattice file.
+
+If a branch has a fork element to another branch, like beam tracking, the lattice sigma matrix is propagated through
+from the fork element to the branch that is forked to. The sigma matrix can then be propagated throughout the second
+branch.
+
+%-----------------------------------------------------------------
+\section{Variable Initialization}
+\index{initialization!variables}
 \label{s:init.var} 
 
 \tao \vn{variable}s (\sref{c:var} are used in lattice correction or design (\sref{c:opti}). 
 
 The file that \tao looks in to find information on \tao variables is set by the \vn{var_file} component of
-the \vn{tao_start} namelist (\sref{s:init.global}). The default, if \vn{data_file} is not set, is
+the \vn{tao_start} namelist (\sref{s:init.begin}). The default, if \vn{data_file} is not set, is
 the root initialization file.
 
 Variables are initialized using the \vn{tao_var} namelist. The format for this is
@@ -1315,14 +1370,14 @@ single variable will be set up to control these two bends.
 
 \vn{Warning}: Generally \vn{-no_grouping} should be used with \vn{unique_name_suffix}
 (\sref{s:init.lat}) to avoid the problem that if different lattice elements have the same name but
-differing parameter values, the \vn{write bmad_lattice} command (\sref{s:write}) will not produce a
+differing parameter values, the \vn{write bmad} command (\sref{s:write}) will not produce a
 valid lattice.
 
 Note: \vn{search_for_lat_eles} and \vn{use_same_lat_eles_as} cannot be
 used together.
 
 %-----------------------------------------------------------------
-\section{Initializing Data and Constraints}
+\section{Data and Constraint Initialization}
 \index{initialization!data}\index{initialization!constants}
 \label{s:init.data} 
 
@@ -1331,7 +1386,7 @@ data is initialized using a \vn{tao_d2_data} namelist block and one or more \vn{
 namelist blocks.
 
 The file that \tao looks in to find these two namelists is set by the \vn{data_file} component of
-the \vn{tao_start} namelist (\sref{s:init.global}). The default, if \vn{data_file} is not set, is
+the \vn{tao_start} namelist (\sref{s:init.begin}). The default, if \vn{data_file} is not set, is
 the root initialization file.
 
 The format of the \vn{tao_d2_data} namelist is
@@ -1608,7 +1663,7 @@ as being equivalent to \vn{ele_start}. The relative data types where:
 \end{example}
 
 %-----------------------------------------------------------------
-\section{Initializing a Building Wall}
+\section{Building Wall Initialization}
 \index{building walls}
 \label{s:building.wall}
 
@@ -1633,7 +1688,7 @@ marked ``point(N)''. Each section is defined by a set of points which are connec
 straight lines or circular arcs.
 
 The name of the file containing the building wall definition is given by the \vn{building_wall_file}
-variable in the \vn{tao_start} namelist (\sref{s:init.global}). In general, this file will contain a
+variable in the \vn{tao_start} namelist (\sref{s:init.begin}). In general, this file will contain a
 number of \vn{building_wall_section} namelists. Each \vn{building_wall_section} namelist defines a
 single wall section. The syntax of this namelist is
 \begin{example}
@@ -1752,6 +1807,12 @@ to find the boundary between stable (green dots) and unstable (red dots) motion.
   \label{f:da-rays}
 \end{figure}
 
+For historical reasons, the \vn{dynamic_aperture} program (another Bmad based program included in
+Bmad Distributions) is also capable of calculating the dynamic aperture.  In fact both programs use
+the same underlying code for the aperture analysis. The basic difference is that the
+\vn{dynamic_aperture} program is more flexible in terms of tracking. For example, the
+\vn{dynamic_aperture} program can handle \vn{ramper} elements and track with maps.
+
 In a storage ring, the ``\vn{dynamic aperture}'' is the region in phase space within which a
 particle will stably oscillate. That is, the region within which the motion is bounded. This is in
 contrast to the ``\vn{physical aperture}'' which is defined by the vacuum chamber walls. Since it
@@ -1812,7 +1873,7 @@ If Tao is compiled with \vn{OpenMP} enabled (\sref{s:openmp}), the dynamic apert
 be done in parallel.
 
 Parameters for the dynamic aperture simulation are set in the \vn{tao_dynamic_aperture} namelist
-(\sref{s:init.global}) in the \tao root initialization file. Multiple \vn{tao_dynamic_aperture}
+(\sref{s:init.begin}) in the \tao root initialization file. Multiple \vn{tao_dynamic_aperture}
 namelists may be present if different universes need different parameter values. Example:
 \begin{example}
   &tao_dynamic_aperture
@@ -1835,8 +1896,8 @@ namelists may be present if different universes need different parameter values.
 Parameters:
 \begin{description}
 \item[ellipse_scale] \Newline
-Scale for drawing the beam ellipse. The default value is 10 which will result in an ellipse drawn
-at 10 sigma.
+Scale for drawing the beam ellipse. The default value is 1 which will result in an ellipse drawn
+at 1 sigma.
 %
 \item[ix_universe] \Newline
 The \vn{ix_universe} parameter set which universe the parameters are applied to. Any universe index
@@ -1868,7 +1929,6 @@ should vertically symmetric as well.
 The angles between adjacent rays is not uniform but are rather calculated to give a roughly
 equal spacing between boundary points. This is done by looking at the aperture
 points on a horizontal and a vertical ray and then scaling the ray angles appropriately).
-
 %
 \item[da_param\%rel_accuracy, da_param\%abs_accuracy] \Newline
 These parameters set the relative and absolute accuracies that determine when the search for a
@@ -1899,7 +1959,7 @@ Example input files for calculating and plotting the dynamic aperture are at (\s
 \end{example}
 
 %-----------------------------------------------------------------
-\section{Initializing Plotting}
+\section{Plotting Initialization}
 \index{plotting initializing}
 \label{s:init.plot} 
 
@@ -1908,7 +1968,7 @@ such things as lattice functions, machine layout, beam positions, etc., can be p
 display is shown in \fig{f:plot.typ}.
 
 Plotting is defined by an initialization file whose name is defined by the \vn{plot_file} component
-of the \vn{tao_start} namelist (\sref{s:init.global}).
+of the \vn{tao_start} namelist (\sref{s:init.begin}).
 
 %-----------------------------------------------------------------
 \subsection{Plot Page and Plot Regions}
@@ -1916,7 +1976,7 @@ of the \vn{tao_start} namelist (\sref{s:init.global}).
 \index{initialization!plotting!plot window}
 
 The \vn{tao_plot_page} namelist (\sref{s:format}) in the plot initialization file
-(\sref{s:init.global}) sets \vn{plot page} (\sref{s:plot.page.def}) parameters including \vn{region}
+(\sref{s:init.begin}) sets \vn{plot page} (\sref{s:plot.page.def}) parameters including \vn{region}
 definitions and the initial placement of plots. The syntax of this namelist is:
 \index{tao_plot_page}\index{plot_page!n_curve_pts}
 \index{plot_page!size}\index{plot_page!border}
@@ -1927,7 +1987,7 @@ definitions and the initial placement of plots. The syntax of this namelist is:
     plot_page%title                    = "<string>", <x>, <y>, "<units>", "<justify>"
     plot_page%subtitle                 = "<string>", <x>, <y>, "<units>", "<justify>"
     plot_page%plot_display_type        = "<string>"  ! Display type: "X" or "TK"
-    plot_page%size                     = <x_size>, <y_size>  ! size in POINTS 
+    plot_page%size                     = <x_size>, <y_size>  ! Window size (POINTS) 
     plot_page%border                   = <qp_rect_struct>    ! Border around edge
     plot_page%text_height              = <real>   ! height in POINTS. Def = 12
     plot_page%main_title_text_scale    = <real>   ! Rel to text_height. Def = 1.3
@@ -1937,7 +1997,9 @@ definitions and the initial placement of plots. The syntax of this namelist is:
     plot_page%legend_text_scale        = <real>   ! Rel to text_height. Def = 0.8
     plot_page%key_table_text_scale     = <real>   ! Rel to text_height. Def = 0.9
     plot_page%floor_plan_shape_scale   = <real>   ! Floor_plan shape size scaling.
+    plot_page%floor_plan_text_scale    = <real>   ! Floor_plan shape text scaling.
     plot_page%lat_layout_shape_scale   = <real>   ! Lat_layout shape size scaling.
+    plot_page%lat_layout_text_scale    = <real>   ! Lat_layout shape text scaling.
     plot_page%n_curve_pts              = <int>    ! Num points used to construct a 
                                                   !   smooth curve. Default = 401
     plot_page%box_plots                = <T/F>    ! For debugging. Default = F.
@@ -2052,6 +2114,12 @@ the suffix, set \vn{plot_page%draw_graph_title_suffix} to False.
 This parameter sets the overall scale for drawing shapes for a \vn{floor_plan} drawing
 (\sref{s:shapes}). The default value is 1.
 %
+\item[plot_page\%floor_plan_text_scale] \Newline
+Sets the font size of \vn{floor_plan} shape labels. The font size is the product
+\begin{example}
+  size = plot_page%text_scale * plot_page%legend_text_scale * plot_page%floor_plan_text_scale
+\end{example}
+%
 \item[plot_page\%graph_title_text_scale] \Newline
 This along with \vn{plot_page%text_height} sets the font size for the plot page title. See
 \vn{plot_page%text_height} for more details.
@@ -2064,12 +2132,20 @@ This along with \vn{plot_page%text_height} sets the font size for the plot page 
 This parameter sets the overall scale for drawing shapes for a \vn{lat_layout} drawing
 (\sref{s:shapes}). The default value is 1.
 %
+\item[plot_page\%lat_layout_text_scale] \Newline
+Sets the font size of \vn{lat_layout} shape labels. The font size is the product
+\begin{example}
+  size = plot_page%text_scale * plot_page%legend_text_scale * plot_page%lat_layout_text_scale
+\end{example}
+%
 \item[plot_page\%legend_text_scale] \Newline
-This along with \vn{plot_page%text_height} sets the font size for the plot page title. See
-\vn{plot_page%text_height} for more details.
+Sets the font size of the graph curve legend (\sref{s:curve.legend} relative to
+\vn{plot_page%text_height}. See \vn{plot_page%text_height} for more details.
+The setting of \vn{plot_page%legend_text_scale} also affects the size of \vn{lat_layout}
+and \vn{floor_plan} plots.
 %
 \item[plot_page\%main_title_text_scale] \Newline
-This along with \vn{plot_page%text_height} sets the font size for the plot page title. See
+Sets the font size of the the plot page title relative to the \vn{plot_page%text_height}. See
 \vn{plot_page%text_height} for more details.
 %
 \item[plot_page\%n_curve_pts] \Newline
@@ -2090,7 +2166,7 @@ window used. possibilities are:
   "TK"     tk window
   "QT"     Available only when using PLPLOT (and not the default PGPLOT)
 \end{example}
-Note: The environmental variable \vn{ACC_PLOT_DISPLAY_TYPE} sets the default display type. You can
+Note: The environment variable \vn{ACC_PLOT_DISPLAY_TYPE} sets the default display type. You can
 set this variable in your login file to avoid having to setup a \tao init file to set this.
 %
 \item[plot_page\%size] \Newline
@@ -2158,7 +2234,7 @@ be defined.
 A plot \vn{template} (\sref{s:plot.def}) defines a set of parameters used for constructing a
 \vn{displayed} plot. \tao, by default, defines a number of template plots. User defined template
 plots are constructed with a \vn{tao_template_plot} namelist in the plot initialization file
-(\sref{s:init.global}) along with zero or more \vn{tao_template_graph} namelists, one for each
+(\sref{s:init.begin}) along with zero or more \vn{tao_template_graph} namelists, one for each
 \vn{graph} associated with the template plot. The syntax for the \vn{tao_template_plot} is:
 \index{tao_template_plot}
 \index{plot!name}
@@ -2661,7 +2737,7 @@ have the \vn{graph_index} component set to \vn{1}. The next must have \vn{graph_
 \end{description}
 
 %-----------------------------------------------------------------
-\subsection{Graphing Lattice Parameters}\index{plot!lattice functions}
+\subsection{Lattice Parameter Graphing}\index{plot!lattice functions}
 \label{s:graph.lat.fun}
 
 Templates for plotting lattice parameters such as Twiss parameters or the orbit can be defined by setting
@@ -2691,7 +2767,7 @@ does beam tracking, \tao is only able to evaluate the plotted parameter at the b
 lattice elements. This means that \tao is not able to do the ``smooth'' line calculation.
 
 %-----------------------------------------------------------------
-\subsection{Graphing a Data Slice}\index{plot!data slice}
+\subsection{Data Slice Graphing}\index{plot!data slice}
 \label{s:graph.data.slice}
 
 Note: Data slicing is a type of parametric plotting. For parametric plotting using curve data see
@@ -2828,14 +2904,14 @@ in a given region is visible. The \vn{set plot} (\sref{s:set.plot}) command can 
 plot visibility.
 
 %-----------------------------------------------------------------
-\subsection{Plotting With a Variable Parameter on the X-Axis}
+\subsection{X-Axis Variable Parameter Plotting}
 \index{plot!plotting as a function of a variable}
 \label{s:plot.var}
 
 Data can be plotted as a function of a lattice parameter by setting \vn{plot%x_axis_type} to
-\vn{"lat"} (for lattice variables) or \vn{"var"} (for \tao variables) and setting
-\vn{curve(:)%data_type_x} to the name of the variable. In this case, the \vn{curve(:)%data_type}
-must evaluate to a single number.
+\vn{"lat"} (for lattice parameters including lattice element parameters) or \vn{"var"} (for \tao
+variables) and setting \vn{curve(:)%data_type_x} to the name of the variable. In this case, the
+\vn{curve(:)%data_type} must evaluate to a single number (not a vector).
 
 Example:
 \begin{example}
@@ -2867,7 +2943,7 @@ where the universe \#2 \vn{model} lattice would be setup to be equal to the univ
 lattice.
 
 %-----------------------------------------------------------------
-\subsection{Drawing a Lattice Layout}
+\subsection{Lattice Layout Drawing}
 \index{lattice layout}
 \label{s:lat.layout}
 
@@ -2946,7 +3022,7 @@ The longitudinal distance markers at either end of the lattice layout can be sup
 \end{example}
 
 %-----------------------------------------------------------------
-\subsection{Drawing a Floor Plan}
+\subsection{Floor Plan Drawing}
 \index{floor plan drawing}
 \label{s:floor.plan}
 
@@ -3094,7 +3170,7 @@ Note: The \vn{show ele -floor} command (\sref{s:show}) can be used to view an el
 coordinates.
 
 %-----------------------------------------------------------------
-\subsection{Defining Shapes for Lat_layout and Floor_plan Drawings}
+\subsection{Lat_layout and Floor_plan Drawings Shape Definition}
 \label{s:shapes}
 \index{lat_layout drawings}
 \index{floor_plan drawings}
@@ -3106,7 +3182,7 @@ is determined via two namelists: \vn{lat_layout_drawing} for the lattice layout 
 example, a size that is good for a layout will not necessarily be good for a floor plan.
 
 The file that \tao looks in to find these two namelists is set by the first file specified in the
-\vn{plot_file} array set in the \vn{tao_start} namelist (\sref{s:init.global}). The default, if
+\vn{plot_file} array set in the \vn{tao_start} namelist (\sref{s:init.begin}). The default, if
 \vn{plot_file} is not set, is the root initialization file.
 
 The namelist syntax is the same for both:
@@ -3340,7 +3416,7 @@ attribute of the \vn{ele_shape}. The color of the line segments is set by the de
 of the line segments is set by the pattern definition.
 
 %-----------------------------------------------------------------
-\subsection{Drawing Apertures}
+\subsection{Aperture Drawing}
 \index{aperture drawing}
 \label{s:draw.ap}
 
@@ -3408,7 +3484,7 @@ Note: Aperture curves will ignore the \vn{curve%component} parameter.
 \end{figure}
 
 %-----------------------------------------------------------------
-\subsection{Drawing Dynamic Aperture Curves}
+\subsection{Dynamic Aperture Curve Drawing}
 \index{dynamic aperture drawing}
 \label{s:da.plot}
 
@@ -3467,7 +3543,7 @@ momentum set by the first value in the \vn{pz} array set in the \vn{tao_dynamic_
 (\sref{s:da.calc}). If a curve has an index that is greater than the number of scans, that curve is ignored.
 
 %-----------------------------------------------------------------
-\subsection{Drawing a Histogram}
+\subsection{Histogram Drawing}
 \index{histogram drawing}
 \label{s:histogram}
 
@@ -3572,7 +3648,7 @@ where $p_{z0}$ is the value of the particle's initial $p_z$ and $\eta$ is the di
 reference element where the orbit is being evaluated for the plot.
 
 %%-----------------------------------------------------------------
-%\subsection{Drawing the Beam Chamber Wall}
+%\subsection{Beam Chamber Wall Drawing}
 %\index{beam chamber wall}
 %\label{s:beam.wall.draw}
 %
@@ -3586,7 +3662,7 @@ reference element where the orbit is being evaluated for the plot.
 %particular element.
 
 %%-----------------------------------------------------------------
-%\subsection{Drawing Controller Element Curves}
+%\subsection{ Controller Element Curve Drawing}
 %\index{drawing controller element curves}
 %\label{s:draw.control}
 %
@@ -3601,7 +3677,7 @@ reference element where the orbit is being evaluated for the plot.
 
 
 %-----------------------------------------------------------------
-\subsection{Drawing a Key Table}
+\subsection{Key Table Drawing}
 \index{key table}
 \label{s:key.table}
 

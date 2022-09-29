@@ -100,18 +100,14 @@ case ('BMAD_COM')
     if (str /= ')') err_flag = .true.
     if (.not. err_flag) then
       call re_allocate (ptr_array, 1)
-      if (present(eles)) call re_allocate_eles (eles, 1)
       ptr_array(1)%r => bmad_com%d_orb(n)
       return
     endif
   endif    
 
   call re_allocate (ptr_array, 1)
-  if (present(eles)) call re_allocate_eles (eles, 1)
 
   select case(attrib_name)
-  case ('PTC_MAX_FRINGE_ORDER');            ptr_array(1)%i => ptc_com%max_fringe_order
-
   case ('MAX_APERTURE_LIMIT');              ptr_array(1)%r => bmad_com%max_aperture_limit
   case ('DEFAULT_DS_STEP');                 ptr_array(1)%r => bmad_com%default_ds_step
   case ('SIGNIFICANT_LENGTH');              ptr_array(1)%r => bmad_com%significant_length
@@ -126,7 +122,6 @@ case ('BMAD_COM')
   case ('AUTOSCALE_AMP_REL_TOL');           ptr_array(1)%r => bmad_com%autoscale_amp_rel_tol
   case ('AUTOSCALE_PHASE_TOL');             ptr_array(1)%r => bmad_com%autoscale_phase_tol
   case ('ELECTRIC_DIPOLE_MOMENT');          ptr_array(1)%r => bmad_com%electric_dipole_moment
-  case ('PTC_CUT_FACTOR');                  ptr_array(1)%r => bmad_com%ptc_cut_factor
   case ('SAD_EPS_SCALE');                   ptr_array(1)%r => bmad_com%sad_eps_scale
   case ('SAD_AMP_MAX');                     ptr_array(1)%r => bmad_com%sad_amp_max
 
@@ -139,8 +134,8 @@ case ('BMAD_COM')
   case ('RF_PHASE_BELOW_TRANSITION_REF');   ptr_array(1)%l => bmad_com%rf_phase_below_transition_ref
   case ('SR_WAKES_ON');                     ptr_array(1)%l => bmad_com%sr_wakes_on
   case ('LR_WAKES_ON');                     ptr_array(1)%l => bmad_com%lr_wakes_on
-  case ('PTC_USE_ORIENTATION_PATCHES');     ptr_array(1)%l => bmad_com%ptc_use_orientation_patches
   case ('AUTO_BOOKKEEPER');                 ptr_array(1)%l => bmad_com%auto_bookkeeper
+  case ('HIGH_ENERGY_SPACE_CHARGE_ON');     ptr_array(1)%l => bmad_com%high_energy_space_charge_on
   case ('CSR_AND_SPACE_CHARGE_ON');         ptr_array(1)%l => bmad_com%csr_and_space_charge_on
   case ('SPIN_TRACKING_ON');                ptr_array(1)%l => bmad_com%spin_tracking_on
   case ('BACKWARDS_TIME_TRACKING_ON');      ptr_array(1)%l => bmad_com%backwards_time_tracking_on
@@ -149,17 +144,57 @@ case ('BMAD_COM')
   case ('RADIATION_ZERO_AVERAGE');          ptr_array(1)%l => bmad_com%radiation_zero_average
   case ('RADIATION_FLUCTUATIONS_ON');       ptr_array(1)%l => bmad_com%radiation_fluctuations_on
   case ('CONSERVE_TAYLOR_MAPS');            ptr_array(1)%l => bmad_com%conserve_taylor_maps
-  case ('ABSOLUTE_TIME_TRACKING_DEFAULT');  ptr_array(1)%l => bmad_com%absolute_time_tracking_default
+  case ('ABSOLUTE_TIME_TRACKING');          ptr_array(1)%l => bmad_com%absolute_time_tracking
+  case ('ABSOLUTE_TIME_REF_SHIFT');         ptr_array(1)%l => bmad_com%absolute_time_ref_shift
   case ('CONVERT_TO_KINETIC_MOMENTUM');     ptr_array(1)%l => bmad_com%convert_to_kinetic_momentum
   case ('APERTURE_LIMIT_ON');               ptr_array(1)%l => bmad_com%aperture_limit_on
-  case ('PTC_PRINT_INFO_MESSAGES');         ptr_array(1)%l => bmad_com%ptc_print_info_messages
   case ('DEBUG');                           ptr_array(1)%l => bmad_com%debug
 
   case default
     if (do_print) call out_io (s_error$, r_name, &
              'INVALID ATTRIBUTE: ' // attrib_name, 'FOR ELEMENT: ' // ele_name)
     call re_allocate(ptr_array, 0)
-    if (present(eles)) call re_allocate_eles (eles, 0)
+    err_flag = .true.
+  end select
+
+  return
+
+! space_charge_com
+
+case ('SPACE_CHARGE_COM')
+  call re_allocate (ptr_array, 1)
+
+  select case (attrib_name)
+
+  case ('SPACE_CHARGE_MESH_SIZE')
+    call re_allocate (ptr_array, 3)
+    do i = 1, 3
+      ptr_array(i)%i => space_charge_com%space_charge_mesh_size(i)
+    enddo
+
+  case ('CSR3D_MESH_SIZE')
+    call re_allocate (ptr_array, 3)
+    do i = 1, 3
+      ptr_array(i)%i => space_charge_com%csr3d_mesh_size(i)
+    enddo
+
+  case ('DS_TRACK_STEP');                   ptr_array(1)%r => space_charge_com%ds_track_step
+  case ('DT_TRACK_STEP');                   ptr_array(1)%r => space_charge_com%dt_track_step
+  case ('CATHODE_STRENGTH_CUTOFF');         ptr_array(1)%r => space_charge_com%cathode_strength_cutoff
+  case ('REL_TOL_TRACKING');                ptr_array(1)%r => space_charge_com%rel_tol_tracking
+  case ('ABS_TOL_TRACKING');                ptr_array(1)%r => space_charge_com%abs_tol_tracking
+  case ('BEAM_CHAMBER_HEIGHT');             ptr_array(1)%r => space_charge_com%beam_chamber_height
+  case ('SIGMA_CUTOFF');                    ptr_array(1)%r => space_charge_com%sigma_cutoff
+  case ('N_BIN');                           ptr_array(1)%i => space_charge_com%n_bin
+  case ('PARTICLE_BIN_SPAN');               ptr_array(1)%i => space_charge_com%particle_bin_span
+  case ('N_SHIELD_IMAGES');                 ptr_array(1)%i => space_charge_com%n_shield_images
+  case ('SC_MIN_IN_BIN');                   ptr_array(1)%i => space_charge_com%sc_min_in_bin
+  case ('LSC_KICK_TRANSVERSE_DEPENDENCE');  ptr_array(1)%l => space_charge_com%lsc_kick_transverse_dependence
+
+  case default
+    if (do_print) call out_io (s_error$, r_name, &
+             'INVALID ATTRIBUTE: ' // attrib_name, 'FOR ELEMENT: ' // ele_name)
+    call re_allocate(ptr_array, 0)
     err_flag = .true.
   end select
 

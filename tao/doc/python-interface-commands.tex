@@ -136,6 +136,8 @@ Output (x, y) points for drawing the building wall for a particular graph.
 \begin{verbatim}
 Where:
   {graph} is a plot region graph name.
+
+Note: The graph defines the coordinate system for the (x, y) points.
 \end{verbatim}
 
 %% python building_wall_point ------------------------------------
@@ -271,6 +273,72 @@ Example:
   python data 1@orbit.x[10]
 \end{verbatim}
 
+%% python data_d_array ------------------------------------
+\subsection{python data_d_array}
+\index{python!data_d_array}
+\label{p:data.d.array}
+
+Output list of datums for a given d1_data structure.
+
+\begin{example}
+   python data_d_array \{ix_uni\}@\{d2_name\}.\{d1_name\}
+\end{example}
+\begin{verbatim}
+Where:
+  {ix_uni} is a universe index. Defaults to s%global%default_universe.
+  {d2_name} is the name of the containing d2_data structure.
+  {d1_name} is the name of the d1_data structure containing the array of datums.
+
+Example:
+  python data_d_array 1@orbit.x
+\end{verbatim}
+
+%% python data_d1_array ------------------------------------
+\subsection{python data_d1_array}
+\index{python!data_d1_array}
+\label{p:data.d1.array}
+
+Output list of d1 arrays for a given data_d2.
+
+\begin{example}
+   python data_d1_array \{d2_datum\}
+\end{example}
+\begin{verbatim}
+{d2_datum} should be of the form
+  {ix_uni}@{d2_datum_name}
+\end{verbatim}
+
+%% python data_d2 ------------------------------------
+\subsection{python data_d2}
+\index{python!data_d2}
+\label{p:data.d2}
+
+Output information on a d2_datum.
+
+\begin{example}
+   python data_d2 \{ix_uni\}@\{d2_name\}
+\end{example}
+\begin{verbatim}
+Where:
+  {ix_uni} is a universe index. Defaults to s%global%default_universe.
+  {d2_name} is the name of the d2_data structure.
+\end{verbatim}
+
+%% python data_d2_array ------------------------------------
+\subsection{python data_d2_array}
+\index{python!data_d2_array}
+\label{p:data.d2.array}
+
+Output data d2 info for a given universe.
+
+\begin{example}
+   python data_d2_array \{ix_uni\}
+\end{example}
+\begin{verbatim}
+Example:
+  python data_d2_array 1
+\end{verbatim}
+
 %% python data_d2_create ------------------------------------
 \subsection{python data_d2_create}
 \index{python!data_d2_create}
@@ -326,57 +394,6 @@ Example:
 This destroys the orbit d2_data structure in universe 2.
 \end{verbatim}
 
-%% python data_d2 ------------------------------------
-\subsection{python data_d2}
-\index{python!data_d2}
-\label{p:data.d2}
-
-Output information on a d2_datum.
-
-\begin{example}
-   python data_d2 \{ix_uni\}@\{d2_name\}
-\end{example}
-\begin{verbatim}
-Where:
-  {ix_uni} is a universe index. Defaults to s%global%default_universe.
-  {d2_name} is the name of the d2_data structure.
-\end{verbatim}
-
-%% python data_d_array ------------------------------------
-\subsection{python data_d_array}
-\index{python!data_d_array}
-\label{p:data.d.array}
-
-Output list of datums for a given d1_data structure.
-
-\begin{example}
-   python data_d_array \{ix_uni\}@\{d2_name\}.\{d1_name\}
-\end{example}
-\begin{verbatim}
-Where:
-  {ix_uni} is a universe index. Defaults to s%global%default_universe.
-  {d2_name} is the name of the containing d2_data structure.
-  {d1_name} is the name of the d1_data structure containing the array of datums.
-
-Example:
-  python data_d_array 1@orbit.x
-\end{verbatim}
-
-%% python data_d1_array ------------------------------------
-\subsection{python data_d1_array}
-\index{python!data_d1_array}
-\label{p:data.d1.array}
-
-Output list of d1 arrays for a given data_d2.
-
-\begin{example}
-   python data_d1_array \{d2_datum\}
-\end{example}
-\begin{verbatim}
-{d2_datum} should be of the form
-  {ix_uni}@{d2_datum_name}
-\end{verbatim}
-
 %% python data_parameter ------------------------------------
 \subsection{python data_parameter}
 \index{python!data_parameter}
@@ -391,21 +408,6 @@ Output an array of values for a particular datum parameter for a given array of 
 {parameter} may be any tao_data_struct parameter.
 Example:
   python data_parameter orbit.x model_value
-\end{verbatim}
-
-%% python data_d2_array ------------------------------------
-\subsection{python data_d2_array}
-\index{python!data_d2_array}
-\label{p:data.d2.array}
-
-Output data d2 info for a given universe.
-
-\begin{example}
-   python data_d2_array \{ix_uni\}
-\end{example}
-\begin{verbatim}
-Example:
-  python data_d2_array 1
 \end{verbatim}
 
 %% python data_set_design_value ------------------------------------
@@ -811,7 +813,7 @@ Output lattice element parameter
 Where: 
   {ele_id} is an element name or index.
   {which} is one of: "model", "base" or "design"
-  {who} values are the same as {who} values for "python lat_list" except for "ele:mat6" and "ele:vec0".
+  {who} values are the same as {who} values for "python lat_list".
         Note: Here {who} must be a single parameter and not a list.
 
 Example:
@@ -1177,10 +1179,14 @@ Where:
     ele.b.beta, ele.b.alpha, ele.b.eta, ele.b.etap, ele.b.gamma, ele.b.phi,
     ele.x.eta, ele.x.etap,
     ele.y.eta, ele.y.etap,
+    ele.ref_time, ele.ref_time_start
     ele.s, ele.l
     ele.e_tot, ele.p0c
-    ele.mat6, ele.vec0
+    ele.mat6      ! Output: mat6(1,:), mat6(2,:), ... mat6(6,:)
+    ele.vec0      ! Output: vec0(1), ... vec0(6)
     ele.{attribute} Where {attribute} is a Bmad syntax element attribute. (EG: ele.beta_a, ele.k1, etc.)
+    ele.c_mat     ! Output: c_mat11, c_mat12, c_mat21, c_mat22.
+    ele.gamma_c   ! Parameter associated with coupling c-matrix.
 
   {elements} is a string to match element names to.
     Use "*" to match to all elements.
@@ -1189,7 +1195,6 @@ Examples:
   python lat_list -track 3@0>>Q*|base ele.s,orbit.vec.2
   python lat_list 3@0>>Q*|base real:ele.s    
 
-Note: vector layout of mat6(6,6) is: [mat6(1,:), mat6(2,:), ...mat6(6,:)]
 Also see: "python ele:param"
 \end{verbatim}
 
@@ -1321,8 +1326,8 @@ Output list of plot templates or plot regions.
 \end{example}
 \begin{verbatim}
 where "{r/g}" is:
-  "r"      ! list regions
-  "t"      ! list template plots
+  "r"      ! list regions of the form ix;region_name;plot_name;visible;x1;x2;y1;y2
+  "t"      ! list template plots of the form ix;name
 \end{verbatim}
 
 %% python plot_graph ------------------------------------
@@ -1358,22 +1363,25 @@ Output plot histogram info.
 
 \end{verbatim}
 
-%% python plot_plot_manage ------------------------------------
-\subsection{python plot_plot_manage}
-\index{python!plot_plot_manage}
-\label{p:plot.plot.manage}
+%% python plot_template_manage ------------------------------------
+\subsection{python plot_template_manage}
+\index{python!plot_template_manage}
+\label{p:plot.template.manage}
 
 Template plot creation or destruction.
 
 \begin{example}
-   python plot_plot_manage \{plot_location\}^^\{plot_name\}^^
-                          \{n_graph\}^^\{graph1_name\}^^\{graph2_name\}^^\{graphN_name\}
+   python plot_template_manage \{template_location\}^^\{template_name\}^^
+                          \{n_graph\}^^\{graph_names\}
 \end{example}
 \begin{verbatim}
-Use "@Tnnn" sytax for {plot_location} to place a plot. A plot may be placed in a 
-spot where there is already a template.
-Extra graph names can be included with ^^ connection. 
-If {n_graph} is set to -1 then just delete the plot.
+Where:
+  {template_location} is the location to place or delete a template plot. Use "@Tnnn" syntax for the location.
+  {template_name} is the name of the template plot. If deleting a plot this name is immaterial.
+  {n_graph} is the number of associated graphs. If set to -1 then any existing template plot is deleted.
+  {graph_names} are the names of the graphs.  graph_names should be in the form:
+     graph1_name^^graph2_name^^...^^graphN_name
+  for N=n_graph names
 \end{verbatim}
 
 %% python plot_curve_manage ------------------------------------

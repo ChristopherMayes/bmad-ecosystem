@@ -392,7 +392,7 @@ Transport through a lattice element with SC and CSR involves a beam of particles
 element is divided up into a number of slices. Transport through a slice is a two step process. The
 first step is to give all the particles a kick due to SC and CSR. The second step is transport of
 all particles from one slice to the next without any interaction between particles. User settable
-parameters pertinent to the CSR calculation are listed in \sref{s:csr.params}.
+parameters pertinent to the CSR calculation are listed in \sref{s:sc.com}.
 
 %-----------------------------------------------------------------   
 \subsection{1\_Dim CSR Calculation}
@@ -408,7 +408,7 @@ CSR kick, the density is actually calculated for a second set of staggered bins 
 offset by 1/2 the bin width with respect to the first set. This gives the density at the edges of
 the original set of bins. The density is considered to vary linearly between the computed density
 points. For a description of the parameters that affect the CSR calculation see
-Section~\sref{s:csr.params}.
+Section~\sref{s:sc.com}.
 
 %-----------------------------------------------------------------   
 \subsection{Slice Space Charge Calculation}
@@ -451,10 +451,10 @@ thickness of the slices is, in general, not negligible, the the integral over a 
 calculate the kick. The total kick $K_{\mbox{\tiny SC}}(j)$ at slice $j$ is
 \begin{equation}
   K_{\mbox{\tiny SC}} (j) = 
-  \sum_i \int_{\zeta_{ij}-dz_{slice}/2}^{\zeta_{ij}+dz_{slice}/2} d\zeta \, dK_{\mbox{\tiny SC}}
+  \sum_i \int_{\zeta_{ij}-dz_s/2}^{\zeta_{ij}+dz_s/2} d\zeta \, dK_{\mbox{\tiny SC}}
 \end{equation}
 where the sum is over all slices $i$, $\zeta_{ij}$ is the distance between slices $i$ and $j$, and
-$dz_{slice}$ is the slice thickness. An analytic expression of the above integral is easily
+$dz_s$ is the slice thickness. An analytic expression of the above integral is easily
 calculated assuming that the charge density $\rho(z)$ is linearly varying within a given slice.  For
 brevity's sake, the calculation is not explicitly presented here. Once the kick at the slice center
 planes is calculated, the kick given to a particle is calculated using linear interpolation.
@@ -463,7 +463,7 @@ One mode for calculating the transverse SC kick which is computationally fast, i
 transverse dependence of the kick and just evaluates the kick on the beam centerline. The other
 simulation mode represents the kick due to a given slice using a Pad{\'e} approximant of form
 \begin{equation}
-  \int_{\zeta_{ij}-dz_{slice}/2}^{\zeta_{ij}+dz_{slice}/2} d\zeta \, dK_{\mbox{\tiny SC}}
+  \int_{\zeta_{ij}-dz_s/2}^{\zeta_{ij}+dz_s/2} d\zeta \, dK_{\mbox{\tiny SC}}
   \simeq \frac{1}{a_{00} + a_{20} x^2 + a_{40} x^4 + a_{02} y^2 + a_{04} y^4 + a_{22} x^2 \, y^2}
 \end{equation}
 the \vn{a_{mn}} are calculated from an analytic formula derived from integrating \Eq{kelsz}. The
@@ -485,17 +485,24 @@ algorithm. For this reason, match elements are ignored in the CSR calculation.
 \subsection{FFT_3D Space Charge Calculation}
 \label{s:sc.fft}
 
-When an element's \vn{space_charge_method} is set to \vn{fft_3d} (\sref{s:csr.sc.meth}), the space
-charge calculation uses code from the OpenSC package developed by Rob Ryne and Chris Mayes
-\cite{b:opensc}. The method works by calculating the field due to the particle on a 3D grid and then
-interpolating the field to the points where the particles are. This method will be able to handle
-lower energy bunches than the \vn{slice} method (\sref{s:sc.slice}) the disadvantage is that the
-\vn{fft_3d} method will be slower. Another point to keep in mind is that the \vn{fft_3d} method
-currently ignores image charge forces due to an emitting cathode and so will not be accurate for
-tracking at the very lowest energies near the emitter.
+When an element's \vn{space_charge_method} is set to \vn{fft_3d} or \vn{cathode_fft_3d}
+(\sref{s:csr.sc.meth}), the space charge calculation uses code from the OpenSC package developed by
+Rob Ryne and Christopher Mayes \cite{b:opensc}. The method works by calculating the field due to the
+particles deposited on a 3D grid using an integrated Green function method for the Poisson equation. The steps are:
+
+\begin{enumerate}
+\item Deposit weighted charged particles on a 3D rectangular grid.
+\item Calculate the space charge fields on this grid by FFT convolution. 
+\item Interpolate the field to an arbitrary point within its domain.
+\end{enumerate}
+
+The FFT convolution is done using FFTs from the FFTW package, is parallelized using OpenMP.
+Special options allow the consideration of image charges at a cathode.
+This method will be able to handle lower energy bunches than the \vn{slice} method (\sref{s:sc.slice})
+the disadvantage is that the \vn{fft_3d} and \vn{cathode_fft_3d} methods will be slower.
 
 Note: The mesh size is set by the \vn{csr_pram} parameter \vn{space_charge_mesh_size}
-(\sref{s:csr.params}).
+(\sref{s:sc.com}).
 
 %-----------------------------------------------------------------   
 \section{High Energy Space Charge}
@@ -519,8 +526,8 @@ relatively high energy but will not accurate in other situations.
 
 If a \bmad based program has been constructed to use the high energy space charge module (the
 documentation for the program should indicate if this is true), the high energy space charge force
-can be turned on or off by setting the \vn{parameter[high_energy_space_charge_on]} parameter
-(\sref{s:param}, \sref{s:beginning}). 
+can be turned on or off by setting the \vn{bmad_com[high_energy_space_charge_on]} parameter
+(\sref{s:bmad.common}, \sref{s:beginning}). 
 
 The high energy space charge kick is computed assuming a gaussian bunch shape 
 \begin{align}

@@ -33,13 +33,13 @@ implicit none
 type (ele_struct), target :: ele
 type (coord_struct), optional :: start_orb, end_orb
 type (lat_param_struct)  param
-type (coord_struct) a_start_orb, a_end_orb
+type (coord_struct) a_start_orb, a_end_orb, b_start_orb
 
 real(rp), parameter :: zero_vec(6) = 0
 integer mat6_calc_method, species
 
 logical, optional :: err_flag
-logical rad_fluct_save, err, finished, stale
+logical rad_fluct_save, err, finished
 
 character(*), parameter :: r_name = 'make_mat6'
 
@@ -71,21 +71,29 @@ if (bmad_com%auto_bookkeeper) call attribute_bookkeeper (ele)
 mat6_calc_method = ele%mat6_calc_method
 if (.not. ele%is_on) mat6_calc_method = bmad_standard$
 
-stale = (any(ele%map_ref_orb_in%vec /= a_start_orb%vec))
 ele%map_ref_orb_in = a_start_orb
 
 rad_fluct_save = bmad_com%radiation_fluctuations_on
 bmad_com%radiation_fluctuations_on = .false.
 
-! Spin?
+! If mat6(6,6) = 0 then %mat6 has not yet been computed. In this case ignore the setting of static_linear_map.
+! Exception: Slice_slave is always recomputed.
 
-if (ele%spin_tracking_method == sprint$) then
-  call ele_to_sprint_spin_taylor_map(ele)
+if (is_true(ele%value(static_linear_map$)) .and. ele%mat6(6,6) /= 0 .and. ele%slave_status /= slice_slave$) then
+  ! Just track if needed and do not modify ele%mat6
+  if (present(end_orb)) call track1(a_start_orb, ele, param, end_orb)
+  if (present(err_flag)) err_flag = .false.
+  return
 endif
 
 ! Compute matrix
+! Matrix must be made around the zero orbit for linear tracking.
 
 err = .false.
+if (ele%tracking_method == linear$) then
+  b_start_orb = a_start_orb
+  a_start_orb%vec = 0  
+endif
 
 select case (mat6_calc_method)
 
@@ -116,11 +124,6 @@ case (mad$)
 
 ! Static is used with hybrid elements since, in this case, the transfer map is not recomputable.
 
-case (static$)
-  if (present(err_flag)) err_flag = .false.
-  if (ele%bookkeeping_state%mat6 == stale$) ele%bookkeeping_state%mat6 = ok$
-  return
-
 case default
   call out_io (s_fatal$, r_name, 'UNKNOWN MAT6_CALC_METHOD: ' // mat6_calc_method_name(ele%mat6_calc_method))
   if (global_com%exit_on_error) call err_exit
@@ -134,7 +137,7 @@ endif
 
 ! Add space charge effects
 
-if (param%high_energy_space_charge_on) call make_mat6_high_energy_space_charge (ele, param)
+if (bmad_com%high_energy_space_charge_on) call make_mat6_high_energy_space_charge (ele, param)
 
 ! symplectify if wanted
 
@@ -143,6 +146,7 @@ if (ele%symplectify) call mat_symplectify (ele%mat6, ele%mat6, ele%value(p0c$)/e
 ! If the tracking_method is not consistant with the mat6_calc_method then need to track.
 
 if (present(end_orb)) then
+  if (ele%tracking_method == linear$) a_start_orb = b_start_orb
   if (.not. ele%is_on .or. mat6_calc_method == tracking$ .or. mat6_calc_method == ele%tracking_method) then
     end_orb = a_end_orb
   else
@@ -158,12 +162,21 @@ if (present(end_orb)) then
   endif
 endif
 
+! Spin
+
+if (bmad_com%spin_tracking_on) then
+  if (ele%spin_tracking_method == sprint$ .and. .not. associated(ele%spin_taylor(0)%term)) then
+    call sprint_spin_taylor_map(ele, ele%taylor%ref)
+  endif
+
+  if (associated(ele%spin_taylor(0)%term)) then
+    ele%spin_q = spin_taylor_to_linear (ele%spin_taylor, .true., a_start_orb%vec-ele%spin_taylor_ref_orb_in)
+  endif
+endif
 
 ! Finish up
 
-stale = (stale .or. any(ele%map_ref_orb_out%vec /= a_end_orb%vec))
 ele%map_ref_orb_out = a_end_orb
-call ele_rad_int_cache_calc (ele, stale)
 
 bmad_com%radiation_fluctuations_on = rad_fluct_save
 

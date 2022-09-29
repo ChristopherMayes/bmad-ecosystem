@@ -26,9 +26,11 @@ use wall3d_mod, only: calc_wall_radius
 use em_field_mod, only: em_field_calc
 use twiss_and_track_mod, only: twiss_and_track_at_s
 use ptc_spin, only: c_linear_map, assignment(=)
-use pointer_lattice, only: operator(.sub.)
-use ptc_layout_mod, only: ptc_emit_calc, lat_to_ptc_layout, type_ptc_fibre
+use pointer_lattice, only: operator(.sub.), operator(**), operator(*), alloc, kill, print, ci_phasor, assignment(=)
+use ptc_layout_mod, only: ptc_emit_calc, lat_to_ptc_layout, type_ptc_fibre, assignment(=)
 use ptc_map_with_radiation_mod, only: ptc_rad_map_struct, ptc_setup_map_with_radiation, tree_element_zhe
+use photon_target_mod, only: to_surface_coords
+use expression_mod, only: expression_stack_to_string
 
 implicit none
 
@@ -71,7 +73,7 @@ type (control_struct), pointer :: contl
 type (bunch_struct), pointer :: bunch
 type (wake_struct), pointer :: wake
 type (wake_lr_mode_struct), pointer :: lr_mode
-type (coord_struct), target :: orb, orb0, orb2
+type (coord_struct), target :: orb, orb0, orb2, orbit
 type (bunch_params_struct) bunch_params
 type (bunch_params_struct), pointer :: bunch_p
 type (taylor_struct) taylor(6)
@@ -84,21 +86,38 @@ type (wall3d_vertex_struct), pointer :: v
 type (random_state_struct) ran_state
 type (bmad_normal_form_struct), pointer :: bmad_nf
 type (ptc_normal_form_struct), pointer :: ptc_nf
-type (aperture_scan_struct), pointer :: aperture_scan
-type (coord_struct) orbit
+type (aperture_scan_struct), pointer :: da_scan
+type (aperture_point_struct), pointer :: da_pt
 type (tao_wave_kick_pt_struct), pointer :: wk
 type (tao_spin_map_struct), pointer :: sm
-type (normal_modes_struct) norm_mode
+type (normal_modes_struct) mode_ptc, mode_ptc_no_vert, mode_6d, mode_6d_no_vert
+type (normal_modes_struct), pointer :: mode_m, mode_d
 type (ptc_rad_map_struct), target :: rad_map
 type (tree_element_zhe), pointer :: rmap(:)
+type (tao_lat_sigma_struct), pointer :: lat_sig
+type (track_struct), target :: track
+type (track_point_struct), pointer :: tp
+type (strong_beam_struct), pointer :: sb
+type (c_taylor) ptc_ctaylor
+type (complex_taylor_struct) bmad_ctaylor
+type (rad_int_ele_cache_struct), pointer :: ri
 
-type show_lat_column_struct
+type old_show_lat_column_struct
   character(80) :: name = ''
   character(40) :: format = ''
   integer :: width = 0
   character(40) :: label = ''
   logical :: remove_line_if_zero = .false.
   real(rp) :: scale_factor = 1
+end type
+
+type show_lat_column_struct
+  character(80) :: name = ''
+  character(40) :: format = ''
+  character(40) :: label = ''
+  logical :: remove_line_if_zero = .false.
+  real(rp) :: scale_factor = 1
+  integer :: width = 0
 end type
 
 type show_lat_column_info_struct
@@ -114,14 +133,16 @@ type show_lat_column_info_struct
   integer :: indent = 0   ! Spacing from start of line to beginning of column.
 end type
 
-type (show_lat_column_struct) column(60)
+type (old_show_lat_column_struct) column(60)
+type (show_lat_column_struct) col(60)
 type (show_lat_column_info_struct) col_info(60) 
 
-real(rp) phase_units, l_lat, gam, s_ele, s0, s1, s2, s3, gamma2, val, z, z1, z2, z_in, s_pos, dt, angle, r
-real(rp) sig_mat(6,6), mat6(6,6), vec0(6), vec_in(6), vec3(3), pc, e_tot, value_min, value_here, pz1, phase
-real(rp) g_vec(3), dr(3), v0(3), v2(3), g_bend, c_const, mc2, del, b_emit, time1, ds, ref_vec(6)
+real(rp) phase_units, gam, s_ele, s0, s1, s2, s3, val, z, z1, z2, z_in, s_pos, dt, angle, r
+real(rp) sig_mat(6,6), sig0_mat(6,6), mat6(6,6), vec0(6), vec_in(6), vec3(3), l_lat
+real(rp) pc, e_tot, value_min, value_here, pz1, phase
+real(rp) g_vec(3), dr(3), v0(3), v2(3), g_bend, c_const, mc2, del, time1, ds, ref_vec(6), beta
 real(rp) gamma, E_crit, E_ave, c_gamma, P_gam, N_gam, N_E2, H_a, H_b, rms, mean, s_last, s_now, n0(3)
-real(rp) pz2, qs, q, dq, x, xi_quat(2), xi_mat8(2), dn_dpz(3), dn_partial(3,3)
+real(rp) pz2, qs, q, dq, x, xi_quat(2), xi_mat8(2), dn_dpz(3), dn_partial(3,3), dn_partial2(3,3)
 real(rp), allocatable :: value(:)
 
 complex(rp) eval(6), evec(6,6), n_eigen(6,3)
@@ -135,17 +156,18 @@ character(n_char_show) what2
 
 character(1) delim
 character(3) undef_str 
+character(6) :: mode(4) = [character(6):: 'a-mode', 'b-mode', 'c-mode', 'spin']
 character(9) angle_str
 character(16) velocity_fmt, momentum_fmt, e_field_fmt, b_field_fmt, position_fmt, energy_fmt, s_fmt
 character(16) spin_fmt, t_fmt, twiss_fmt, disp_fmt, str1, str2, where
-character(24) show_name, show2_name, what_to_print
-character(24) :: var_name, blank_str = '', phase_units_str
+character(24) show_name, show2_name, what_to_show
+character(24) :: var_name, blank_str = '', phase_units_str, val_str
 character(24) :: plane, imt, imt2, lmt, lmt2, amt, iamt, ramt, f3mt, rmt, rmt2, irmt, iimt
-character(40) ele_name, sub_name, ele1_name, ele2_name, ele_ref_name, aname, b_name
-character(40) replacement_for_blank
+character(40) ele_name, sub_name, ele1_name, ele2_name, ele_ref_name, aname, b_name, param_name, uni_str
+character(40) replacement_for_blank, component
 character(60) nam, attrib_list(20), attrib
 character(100) :: word1, word2, fmt, fmt2, fmt3, switch, why_invalid
-character(200) header, str, attrib0, file_name, name
+character(200) header, str, attrib0, file_name, name, excite_zero(3)
 character(200), allocatable :: alloc_lines(:)
 
 character(2), parameter :: q_name(0:3) = ['q0', 'qx', 'qy', 'qz']
@@ -158,19 +180,19 @@ integer nl, nl0, loc, ixl, iu, nc, n_size, ix_u, ios, ie, ig, nb, id, iv, jd, jv
 integer ix, ix0, ix1, ix2, ix_s2, i, j, k, n, n_print, show_index, ju, ios1, ios2, i_uni, i_con, i_ic
 integer num_locations, ix_ele, n_name, n_start, n_ele, n_ref, n_tot, ix_p, print_lords, ix_word, species
 integer xfer_mat_print, twiss_out, ix_sec, n_attrib, ie0, a_type, ib, ix_min, n_remove, n_zeros_found
-integer eval_pt, n_count
+integer eval_pt, n_count, print_field, nt
 integer, allocatable :: ix_c(:), ix_remove(:)
 
 logical bmad_format, good_opt_only, print_wall, show_lost, logic, aligned, undef_uses_column_format, print_debug
 logical err, found, first_time, by_s, print_header_lines, all_lat, limited, show_labels, do_calc, flip
 logical show_sym, show_line, show_shape, print_data, ok, print_tail_lines, print_slaves, print_super_slaves
-logical show_all, name_found, print_taylor, print_em_field, print_attributes, err_flag, angle_units
+logical show_all, name_found, print_taylor, print_rad, print_attributes, err_flag, angle_units
 logical print_ptc, print_position, called_from_python_cmd, print_eigen, show_mat, show_q, print_rms
 logical valid_value, print_floor, show_section, is_complex, print_header, print_by_uni, do_field, delim_found
 logical, allocatable :: picked_uni(:), valid(:), picked2(:)
 logical, allocatable :: picked_ele(:)
 
-namelist / custom_show_list / column
+namelist / custom_show_list / column, col
 
 !
 
@@ -214,13 +236,14 @@ if (what == '') then
   return
 endif
 
-call match_word (what, [character(20):: 'data', 'variables', 'global', 'alias', 'top10', &
-   'optimizer', 'element', 'lattice', 'constraints', 'plot', 'beam', 'tune', 'graph', 'curve', &
-   'hom', 'key_bindings', 'universe', 'orbit', 'derivative', 'branch', 'use', 'taylor_map', &
-   'twiss_and_orbit', 'building_wall', 'wall', 'normal_form', 'dynamic_aperture', 'value', &
-   'matrix', 'field', 'wake_elements', 'history', 'symbolic_numbers', 'wave', 'particle', &
-   'merit', 'track', 'spin', 'internal', 'control', 'string', 'version', 'ptc'], &
-                                                                   ix, matched_name = show_what)
+call match_word (what, [character(20):: 'alias', 'beam', 'branch', 'building_wall', &
+        'chromaticity', 'constraints', 'control', 'curve', 'data', &
+        'derivative', 'dynamic_aperture', 'element', 'emittance', 'field', 'global', 'graph', &
+        'history', 'hom', 'internal', 'key_bindings', 'lattice', 'matrix', 'merit', 'normal_form', &
+        'optimizer', 'orbit', 'particle', 'plot', 'ptc', 'radiation_integrals', 'spin', 'string', &
+        'symbolic_numbers', 'taylor_map',  'top10', &
+        'track', 'tune', 'twiss_and_orbit', 'universe', 'use', 'value', 'variables', 'version', &
+        'wake_elements', 'wall', 'wave'], ix, matched_name = show_what)
 if (ix == 0) then
   nl=1; lines(1) = 'SHOW WHAT? WORD NOT RECOGNIZED: ' // what
   return
@@ -255,10 +278,12 @@ case ('alias')
 
 case ('beam')
 
-  word1 = ''
+  ele_name = ''
+  what_to_show = ''
 
   do 
-    call tao_next_switch (what2, ['-universe'], .true., switch, err, ix_s2);  if (err) return
+    call tao_next_switch (what2, [character(16):: '-universe', '-lattice', '-comb_index'], .true., switch, err, ix_s2)
+    if (err) return
     if (switch == '') exit
 
     select case (switch)
@@ -270,27 +295,76 @@ case ('beam')
         nl=1; lines(1) = 'CANNOT READ OR OUT-OF RANGE "-universe" ARGUMENT'
         return
       endif
-      lat => u%model%lat
       call string_trim(what2(ix_s2+1:), what2, ix_s2)
 
+    case ('-lattice', '-comb_index')
+      what_to_show = switch
+
     case default
-      if (word1 /= '') then
+      if (ele_name /= '') then
         nl=1; lines(1) = 'EXTRA STUFF ON THE COMMAND LINE: ' // switch
         return
       endif
 
-      word1 = switch
+      ele_name = switch
 
     end select
   enddo
 
-
-  ! no element index
-
+  lat => u%model%lat
+  branch => lat%branch(0)
   bb => u%model_branch(0)%beam
 
-  if (word1 == '') then
+  if (ele_name == '') then
+    ele => branch%ele(bb%ix_track_start)
+  elseif (what_to_show == '-comb_index') then
+    read (ele_name, *, iostat = ios) ix_s2
+    if (ios /= 0) then
+      nl=1; lines(1) = 'CANNOT DECODE COMB INDEX: ' // ele_name
+      return
+    endif
+  else
+    call tao_pick_universe (ele_name, ele_name, picked_uni, err, ix_u)
+    if (err) return
+    u => s%u(ix_u)
+    call tao_locate_elements (ele_name, ix_u, eles, err)
+    if (err .or. size(eles) == 0) return
+    ele => eles(1)%ele
+    branch => ele%branch
+  endif
 
+  ix_branch = branch%ix_branch
+  tao_branch => u%model%tao_branch(ix_branch)
+
+  ! Sigma calc from lattice Twiss.
+
+  if (what_to_show == '-lattice') then
+    lat_sig => tao_branch%lat_sigma(ele%ix_ele)
+
+    nl=nl+1; lines(nl) = 'Sigma calc from lattice Twiss at: ' // trim(ele%name) // ' ' //  ele_loc_name(ele, .false., '()')
+    nl=nl+1; write(lines(nl), rmt)  '  S-position:                 ', ele%s
+    nl=nl+1; write(lines(nl), imt)  '  In branch:                  ', ix_branch
+    nl=nl+1; write(lines(nl), rmt) '  RMS:     ', &
+                      sqrt(lat_sig%mat(1,1)), sqrt(lat_sig%mat(2,2)), sqrt(lat_sig%mat(3,3)), &
+                      sqrt(lat_sig%mat(4,4)), sqrt(lat_sig%mat(5,5)), sqrt(lat_sig%mat(6,6))
+    nl=nl+1; lines(nl) = ''
+    nl=nl+1; lines(nl) = 'Sigma Mat       x              px               y              py              z             pz'
+    do i = 1, 6
+      nl=nl+1; write (lines(nl), '(a2, 2x, 6es16.8)') coord_name(i), lat_sig%mat(i,:)
+    enddo
+
+    if (all(lat_sig%mat == 0)) then
+      nl=nl+1; lines(nl) = ''
+      nl=nl+1; lines(nl) = 'Note: Emittances are set in the beam_init structure.'
+    endif
+
+    result_id = 'beam:lat'
+    return
+  endif
+
+  ! No element index
+
+  if (ele_name == '') then
     if (.not. u%beam%track_beam_in_universe) then
       nl=nl+1; lines(nl) = 'Beam tracking not done in universe: ' // int_str(u%ix_uni)
       nl=nl+1; lines(nl) = 'Create a tao_beam_init namelist for this universe in the appropriate init file if beam tracking wanted.'
@@ -306,12 +380,12 @@ case ('beam')
     nl=nl+1; lines(nl) = ''
     nl=nl+1; lines(nl) = 'General beam components (set by "set beam ..."):'
     nl=nl+1; write(lines(nl), lmt) 'always_reinit     = ', u%beam%always_reinit
-    nl=nl+1; write(lines(nl), amt) 'track_data_file   = ', quote(u%beam%track_data_file)
     nl=nl+1; write(lines(nl), amt) 'saved_at          = ', quote(u%beam%saved_at)
     nl=nl+1; write(lines(nl), amt) 'dump_at           = ', quote(u%beam%dump_at)
     nl=nl+1; write(lines(nl), amt) 'dump_file         = ', quote(u%beam%dump_file)
-    nl=nl+1; write(lines(nl), fmt) 'track_start       = ', quote(bb%track_start), ' (', bb%ix_track_start, ')'
-    nl=nl+1; write(lines(nl), fmt) 'track_end         = ', quote(bb%track_end), ' (', bb%ix_track_end, ')'
+    nl=nl+1; write(lines(nl), rmt) 'comb_ds_step      = ', u%beam%comb_ds_step
+    nl=nl+1; write(lines(nl), fmt) 'track_start       = ', quote(bb%track_start)
+    nl=nl+1; write(lines(nl), fmt) 'track_end         = ', quote(bb%track_end)
 
     beam => u%model_branch(0)%ele(bb%ix_track_start)%beam
     if (allocated(beam%bunch)) then
@@ -328,9 +402,10 @@ case ('beam')
     nl=nl+1; lines(nl) = 'beam_init components (set by "set beam_init ..."):'
     nl=nl+1; write(lines(nl), amt) '  %position_file          = ', quote(beam_init%position_file)
     nl=nl+1; write(lines(nl), amt) '  %distribution_type      = ', quoten(beam_init%distribution_type)
-    nl=nl+1; write(lines(nl), lmt) '  %use_particle_start_for_center = ', beam_init%use_particle_start_for_center
-    if (beam_init%use_particle_start_for_center) then
+    nl=nl+1; write(lines(nl), lmt) '  %use_particle_start     = ', beam_init%use_particle_start
+    if (beam_init%use_particle_start) then
       nl=nl+1; write(lines(nl), '(a, 6es16.8, 3x, a)') '  %center                 = ', beam_init%center, '! Note: Will use particle_start instead'
+      nl=nl+1; write(lines(nl), '(a, 3es16.8, 3x, a)') '  %spin                   = ', beam_init%spin,   '! Note: Will use particle_start instead'
       nl=nl+1; write(lines(nl), '(a, 6es16.8, 3x, a)') '  particle_start[x]       = ', u%model%lat%particle_start%vec(1)
       nl=nl+1; write(lines(nl), '(a, 6es16.8, 3x, a)') '  particle_start[px]      = ', u%model%lat%particle_start%vec(2)
       nl=nl+1; write(lines(nl), '(a, 6es16.8, 3x, a)') '  particle_start[y]       = ', u%model%lat%particle_start%vec(3)
@@ -338,7 +413,8 @@ case ('beam')
       nl=nl+1; write(lines(nl), '(a, 6es16.8, 3x, a)') '  particle_start[z]       = ', u%model%lat%particle_start%vec(5)
       nl=nl+1; write(lines(nl), '(a, 6es16.8, 3x, a)') '  particle_start[pz]      = ', u%model%lat%particle_start%vec(6)
     else
-      nl=nl+1; write(lines(nl), '(a, 6es16.8, 3x, a)') '  %center                 = ', beam_init%center
+      nl=nl+1; write(lines(nl), rmt) '  %center                 = ', beam_init%center
+      nl=nl+1; write(lines(nl), rmt) '  %spin                   = ', beam_init%spin
     endif
     nl=nl+1; write(lines(nl), rmt) '  %center_jitter          = ', beam_init%center_jitter
     nl=nl+1; write(lines(nl), imt) '  %n_particle             = ', beam_init%n_particle
@@ -359,7 +435,6 @@ case ('beam')
     nl=nl+1; write(lines(nl), rmt) '  %emit_jitter            = ', beam_init%emit_jitter
     nl=nl+1; write(lines(nl), rmt) '  %sig_z_jitter           = ', beam_init%sig_z_jitter
     nl=nl+1; write(lines(nl), rmt) '  %sig_pz_jitter          = ', beam_init%sig_pz_jitter
-    nl=nl+1; write(lines(nl), rmt) '  %spin                   = ', beam_init%spin
     nl=nl+1; write(lines(nl), amt) '  %species                = ', quote(beam_init%species)
     nl=nl+1; write(lines(nl), lmt) '  %renorm_center          = ', beam_init%renorm_center
     nl=nl+1; write(lines(nl), lmt) '  %renorm_sigma           = ', beam_init%renorm_sigma
@@ -395,22 +470,26 @@ case ('beam')
     nl=nl+1; write(lines(nl), lmt) '  %spin_tracking_on                = ', bmad_com%spin_tracking_on
     nl=nl+1; write(lines(nl), lmt) '  %spin_sokolov_ternov_flipping_on = ', bmad_com%spin_sokolov_ternov_flipping_on
     nl=nl+1; write(lines(nl), lmt) '  %radiation_damping_on            = ', bmad_com%radiation_damping_on
-    nl=nl+1; write(lines(nl), lmt) '  %radiation_zero_average      = ', bmad_com%radiation_zero_average
+    nl=nl+1; write(lines(nl), lmt) '  %radiation_zero_average          = ', bmad_com%radiation_zero_average
     nl=nl+1; write(lines(nl), lmt) '  %radiation_fluctuations_on       = ', bmad_com%radiation_fluctuations_on
 
     nl=nl+1; lines(nl) = ''
-    nl=nl+1; lines(nl) = 'csr_param components (set by "set csr_param ..."):'
-    nl=nl+1; write(lines(nl), rmt) '  %ds_track_step                  = ', csr_param%ds_track_step
-    nl=nl+1; write(lines(nl), rmt) '  %beam_chamber_height            = ', csr_param%beam_chamber_height
-    nl=nl+1; write(lines(nl), rmt) '  %sigma_cutoff                   = ', csr_param%sigma_cutoff
-    nl=nl+1; write(lines(nl), imt) '  %n_bin                          = ', csr_param%n_bin
-    nl=nl+1; write(lines(nl), imt) '  %particle_bin_span              = ', csr_param%particle_bin_span
-    nl=nl+1; write(lines(nl), imt) '  %n_shield_images                = ', csr_param%n_shield_images
-    nl=nl+1; write(lines(nl), imt) '  %sc_min_in_bin                  = ', csr_param%sc_min_in_bin
-    nl=nl+1; write(lines(nl), lmt) '  %print_taylor_warning           = ', csr_param%print_taylor_warning
-    nl=nl+1; write(lines(nl), lmt) '  %lsc_kick_transverse_dependence = ', csr_param%lsc_kick_transverse_dependence
-    nl=nl+1; write(lines(nl), lmt) '  %write_csr_wake                 = ', csr_param%write_csr_wake
-    nl=nl+1; write(lines(nl), amt) '  %wake_output_file               = ', quote(csr_param%wake_output_file)
+    nl=nl+1; lines(nl) = 'space_charge_com components (set by "set space_charge_com ..."):'
+    nl=nl+1; write(lines(nl), rmt) '  %ds_track_step                  = ', space_charge_com%ds_track_step
+    nl=nl+1; write(lines(nl), rmt) '  %dt_track_step                  = ', space_charge_com%dt_track_step
+    nl=nl+1; write(lines(nl), rmt) '  %cathode_strength_cutoff        = ', space_charge_com%cathode_strength_cutoff
+    nl=nl+1; write(lines(nl), rmt) '  %rel_tol_tracking               = ', space_charge_com%rel_tol_tracking
+    nl=nl+1; write(lines(nl), rmt) '  %abs_tol_tracking               = ', space_charge_com%abs_tol_tracking
+    nl=nl+1; write(lines(nl), rmt) '  %beam_chamber_height            = ', space_charge_com%beam_chamber_height
+    nl=nl+1; write(lines(nl), rmt) '  %sigma_cutoff                   = ', space_charge_com%sigma_cutoff
+    nl=nl+1; write(lines(nl), imt) '  %space_charge_mesh_size         = ', space_charge_com%space_charge_mesh_size
+    nl=nl+1; write(lines(nl), imt) '  %csr3d_mesh_size                = ', space_charge_com%csr3d_mesh_size
+    nl=nl+1; write(lines(nl), imt) '  %n_bin                          = ', space_charge_com%n_bin
+    nl=nl+1; write(lines(nl), imt) '  %particle_bin_span              = ', space_charge_com%particle_bin_span
+    nl=nl+1; write(lines(nl), imt) '  %n_shield_images                = ', space_charge_com%n_shield_images
+    nl=nl+1; write(lines(nl), imt) '  %sc_min_in_bin                  = ', space_charge_com%sc_min_in_bin
+    nl=nl+1; write(lines(nl), lmt) '  %lsc_kick_transverse_dependence = ', space_charge_com%lsc_kick_transverse_dependence
+    nl=nl+1; write(lines(nl), amt) '  %diagnostic_output_file         = ', quote(space_charge_com%diagnostic_output_file)
 
     if (size(lat%branch) > 1) then
       nl=nl+1; lines(nl) = ''
@@ -422,8 +501,7 @@ case ('beam')
         if (bb%ix_track_start == not_set$) then
           nl=nl+1; write (lines(nl), '(i5, 6x, a)') i, '.... No Tracking Done ...'
         else
-          nl=nl+1; write (lines(nl), '(i5, 4x, 4a, t48, 4a)') i, trim(branch%ele(bb%ix_track_start)%name), ' (', int_str(bb%ix_track_start), ')', &
-                                                   trim(branch%ele(bb%ix_track_end)%name), ' (', int_str(bb%ix_track_end), ')'
+          nl=nl+1; write (lines(nl), '(i5, 4x, a, t48, a)') i, trim(bb%track_start), trim(bb%track_end)
         endif
       enddo
     endif
@@ -432,19 +510,29 @@ case ('beam')
   ! have element index
 
   else
-    call tao_pick_universe (word1, word1, picked_uni, err, ix_u)
-    if (err) return
-    u => s%u(ix_u)
-    call tao_locate_elements (word1, ix_u, eles, err)
-    if (err .or. size(eles) == 0) return
-    ele => eles(1)%ele
-    ix_ele = ele%ix_ele
-    ix_branch = ele%ix_branch
-    n = s%global%bunch_to_plot
+    if (what_to_show == '-comb_index') then
+      if (.not. allocated(tao_branch%bunch_params_comb)) then
+        nl=nl+1; lines(nl) = 'Beam parameter comb not calculated (check comb_ds_step)' 
+        return
+      endif
 
-    bunch_p => tao_branch%bunch_params(ix_ele)
+      n = ubound(tao_branch%bunch_params_comb, 1)
+      if (ix_s2 < 0 .or. ix_s2 > n) then
+        nl=nl+1; lines(nl) = 'Comb index out of range: [0, ' // int_str(n) // ']'
+        return
+      endif
+      bunch_p => tao_branch%bunch_params_comb(ix_s2)
+      nl=nl+1; lines(nl) = 'Bunch parameters at comb index: ' // int_str(ix_s2)
+
+    else
+      bunch_p => tao_branch%bunch_params(ele%ix_ele)
+      nl=nl+1; lines(nl) = 'Bunch parameters at: ' // trim(ele%name) // ' ' //  ele_loc_name(ele, .false., '()')
+      found = (allocated(u%model_branch(ele%ix_branch)%ele(ele%ix_ele)%beam%bunch))
+    endif
+
     n_live = bunch_p%n_particle_live
     n_tot = bunch_p%n_particle_tot
+    n = s%global%bunch_to_plot
 
     if (n_tot == 0) then
       nl=nl+1; lines(nl) = 'Beam not tracked through this element!'
@@ -459,9 +547,9 @@ case ('beam')
     endif
 
 
-    nl=nl+1; lines(nl) = 'Bunch parameters at: ' // trim(ele%name) // ' ' //  ele_loc_name(ele, .false., '()')
+
     nl=nl+1; write(lines(nl), imt)  '  Parameters for bunch:       ', n
-    nl=nl+1; write(lines(nl), rmt)  '  S-position:                 ', ele%s
+    nl=nl+1; write(lines(nl), rmt)  '  S-position:                 ', bunch_p%s
     nl=nl+1; write(lines(nl), imt)  '  In branch:                  ', ix_branch
     nl=nl+1; write(lines(nl), imt)  '  Particles surviving:        ', n_live
     nl=nl+1; write(lines(nl), imt)  '  Particles lost:             ', n_tot - n_live
@@ -476,7 +564,7 @@ case ('beam')
     nl=nl+1; write(lines(nl), rmt) '  RMS:     ', &
                       sqrt(bunch_p%sigma(1,1)), sqrt(bunch_p%sigma(2,2)), sqrt(bunch_p%sigma(3,3)), &
                       sqrt(bunch_p%sigma(4,4)), sqrt(bunch_p%sigma(5,5)), sqrt(bunch_p%sigma(6,6))
-    if (u%model%lat%branch(ele%ix_branch)%param%particle /= photon$) then
+    if (u%model%lat%branch(ix_branch)%param%particle /= photon$) then
       nl=nl+1; lines(nl) = ''
       nl=nl+1; write(lines(nl), rmt) '               norm_emitt            emit            beta           alpha'
       nl=nl+1; write(lines(nl), rmt) '  a:       ', bunch_p%a%norm_emit, bunch_p%a%emit, bunch_p%a%beta, bunch_p%a%alpha
@@ -496,13 +584,13 @@ case ('beam')
       endif
     endif
 
-    beam => u%model_branch(ele%ix_branch)%ele(ix_ele)%beam
-    nl=nl+1; lines(nl) = ''
-    if (allocated(beam%bunch)) then
-      bunch => beam%bunch(n)
-      nl=nl+1; lines(nl) = 'Note: Individual particle positions are saved at this element.'
-    else
-      nl=nl+1; lines(nl) = 'Note: Individual particle positions are not saved at this element.'
+    if (what_to_show == '') then
+      nl=nl+1; lines(nl) = ''
+      if (found) then
+        nl=nl+1; lines(nl) = 'Note: Individual particle positions are saved at this element.'
+      else
+        nl=nl+1; lines(nl) = 'Note: Individual particle positions are not saved at this element.'
+      endif
     endif
   
   endif
@@ -534,15 +622,14 @@ case ('branch')
     end select
   enddo
 
-
   lat => u%model%lat
 
   if (size(s%u) > 1) then
     nl=nl+1; write(lines(nl), '(a, i0)') 'For the lattice of universe: ', ix_u
   endif
 
-  nl=nl+1; lines(nl) = '                          N_ele  N_ele                  Default                       Live'  
-  nl=nl+1; lines(nl) = '  Branch                  Track    Max   Ref_Particle   Tracking_Species    Geometry  Branch  From_Fork'
+  nl=nl+1; lines(nl) = '                          N_ele  N_ele   Reference      Default_                      Live'  
+  nl=nl+1; lines(nl) = '  Branch                  Track    Max   Particle       Tracking_Species    Geometry  Branch  From_Fork'
 
 
   fmt = '((i3, 2a), t26, i6, i7, t42, a, t57, a, t77, a, t87, l2, 6x, a)'
@@ -613,6 +700,103 @@ case ('building_wall')
       endif
     enddo
   enddo
+
+!----------------------------------------------------------------------
+! chromaticity
+
+case ('chromaticity')
+
+  what_to_show = ''
+
+  do 
+    call tao_next_switch (what2, [character(16):: '-universe', '-taylor'], .false., switch, err, ix_s2);  if (err) return
+    if (switch == '') exit
+
+    select case (switch)
+
+    case ('-universe')
+      read (what2(1:ix_s2), *, iostat = ios) ix
+      u => tao_pointer_to_universe(ix)
+      if (ix_s2 == 0 .or. ios /= 0 .or. .not. associated(u)) then
+        nl=1; lines(1) = 'CANNOT READ OR OUT-OF RANGE "-universe" ARGUMENT'
+        return
+      endif
+      call string_trim(what2(ix_s2+1:), what2, ix_s2)
+
+    case ('-taylor')
+      what_to_show = switch
+
+    case default
+      call out_io (s_error$, r_name, 'EXTRA STUFF ON LINE: ' // what2)
+      return
+
+    end select
+  enddo
+
+  !
+
+  if (branch%param%geometry /= closed$) then
+    nl=1;    lines(1) = 'BRANCH GEOMETRY NOT CLOSED'
+    nl=nl+1; lines(2) = 'USE THE "set branch ' // int_str(branch%ix_branch) // ' geometry = closed" TO CHANGE THIS.'
+    return
+  endif
+
+  tao_lat => tao_pointer_to_tao_lat (u, model$)
+  if (.not. u%calc%one_turn_map) call tao_ptc_normal_form (.true., tao_lat, ix_branch, rf_on = no$)
+
+  bmad_nf => tao_branch%bmad_normal_form
+  ptc_nf  => tao_branch%ptc_normal_form
+
+  nl=nl+1; lines(nl) = '  N     chrom_ptc.a.N     chrom_ptc.b.N   spin_tune_ptc.N'
+
+  do i = 0, ptc_private%taylor_order_ptc-1
+    expo = [0, 0, 0, 0, 0, i]
+    z1 =  real(ptc_nf%phase(1) .sub. expo)
+    z2 =  real(ptc_nf%phase(2) .sub. expo)
+    s0 = real(ptc_nf%spin_tune .sub. expo)
+    if (i == 0) then
+      nl=nl+1; write (lines(nl), '(i3, 3es18.7, a)') i, z1, z2, s0, '  ! 0th order are the tunes'
+    else
+      nl=nl+1; write (lines(nl), '(i3, 3es18.7)') i, z1, z2, s0
+    endif
+  enddo
+
+  nl=nl+1; lines(nl) = ''
+  nl=nl+1; lines(nl) = '  N   slip_factor_ptc.N   momentum_compaction_ptc.N'
+
+  do i = 1, ptc_private%taylor_order_ptc
+    expo = [0, 0, 0, 0, 0, i]
+    z1 = -real(ptc_nf%phase(3) .sub. expo) / branch%param%total_length
+    z2 =  real(ptc_nf%path_length .sub. expo) / branch%param%total_length
+    nl=nl+1; write (lines(nl), '(i3, 2x, 2es18.7)') i, z1, z2
+  enddo
+
+  !
+
+  if (what_to_show == '-taylor') then
+    call alloc(ptc_ctaylor)
+
+    do i = 1, 4
+      if (i == 4) then
+        ptc_ctaylor = ptc_nf%spin_tune * ci_phasor() * ptc_nf%normal_form%atot**(-1)
+      else
+        ptc_ctaylor = ptc_nf%phase(i) * ci_phasor() * ptc_nf%normal_form%atot**(-1)
+      endif
+      bmad_ctaylor = ptc_ctaylor
+      nl=nl+1; lines(nl) = ''
+      nl=nl+1; lines(nl) = 'Taylor series: ' // trim(mode(i)) // ' tune'
+      call type_complex_taylors ([bmad_ctaylor], lines = alloc_lines, n_lines = n, out_type = 'NONE')
+      if (size(lines) < nl+n+100) call re_allocate (lines, nl+n+100, .false.)
+      lines(nl+1:nl+n) = alloc_lines(1:n)
+      nl = nl + n
+
+      if (i == 4 .and. .not. associated(bmad_ctaylor%term) .and. .not. bmad_com%spin_tracking_on) then
+        nl=nl+1; lines(nl) = 'Spin tracking is turned on with: "set bmad_com spin_tracking_on = T".'
+      endif
+    enddo
+
+    call kill(ptc_ctaylor)
+  endif
 
 !----------------------------------------------------------------------
 ! constraints
@@ -925,7 +1109,6 @@ case ('curve')
 
 case ('data')
 
-
   ! If just "show data" then show all names
 
   call tao_pick_universe (word1, line1, picked_uni, err)
@@ -1006,12 +1189,8 @@ case ('data')
     nl=nl+1; write(lines(nl), lmt)    '%useit_plot        = ', d_ptr%useit_plot
     nl=nl+1; write(lines(nl), '(a, l1, 3x, a)')    '%useit_opt         = ', d_ptr%useit_opt, tao_optimization_status(d_ptr)
 
-    if (d_ptr%exists) then
-      u => s%u(d_ptr%d1%d2%ix_universe)
-      call tao_evaluate_a_datum (d_ptr, u, u%model, val, valid_value, why_invalid)
-      if (.not. valid_value) then
-        nl=nl+1; lines(nl) = 'Model value is invalid since: ' // why_invalid
-      endif
+    if (d_ptr%exists .and. d_ptr%why_invalid /= '') then
+      nl=nl+1; lines(nl) = 'Model value is invalid since: ' // d_ptr%why_invalid
     endif
 
     if (d_ptr%d1%d2%name(1:4) == 'ping') call show_ping(d_ptr%d1%d2%ix_universe)
@@ -1261,31 +1440,35 @@ case ('dynamic_aperture')
   nl=nl+1; write(lines(nl), rmt)            'ellipse_scale:          ', da%ellipse_scale
 
   do k = 1, size(da%scan)
-    aperture_scan => da%scan(k) 
+    da_scan => da%scan(k) 
     nl=nl+1; lines(nl) = ''
     nl=nl+1; write(lines(nl), '(a, 99f11.6)') 'pz:        ', da%pz(k)
-    if (.not. allocated(aperture_scan%point)) then
+    if (.not. allocated(da_scan%point)) then
       nl=nl+1; write(lines(nl), '(a)') 'aperture not calculated for this universe'
     else
-      nl=nl+1; write(lines(nl), '(a, 6es14.5)') 'ref_orb%vec:   ', aperture_scan%ref_orb%vec
+      branch => pointer_to_branch(pointer_to_ele(u%design%lat, da_scan%ref_orb%ix_ele, da_scan%ref_orb%ix_branch))
+      nl=nl+1; write(lines(nl), '(a, 6es14.5)') 'ref_orb%vec:   ', da_scan%ref_orb%vec
       nl=nl+1; write(lines(nl), '(2a15)') 'aperture.x', 'aperture.y' 
-      do j = 1, size(aperture_scan%point)
-        nl=nl+1; write(lines(nl), '(2es15.7)')   aperture_scan%point(j)%x, aperture_scan%point(j)%y
+      do j = 1, size(da_scan%point)
+        da_pt => da_scan%point(j)
+        nl=nl+1; write(lines(nl), '(2f11.6, 6x, a, 3x, a)')  da_pt%x, da_pt%y, &
+                          coord_state_name(da_pt%plane), trim(branch%ele(da_pt%ix_ele)%name)
       enddo
     endif
   enddo
 
 !----------------------------------------------------------------------
-! ele
+! element
 
 case ('element')
 
   print_floor = .false.
   print_taylor = .false.
-  print_em_field = .false.
+  print_field = no$
   print_attributes = .false.
   print_data = .false.
   print_wall = .false.
+  print_rad  = .false.
   xfer_mat_print = 0
   print_slaves = .true.
   print_super_slaves = .true.
@@ -1298,7 +1481,7 @@ case ('element')
     call tao_next_switch (what2, [character(16):: '-taylor', '-em_field', &
                 '-all', '-data', '-design', '-no_slaves', '-wall', '-base', &
                 '-field', '-floor_coords', '-xfer_mat', '-ptc', '-everything', &
-                '-attributes', '-no_super_slaves'], .true., switch, err, ix)
+                '-attributes', '-no_super_slaves', '-radiation_kick'], .true., switch, err, ix)
     if (err) return
     select case (switch)
     case ('');                  exit
@@ -1307,21 +1490,23 @@ case ('element')
     case ('-taylor');           print_taylor = .true.
     case ('-design');           lat_type = design$
     case ('-base');             lat_type = base$
-    case ('-em_field');         print_em_field = .true.  ! Old style. Use "-field".
-    case ('-field');            print_em_field = .true.
+    case ('-em_field');         print_field = all$  ! Old style. Use "-field".
+    case ('-field');            print_field = all$
     case ('-attributes');       print_attributes = .true.
     case ('-data');             print_data = .true.
     case ('-no_slaves');        print_slaves = .false.
     case ('-no_super_slaves');  print_super_slaves = .false.
     case ('-wall');             print_wall = .true.
+    case ('-radiation_kick');   print_rad = .true.
     case ('-ptc');              print_ptc = .true.
     case ('-everything', '-all')
       print_attributes = .true.
       xfer_mat_print = 6
       print_taylor = .true.
       print_floor = .true.
-      print_em_field = .true.
+      if (print_field == no$) print_field = short$
       print_wall = .true.
+      print_rad  = .true.
     case default
       if (attrib0 /= '') then
         call out_io (s_error$, r_name, 'EXTRA STUFF ON LINE: ' // switch)
@@ -1411,24 +1596,17 @@ case ('element')
     return
   endif
 
-  if (s%com%common_lattice) then
-    u%calc%lattice = .true.
-    call tao_lattice_calc (ok)
-  endif
-
   if (mass_of(branch%param%particle) /= 0) then
-    gamma2 = (branch%ele(0)%value(e_tot$) / mass_of(branch%param%particle))**2
-    b_emit = tao_branch%modes%b%emittance + tao_branch%modes%b%synch_int(6) / gamma2
-    ele%a%sigma = sqrt(ele%a%beta * tao_branch%modes%a%emittance)
-    ele%b%sigma = sqrt(ele%b%beta * b_emit)
-    ele%x%sigma = sqrt(ele%a%beta * tao_branch%modes%a%emittance + (ele%x%eta * tao_branch%modes%sigE_E)**2)
-    ele%y%sigma = sqrt(ele%b%beta * b_emit                       + (ele%y%eta * tao_branch%modes%sigE_E)**2)
+    ele%a%sigma = sqrt(ele%a%beta * tao_branch%modes_ri%a%emittance)
+    ele%b%sigma = sqrt(ele%b%beta * tao_branch%modes_ri%b%emittance)
+    ele%x%sigma = sqrt(tao_branch%lat_sigma(ele%ix_ele)%mat(1,1))
+    ele%y%sigma = sqrt(tao_branch%lat_sigma(ele%ix_ele)%mat(3,3))
   endif
 
   twiss_out = s%global%phase_units
   if (lat%branch(ele%ix_branch)%param%particle == photon$) twiss_out = 0
-  call type_ele (ele, print_attributes, xfer_mat_print, print_taylor, &
-            twiss_out, .true., .true., print_floor, print_em_field, print_wall, lines = alloc_lines, n_lines = n)
+  call type_ele (ele, print_attributes, xfer_mat_print, print_taylor, twiss_out, .true., .true., &
+            print_floor, print_field, print_wall, print_rad, lines = alloc_lines, n_lines = n)
   if (size(s%u) > 1) alloc_lines(1) = trim(alloc_lines(1)) // ',   Universe: ' // int_str(ix_u)
 
   if (size(lines) < nl+n+100) call re_allocate (lines, nl+n+100, .false.)
@@ -1446,9 +1624,16 @@ case ('element')
       fmt  = '(2x, a, 2f15.8, f15.6, f11.6, 7x, a, f11.3)'
       fmt2 = '(2x, a, 2f15.8, a, es16.8)'
       nl=nl+1; lines(nl) = '         Position[mm]            V/C      Intensity      Phase  '
-      nl=nl+1; write(lines(nl), fmt)  'X:  ', orb%vec(1:2), orb%field(1)**2, orb%phase(1), 'E: ', orb%p0c
-      nl=nl+1; write(lines(nl), fmt)  'Y:  ', orb%vec(3:4), orb%field(2)**2, orb%phase(2), 'dE:', orb%p0c - ele%value(p0c$)
-      nl=nl+1; write(lines(nl), fmt2) 'Z:  ', orb%vec(5:6)
+      nl=nl+1; write(lines(nl), fmt)  'X:  ', 1000*orb%vec(1), orb%vec(2), orb%field(1)**2, orb%phase(1), 'E: ', orb%p0c
+      nl=nl+1; write(lines(nl), fmt)  'Y:  ', 1000*orb%vec(3), orb%vec(4), orb%field(2)**2, orb%phase(2), 'dE:', orb%p0c - ele%value(p0c$)
+      nl=nl+1; write(lines(nl), fmt2) 'Z:  ', 1000*orb%vec(5), orb%vec(6)
+
+      if (associated(ele%photon)) then
+        call to_surface_coords(orb, ele, orb2)
+        nl=nl+1; lines(nl) = ''
+        nl=nl+1; write(lines(nl), '(2x, a, 3f15.8)') 'Surface (x,y,z) [mm]:', orb2%vec(1:5:2)
+      endif
+
     else
       z = (ele%ref_time - orb%t) * orb%beta * c_light
       dt = orb%t - ele%ref_time
@@ -1494,6 +1679,139 @@ case ('element')
     do i = 2, size(eles)
       nl=nl+1; write(lines(nl), '(2a)') &
                 'NOTE: There is another element with the same name at: ', trim(ele_loc_name(eles(i)%ele))
+    enddo
+  endif
+
+!----------------------------------------------------------------------
+! field
+
+case ('emittance')
+
+  ele_name = ''
+  what_to_show = ''
+
+  do 
+    call tao_next_switch (what2, [character(16):: '-universe', '-element', '-xmatrix', '-sigma_matrix'], &
+                                                                     .true., switch, err, ix_s2)
+    if (err) return
+    if (switch == '') exit
+
+    select case (switch)
+
+    case ('-universe')
+      read (what2(1:ix_s2), *, iostat = ios) ix
+      u => tao_pointer_to_universe(ix)
+      if (ix_s2 == 0 .or. ios /= 0 .or. .not. associated(u)) then
+        nl=1; lines(1) = 'CANNOT READ OR OUT-OF RANGE "-universe" ARGUMENT'
+        return
+      endif
+      call string_trim(what2(ix_s2+1:), what2, ix_s2)
+
+    case ('-element')
+      ele_name = what2(:ix_s2)
+      call string_trim (what2(ix_s2+1:), what2, ix_word)
+
+    case ('-xmatrix', '-sigma_matrix')
+      what_to_show = switch
+
+    case default
+      call out_io (s_error$, r_name, 'EXTRA STUFF ON LINE: ' // attrib0)
+      return
+    end select
+
+  enddo
+
+  if (ele_name == '') then
+    ele => u%model%lat%branch(s%global%default_branch)%ele(0)
+  else
+    call tao_locate_elements (ele_name, u%ix_uni, eles, err)
+    if (err) return
+    ele => eles(1)%ele
+  endif
+
+  !
+
+  if (what_to_show == '-xmatrix') then
+    if (.not. associated(ele%rad_int_cache)) then
+      nl=nl+1; lines(nl) = 'No radiation matrices associated with element.'
+      return
+    endif
+
+    ri => ele%rad_int_cache
+
+    nl=nl+1; write (lines(nl), '(10x, 30x, a, 64x, a)') 'Upstream half', 'Downstream half'
+
+    nl=nl+1; lines(nl) = ''
+    nl=nl+1; write (lines(nl), '(a10, 6es12.4, 4x, 6es12.4)') 'Ref Orb:  ', ri%rm0%ref_orb, ri%rm1%ref_orb
+    nl=nl+1; write (lines(nl), '(a10, 6es12.4, 4x, 6es12.4)') 'Damp Vec: ', ri%rm0%damp_vec, ri%rm1%damp_vec
+
+
+    nl=nl+1; lines(nl) = ''
+    nl=nl+1; write (lines(nl), '(a10, 6es12.4, 4x, 6es12.4)') 'Damp Mat: ', ri%rm0%damp_mat(1,:), ri%rm1%damp_mat(1,:)
+    do i = 2, 6
+      nl=nl+1; write (lines(nl), '(10x, 6es12.4, 4x, 6es12.4)') ri%rm0%damp_mat(i,:), ri%rm1%damp_mat(i,:)
+    enddo
+
+    nl=nl+1; lines(nl) = ''
+    nl=nl+1; write (lines(nl), '(a10, 6es12.4, 4x, 6es12.4)') 'Stoc Mat: ', ri%rm0%stoc_mat(1,:), ri%rm1%stoc_mat(1,:)
+    do i = 2, 6
+      nl=nl+1; write (lines(nl), '(10x, 6es12.4, 4x, 6es12.4)') ri%rm0%stoc_mat(i,:), ri%rm1%stoc_mat(i,:)
+    enddo
+
+    return
+  endif
+
+  !
+
+  tao_branch => u%model%tao_branch(ele%ix_branch)
+  mode_m => tao_branch%modes_ri
+
+  u%model%high_e_lat = u%model%lat
+  ele2 => u%model%high_e_lat%branch(ele%ix_branch)%ele(ele%ix_ele)
+  call emit_6d (ele2, .false., mode_6d_no_vert, sig0_mat)
+  call emit_6d (ele2, .true., mode_6d, sig0_mat)
+  call radiation_integrals (u%model%lat, tao_branch%orbit, tao_branch%modes_ri, tao_branch%ix_rad_int_cache, ele%ix_branch)
+
+  if (.not. associated(branch%ptc%m_t_layout)) then
+    call out_io (s_info$, r_name, 'Note: Creating PTC layout (equivalent to "ptc init").')
+    call lat_to_ptc_layout (lat)
+  endif
+
+  r = ptc_com%vertical_kick
+  ptc_com%vertical_kick = 0
+  call ptc_emit_calc (branch%ele(ele%ix_ele), mode_ptc_no_vert, sig_mat, orb)
+  ptc_com%vertical_kick = 1
+  call ptc_emit_calc (branch%ele(ele%ix_ele), mode_ptc, sig_mat, orb)
+  ptc_com%vertical_kick = r
+
+  nl=nl+1; lines(nl) = '      |       Photon Opening Angle Included       |      Photon Opening Angle Ignored         |'
+  nl=nl+1; lines(nl) = ' Mode |   PTC_Emit    Bmad_6D_Emit   Rad_Int_Emit | PTC_Emit      Bmad_6D_Emit   Rad_Int_Emit |'
+  nl=nl+1; write(lines(nl), '(1x, a, 2x, 6es15.7)') 'A', mode_ptc%a%emittance, mode_6d%a%emittance, mode_m%a%emittance, &
+                                             mode_ptc_no_vert%a%emittance, mode_6d_no_vert%a%emittance_no_vert, mode_m%a%emittance_no_vert
+  nl=nl+1; write(lines(nl), '(1x, a, 2x, 6es15.7)') 'B', mode_ptc%b%emittance, mode_6d%b%emittance, mode_m%b%emittance, &
+                                             mode_ptc_no_vert%b%emittance, mode_6d_no_vert%b%emittance_no_vert, mode_m%b%emittance_no_vert
+  nl=nl+1; write(lines(nl), '(1x, a, 2x, 6es15.7)') 'C', mode_ptc%z%emittance, mode_6d%z%emittance, mode_m%z%emittance, &
+                                             mode_ptc_no_vert%z%emittance, mode_6d_no_vert%z%emittance_no_vert, mode_m%z%emittance
+
+  nl=nl+1; lines(nl) = ''
+  nl=nl+1; write(lines(nl), '(a, 3es12.4)') 'J_damp:    ', mode_6d%a%j_damp, mode_6d%b%j_damp, mode_6d%z%j_damp
+  nl=nl+1; write(lines(nl), '(a, 3es12.4)') 'Alpha_damp:', mode_6d%a%alpha_damp, mode_6d%b%alpha_damp, mode_6d%z%alpha_damp
+  nl=nl+1; write(lines(nl), '(a, 3es12.4)') 'SigE/E:    ', mode_6d%sige_e
+  nl=nl+1; write(lines(nl), '(a, 3es12.4)') 'Sig_z:     ', mode_6d%sig_z
+  nl=nl+1; write(lines(nl), '(a, 3es12.4)') 'Alpha_p:   ', momentum_compaction(branch)
+
+
+  if (what_to_show == '-sigma_matrix') then
+    nl=nl+1; lines(nl) = ''
+    nl=nl+1; write (lines(nl), '(a)') 'PTC Sigma Mat (w/vert angle):'
+    do i = 1, 6
+      nl=nl+1; write (lines(nl), '(5x, 6es12.4, 4x, 6es12.4)') sig_mat(i,:)
+    enddo
+
+    nl=nl+1; lines(nl) = ''
+    nl=nl+1; write (lines(nl), '(a)') 'Bmad Sigma Mat (w/vert angle):'
+    do i = 1, 6
+      nl=nl+1; write (lines(nl), '(5x, 6es12.4, 4x, 6es12.4)') sig0_mat(i,:)
     enddo
   endif
 
@@ -1566,7 +1884,7 @@ case ('field')
           return
         endif
 
-        if (ele%branch%lat%absolute_time_tracking) then
+        if (bmad_com%absolute_time_tracking) then
           orb%t = value(1)
         else
           orb%vec(5) = value(1)
@@ -1645,25 +1963,25 @@ case ('field')
 
 case ('global')
 
-  what_to_print = 'global'
+  what_to_show = 'global'
 
   do
-    call tao_next_switch (what2, [character(16):: '-optimization', '-bmad_com', &
-                                 '-csr_param', '-ran_state', '-ptc'], .true., switch, err, ix)
+    call tao_next_switch (what2, [character(20):: '-optimization', '-bmad_com', &
+                    '-csr_param', '-space_charge_com', '-ran_state', '-ptc_com', '-internal'], .true., switch, err, ix)
     if (err) return
 
     select case (switch)
     case ('')
       exit
-    case ('-optimization', '-bmad_com', '-csr_param', '-ran_state', '-ptc')
-      what_to_print = switch
+    case ('-optimization', '-bmad_com', '-csr_param', '-space_charge_com', '-ran_state', '-ptc_com', '-internal')
+      what_to_show = switch
     case default
       call out_io (s_error$, r_name, 'EXTRA STUFF ON LINE: ' // switch)
       return
     end select
   enddo
 
-  select case (what_to_print)
+  select case (what_to_show)
   case ('global')
     nl=nl+1; lines(nl) = 'Tao Global parameters [Note: To print optimizer globals use: "show optimizer"]'
     nl=nl+1; write(lines(nl), lmt) '  %beam_timer_on                 = ', s%global%beam_timer_on
@@ -1673,6 +1991,7 @@ case ('global')
     nl=nl+1; write(lines(nl), rmt) '  %delta_e_chrom                 = ', s%global%delta_e_chrom
     nl=nl+1; write(lines(nl), lmt) '  %disable_smooth_line_calc      = ', s%global%disable_smooth_line_calc
     nl=nl+1; write(lines(nl), lmt) '  %draw_curve_off_scale_warn     = ', s%global%draw_curve_off_scale_warn
+    nl=nl+1; write(lines(nl), lmt) '  %init_lat_sigma_from_beam      = ', s%global%init_lat_sigma_from_beam
     nl=nl+1; write(lines(nl), lmt) '  %label_lattice_elements        = ', s%global%label_lattice_elements
     nl=nl+1; write(lines(nl), lmt) '  %label_keys                    = ', s%global%label_keys
     nl=nl+1; write(lines(nl), lmt) '  %lattice_calc_on               = ', s%global%lattice_calc_on
@@ -1707,7 +2026,6 @@ case ('global')
     nl=nl+1; write(lines(nl), imt) '  Universe index range:        = ', lbound(s%u, 1), ubound(s%u, 1)
     nl=nl+1; write(lines(nl), amt) '  default_universe:            = ', int_str(s%global%default_universe), '  ! Set using: "set default universe = ..."'
     nl=nl+1; write(lines(nl), amt) '  default_branch:              = ', int_str(s%global%default_branch),   '  ! Set using: "set default branch = ..."'
-!!!!    nl=nl+1; write(lines(nl), lmt) '  common_lattice               = ', s%com%common_lattice
     nl=nl+1; write(lines(nl), imt) '  Number paused command files  = ', count(s%com%cmd_file%paused)
     nl=nl+1; write(lines(nl), amt) '  unique_name_suffix           = ', quote(s%init%unique_name_suffix)
     nl=nl+1; write(lines(nl), lmt) '  Combine_consecutive_elements_of_like_name = ', &
@@ -1716,7 +2034,6 @@ case ('global')
     nl=nl+1; lines(nl) = ''
     nl=nl+1; lines(nl) = 'Tao command line startup arguments:'
     call write_this_arg (nl, lines, '  -beam_file', s%init%beam_file_arg)
-    call write_this_arg (nl, lines, '  -beam_track_data_file', s%init%beam_track_data_file_arg)
     call write_this_arg (nl, lines, '  -beam_init_position_file', s%init%beam_init_position_file_arg)
     call write_this_arg (nl, lines, '  -command', s%init%command_arg)
     call write_this_arg (nl, lines, '  -building_wall_file', s%init%building_wall_file_arg)
@@ -1761,7 +2078,7 @@ case ('global')
 
   case ('-bmad_com')
     nl=nl+1; lines(nl) = ''
-    nl=nl+1; lines(nl) = 'Bmad_com Parameters:'
+    nl=nl+1; lines(nl) = 'Bmad_com Parameters (use "set bmad_com" to change):'
     nl=nl+1; write(lines(nl), rmt) '  %max_aperture_limit              = ', bmad_com%max_aperture_limit
     nl=nl+1; write(lines(nl), rmt) '  %d_orb                           = ', bmad_com%d_orb
     nl=nl+1; write(lines(nl), rmt) '  %default_ds_step                 = ', bmad_com%default_ds_step
@@ -1776,28 +2093,30 @@ case ('global')
     nl=nl+1; write(lines(nl), rmt) '  %init_ds_adaptive_tracking       = ', bmad_com%init_ds_adaptive_tracking
     nl=nl+1; write(lines(nl), rmt) '  %min_ds_adaptive_tracking        = ', bmad_com%min_ds_adaptive_tracking
     nl=nl+1; write(lines(nl), rmt) '  %electric_dipole_moment          = ', bmad_com%electric_dipole_moment
-    nl=nl+1; write(lines(nl), rmt) '  %ptc_cut_factor                  = ', bmad_com%ptc_cut_factor
     nl=nl+1; write(lines(nl), rmt) '  %sad_eps_scale                   = ', bmad_com%sad_eps_scale
     nl=nl+1; write(lines(nl), rmt) '  %sad_amp_max                     = ', bmad_com%sad_amp_max
 
     nl=nl+1; write(lines(nl), imt) '  %sad_n_div_max                   = ', bmad_com%sad_n_div_max
-    nl=nl+1; write(lines(nl), iimt)'  %taylor_order                    = ', bmad_com%taylor_order, ' ! Input order'
-    nl=nl+1; write(lines(nl), iimt)'   [Actual taylor_order in PTC:    = ', ptc_com%taylor_order_ptc, ']'
+    nl=nl+1; write(lines(nl), iimt)'  %taylor_order                    = ', bmad_com%taylor_order, ' ! Input order. 0 => Use default'
+    nl=nl+1; write(lines(nl), imt)'     Actual Taylor order in PTC: ', ptc_private%taylor_order_ptc
+    if (bmad_com%taylor_order /= 0 .and. bmad_com%taylor_order /= ptc_private%taylor_order_ptc) then
+    endif
     nl=nl+1; write(lines(nl), imt) '  %default_integ_order             = ', bmad_com%default_integ_order
 
     nl=nl+1; write(lines(nl), lmt) '  %rf_phase_below_transition_ref   = ', bmad_com%rf_phase_below_transition_ref
     nl=nl+1; write(lines(nl), lmt) '  %sr_wakes_on                     = ', bmad_com%sr_wakes_on
     nl=nl+1; write(lines(nl), lmt) '  %lr_wakes_on                     = ', bmad_com%lr_wakes_on
-    nl=nl+1; write(lines(nl), lmt) '  %ptc_use_orientation_patches     = ', bmad_com%ptc_use_orientation_patches
     nl=nl+1; write(lines(nl), lmt) '  %auto_bookkeeper                 = ', bmad_com%auto_bookkeeper
+    nl=nl+1; write(lines(nl), lmt) '  %high_energy_space_charge_on     = ', bmad_com%high_energy_space_charge_on
     nl=nl+1; write(lines(nl), lmt) '  %csr_and_space_charge_on         = ', bmad_com%csr_and_space_charge_on
     nl=nl+1; write(lines(nl), lmt) '  %spin_tracking_on                = ', bmad_com%spin_tracking_on
     nl=nl+1; write(lines(nl), lmt) '  %spin_sokolov_ternov_flipping_on = ', bmad_com%spin_sokolov_ternov_flipping_on
     nl=nl+1; write(lines(nl), lmt) '  %radiation_damping_on            = ', bmad_com%radiation_damping_on
-    nl=nl+1; write(lines(nl), lmt) '  %radiation_zero_average      = ', bmad_com%radiation_zero_average
+    nl=nl+1; write(lines(nl), lmt) '  %radiation_zero_average          = ', bmad_com%radiation_zero_average
     nl=nl+1; write(lines(nl), lmt) '  %radiation_fluctuations_on       = ', bmad_com%radiation_fluctuations_on
     nl=nl+1; write(lines(nl), lmt) '  %conserve_taylor_maps            = ', bmad_com%conserve_taylor_maps
-    nl=nl+1; write(lines(nl), lmt) '  %absolute_time_tracking_default  = ', bmad_com%absolute_time_tracking_default
+    nl=nl+1; write(lines(nl), lmt) '  %absolute_time_tracking          = ', bmad_com%absolute_time_tracking
+    nl=nl+1; write(lines(nl), lmt) '  %absolute_time_ref_shift         = ', bmad_com%absolute_time_ref_shift
     nl=nl+1; write(lines(nl), lmt) '  %convert_to_kinetic_momentum     = ', bmad_com%convert_to_kinetic_momentum
     nl=nl+1; write(lines(nl), lmt) '  %aperture_limit_on               = ', bmad_com%aperture_limit_on
 
@@ -1811,30 +2130,54 @@ case ('global')
     endif
 
   case ('-csr_param')
-    nl=nl+1; lines(nl) = ''
-    nl=nl+1; lines(nl) = 'CSR_param Parameters (set by "set csr_param ..."):'
-    nl=nl+1; write(lines(nl), rmt) '  %ds_track_step                  = ', csr_param%ds_track_step
-    nl=nl+1; write(lines(nl), rmt) '  %beam_chamber_height            = ', csr_param%beam_chamber_height
-    nl=nl+1; write(lines(nl), rmt) '  %sigma_cutoff                   = ', csr_param%sigma_cutoff
-    nl=nl+1; write(lines(nl), imt) '  %n_bin                          = ', csr_param%n_bin
-    nl=nl+1; write(lines(nl), imt) '  %particle_bin_span              = ', csr_param%particle_bin_span
-    nl=nl+1; write(lines(nl), imt) '  %n_shield_images                = ', csr_param%n_shield_images
-    nl=nl+1; write(lines(nl), imt) '  %sc_min_in_bin                  = ', csr_param%sc_min_in_bin
-    nl=nl+1; write(lines(nl), imt) '  %space_charge_mesh_size         = ', csr_param%space_charge_mesh_size
-    nl=nl+1; write(lines(nl), imt) '  %csr3d_mesh_size                = ', csr_param%csr3d_mesh_size
-    nl=nl+1; write(lines(nl), lmt) '  %print_taylor_warning           = ', csr_param%print_taylor_warning
-    nl=nl+1; write(lines(nl), lmt) '  %lsc_kick_transverse_dependence = ', csr_param%lsc_kick_transverse_dependence
-    nl=nl+1; write(lines(nl), lmt) '  %write_csr_wake                 = ', csr_param%write_csr_wake
-    nl=nl+1; write(lines(nl), amt) '  %wake_output_file               = ', quote(csr_param%wake_output_file)
+    nl=nl+1; lines(nl) = '"-csr_param" is now "-space_charge_com".'
 
-  case ('-ptc')
+  case ('-space_charge_com')
     nl=nl+1; lines(nl) = ''
-    nl=nl+1; lines(nl) = 'PTC_com Parameters:'
-    nl=nl+1; write(lines(nl), imt) '  %taylor_order_ptc      = ', ptc_com%taylor_order_ptc
+    nl=nl+1; lines(nl) = 'space_charge_com Parameters (set by "set space_charge_com ..."):'
+    nl=nl+1; write(lines(nl), rmt) '  %ds_track_step                  = ', space_charge_com%ds_track_step
+    nl=nl+1; write(lines(nl), rmt) '  %dt_track_step                  = ', space_charge_com%dt_track_step
+    nl=nl+1; write(lines(nl), rmt) '  %cathode_strength_cutoff        = ', space_charge_com%cathode_strength_cutoff
+    nl=nl+1; write(lines(nl), rmt) '  %rel_tol_tracking               = ', space_charge_com%rel_tol_tracking
+    nl=nl+1; write(lines(nl), rmt) '  %abs_tol_tracking               = ', space_charge_com%abs_tol_tracking
+    nl=nl+1; write(lines(nl), rmt) '  %beam_chamber_height            = ', space_charge_com%beam_chamber_height
+    nl=nl+1; write(lines(nl), rmt) '  %sigma_cutoff                   = ', space_charge_com%sigma_cutoff
+    nl=nl+1; write(lines(nl), imt) '  %space_charge_mesh_size         = ', space_charge_com%space_charge_mesh_size
+    nl=nl+1; write(lines(nl), imt) '  %csr3d_mesh_size                = ', space_charge_com%csr3d_mesh_size
+    nl=nl+1; write(lines(nl), imt) '  %n_bin                          = ', space_charge_com%n_bin
+    nl=nl+1; write(lines(nl), imt) '  %particle_bin_span              = ', space_charge_com%particle_bin_span
+    nl=nl+1; write(lines(nl), imt) '  %n_shield_images                = ', space_charge_com%n_shield_images
+    nl=nl+1; write(lines(nl), imt) '  %sc_min_in_bin                  = ', space_charge_com%sc_min_in_bin
+    nl=nl+1; write(lines(nl), lmt) '  %lsc_kick_transverse_dependence = ', space_charge_com%lsc_kick_transverse_dependence
+    nl=nl+1; write(lines(nl), amt) '  %diagnostic_output_file         = ', quote(space_charge_com%diagnostic_output_file)
+
+  case ('-ptc_com')
+    nl=nl+1; lines(nl) = ''
+    nl=nl+1; lines(nl) = 'PTC_com Parameters (set using "set ptc_com ..."):'
+    nl=nl+1; write(lines(nl), rmt) '  %vertical_kick         = ', ptc_com%vertical_kick
     nl=nl+1; write(lines(nl), imt) '  %max_fringe_order      = ', ptc_com%max_fringe_order
-    nl=nl+1; write(lines(nl), lmt) '  %old_integrator        = ', ptc_com%old_integrator
+    nl=nl+1; write(lines(nl), imt) '  %old_integrator        = ', ptc_com%old_integrator
     nl=nl+1; write(lines(nl), lmt) '  %exact_model           = ', ptc_com%exact_model
     nl=nl+1; write(lines(nl), lmt) '  %exact_misalign        = ', ptc_com%exact_misalign
+    nl=nl+1; write(lines(nl), lmt) '  %print_info_messages   = ', ptc_com%exact_misalign
+
+  ! Internal parameters are not of general interest.
+  case ('-internal')
+    nl=nl+1; lines(nl) = ''
+    nl=nl+1; write(lines(nl), imt) '  u%calc%srdt_for_data              = ', u%calc%srdt_for_data
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%rad_int_for_data           = ', u%calc%rad_int_for_data
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%rad_int_for_plotting       = ', u%calc%rad_int_for_plotting
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%chrom_for_data             = ', u%calc%chrom_for_data
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%chrom_for_plotting         = ', u%calc%chrom_for_plotting
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%lat_sigma_for_data         = ', u%calc%lat_sigma_for_data
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%lat_sigma_for_plotting     = ', u%calc%lat_sigma_for_plotting
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%dynamic_aperture           = ', u%calc%dynamic_aperture
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%one_turn_map               = ', u%calc%one_turn_map
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%lattice                    = ', u%calc%lattice
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%twiss                      = ', u%calc%twiss
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%track                      = ', u%calc%track
+    nl=nl+1; write(lines(nl), lmt) '  u%calc%spin_matrices              = ', u%calc%spin_matrices
+    nl=nl+1; write(lines(nl), lmt) '  bmad_com%debug                    = ', bmad_com%debug
   end select
 
 !----------------------------------------------------------------------
@@ -2138,32 +2481,41 @@ case ('internal')
 
     ele => eles(1)%ele
     nl=nl+1; lines(nl) = 'For element: (' // trim(ele_loc_name(ele)) // ')  ' // ele%name
-    fmt = '(4x, a14, i6, i8, i10, 4x, a10, a)'
+    fmt = '(2x, a14, i6, i8, i6, 3x, a, t70, a15, a, es12.4, 3x, a)'
 
     if (ele%n_slave + ele%n_slave_field /= 0) then 
-      nl=nl+1; lines(nl) = 'Slaves: Type         %ic  %control  ix_back   Slave'
+      nl=nl+1; lines(nl) = 'Slaves: Type       %ic  %cntrl  back   Slave                         Param          Expression'
       do i = 1, ele%n_slave + ele%n_slave_field
         slave => pointer_to_slave (ele, i, contl, .false., j, i_con, i_ic)
         if (i <= ele%n_slave) then
-          nl=nl+1; write (lines(nl), fmt) &
-                      control_name(ele%lord_status), i_ic, i_con, j, ele_loc_name(slave, .true.), trim(slave%name)
+          nl=nl+1; write (lines(nl), fmt) control_name(ele%lord_status), i_ic, i_con, j, &
+                      trim(slave%name) // ' ' // trim(ele_loc_name(slave, .true., '()')), &
+                      contl%attribute, expression_stack_to_string(contl%stack)
         else
-          nl=nl+1; write (lines(nl), fmt)  &
-                                    'Field_Overlap', i_ic, i_con, j, ele_loc_name(slave, .true.), trim(slave%name)
+          nl=nl+1; write (lines(nl), fmt)  'Field_Overlap', i_ic, i_con, j, &
+                                              ele_loc_name(slave, .true.), slave%name
         endif
       enddo
     endif
 
     if (ele%n_lord + ele%n_lord_field /= 0) then 
-      nl=nl+1; lines(nl) = 'Lords:  Type         %ic  %control  ix_back   Lord'
+      nl=nl+1; lines(nl) = 'Lords:  Type       %ic  %cntrl  back   Lord                          Param          Attrib_Value  Expssn_val  Expression'
       do i = 1, ele%n_lord + ele%n_lord_field
         lord => pointer_to_lord (ele, i, contl, j, .false., i_con, i_ic)
         if (i <= ele%n_lord) then
-          nl=nl+1; write (lines(nl), fmt) &
-                      control_name(lord%lord_status), i_ic, i_con, j, ele_loc_name(lord, .true.), trim(lord%name)
+          call pointer_to_attribute(ele, contl%attribute, .false., a_ptr, err_flag)
+          if (associated(a_ptr%r)) then
+            write (val_str, '(es12.4)') a_ptr%r
+          else
+            val_str = ' ----'
+          endif
+          nl=nl+1; write (lines(nl), fmt) control_name(lord%lord_status), i_ic, i_con, j, &
+                      trim(lord%name) // ' ' // trim(ele_loc_name(lord, .true., '()')), &
+                      contl%attribute, val_str(1:12), contl%value, expression_stack_to_string(contl%stack)
+
         else
           nl=nl+1; write (lines(nl), fmt)  &
-                                     'Field_Overlap', i_ic, i_con, j, ele_loc_name(lord, .true.), trim(lord%name)
+                                     'Field_Overlap', i_ic, i_con, j, ele_loc_name(lord, .true.), lord%name
         endif
       enddo
     endif
@@ -2207,8 +2559,8 @@ case ('lattice')
   ix_branch = s%global%default_branch
   undef_str = '---'
   print_lords = maybe$
-  what_to_print = 'standard'
-  allocate (ix_remove(size(column)))
+  what_to_show = 'standard'
+  allocate (ix_remove(size(col)))
   n_remove = 0
   lat_type = model$
   n_attrib = 0
@@ -2217,7 +2569,8 @@ case ('lattice')
   called_from_python_cmd = .false.
   print_rms = .false.
 
-  column(:) = show_lat_column_struct()
+  column(:) = old_show_lat_column_struct()
+  col(:)    = show_lat_column_struct()
 
   ! get command line switches
 
@@ -2246,7 +2599,7 @@ case ('lattice')
       all_lat = .true. 
 
     case ('-attribute')
-      what_to_print = 'attributes'
+      what_to_show = 'attributes'
       n_attrib = n_attrib + 1
       attrib_list(n_attrib) = what2(1:ix_s2)
       call string_trim(what2(ix_s2+1:), what2, ix_s2)
@@ -2268,7 +2621,7 @@ case ('lattice')
       call string_trim(what2(ix_s2+1:), what2, ix_s2)
 
     case ('-custom')
-      what_to_print = 'custom'
+      what_to_show = 'custom'
       file_name = what2(1:ix_s2)
       call string_trim(what2(ix_s2+1:), what2, ix_s2)
       iu = lunget()
@@ -2277,7 +2630,8 @@ case ('lattice')
         nl=1; lines(1) = 'CANNOT OPEN FILE: ' // file_name
         return
       endif
-      column(:) = show_lat_column_struct()
+      column(:) = old_show_lat_column_struct()
+      col(:)    = show_lat_column_struct()
       read (iu, nml = custom_show_list, iostat = ios)
       close (iu)
       if (ios /= 0) then
@@ -2285,14 +2639,22 @@ case ('lattice')
         return
       endif
 
+      if (column(1)%name /= '') then ! Old style
+        do i = 1, size(column)
+          col(i) = setup_lat_column(column(i)%name, column(i)%format, column(i)%label, &
+                                                       column(i)%remove_line_if_zero, column(i)%scale_factor)
+          col(i)%width = column(i)%width
+        enddo
+      endif
+
     case ('-design')
       lat_type = design$
 
     case ('-energy')
-      what_to_print = 'energy'
+      what_to_show = 'energy'
 
     case ('-floor_coords')
-      what_to_print = 'floor_coords'
+      what_to_show = 'floor_coords'
 
     case ('-lords')
       print_lords = yes$
@@ -2317,10 +2679,10 @@ case ('lattice')
       print_tail_lines = .false.
 
     case ('-orbit')
-      if (what_to_print == 'spin') then
-        what_to_print = 'orbit:spin'
+      if (what_to_show == 'spin') then
+        what_to_show = 'orbit:spin'
       else
-        what_to_print = 'orbit'
+        what_to_show = 'orbit'
       endif
 
     case ('-python')
@@ -2328,18 +2690,20 @@ case ('lattice')
       print_tail_lines = .false.
 
     case ('-radiation_integrals')
-      what_to_print = 'rad_int'
+      what_to_show = 'rad_int'
+      all_lat = .true.  ! Will only print where radiation integrals is non-zero
 
     case ('-rms')
       print_rms = .true.
 
     case ('-sum_radiation_integrals')
-      what_to_print = 'sum_rad_int'
+      what_to_show = 'sum_rad_int'
+      all_lat = .true. ! Will only print where radiation integrals is non-zero
 
     case ('-remove_line_if_zero')
       n_remove = n_remove + 1
       read (what2(1:ix_s2), *, iostat = ios) ix_remove(n_remove)
-      if (ios /= 0 .or. ix_remove(n_remove) < 1 .or. ix_remove(n_remove) > size(column)) then
+      if (ios /= 0 .or. ix_remove(n_remove) < 1 .or. ix_remove(n_remove) > size(col)) then
         nl=1; lines(1) = 'CANNOT READ OR OUT-OF RANGE "-remove_line_if_zero" argument'
         return
       endif
@@ -2349,10 +2713,10 @@ case ('lattice')
       by_s = .true.
 
     case ('-spin')
-      if (what_to_print == 'orbit') then
-        what_to_print = 'orbit:spin'
+      if (what_to_show == 'orbit') then
+        what_to_show = 'orbit:spin'
       else
-        what_to_print = 'spin'
+        what_to_show = 'spin'
       endif
 
     case ('-universe')
@@ -2381,14 +2745,14 @@ case ('lattice')
 
   ! Construct columns if needed.
 
-  select case (what_to_print)
+  select case (what_to_show)
   case ('attributes')
-    column( 1)  = show_lat_column_struct('#',                      'i7',        7, '', .false., 1.0_rp)
-    column( 2)  = show_lat_column_struct('x',                      'x',         2, '', .false., 1.0_rp)
-    column( 3)  = show_lat_column_struct('ele::#[name]',           'a',         0, '', .false., 1.0_rp)
-    column( 4)  = show_lat_column_struct('ele::#[key]',            'a16',      16, '', .false., 1.0_rp)
-    column( 5)  = show_lat_column_struct('ele::#[s]',              'f10.3',    10, '', .false., 1.0_rp)
-    column( 6)  = show_lat_column_struct('ele::#[l]',              'f8.3',      8, '', .false., 1.0_rp)
+    col( 1)  = setup_lat_column('#',             'i7',    '', .false., 1.0_rp)
+    col( 2)  = setup_lat_column('x',             '2x',    '', .false., 1.0_rp)
+    col( 3)  = setup_lat_column('ele::#[name]',  'a0',    '', .false., 1.0_rp)
+    col( 4)  = setup_lat_column('ele::#[key]',   'a16',   '', .false., 1.0_rp)
+    col( 5)  = setup_lat_column('ele::#[s]',     'f10.3', '', .false., 1.0_rp)
+    col( 6)  = setup_lat_column('ele::#[l]',     'f8.3',  '', .false., 1.0_rp)
     i0 = 6
 
     do i = 1, n_attrib
@@ -2399,26 +2763,20 @@ case ('lattice')
       select case (a_type)
       case (is_logical$)
         fmt = 'l12'
-        width = 12
       case (is_real$)
         fmt = 'es12.4'
-        width = 12
       case (is_integer$)
         fmt = 'i12'
-        width = 12
       case (is_switch$)
-        column(i0+i) = show_lat_column_struct('x', 'x', 2, '', .false., 1.0_rp)
+        col(i0+i) = setup_lat_column('x', '2x', '', .false., 1.0_rp)
         i0 = i0 + 1
-        fmt = 'a'
-        width = 20
+        fmt = 'a20'
       case (is_string$)
-        column(i0+i) = show_lat_column_struct('x', 'x', 2, '', .false., 1.0_rp)
+        col(i0+i) = setup_lat_column('x', '2x', '', .false., 1.0_rp)
         i0 = i0 + 1
-        fmt = 'a'
-        width = 20
+        fmt = 'a20'
       case default
         fmt = 'es12.4'
-        width = 12
       end select
 
       ix = index(attrib, '@')
@@ -2426,186 +2784,172 @@ case ('lattice')
         fmt = attrib(ix+1:)
         attrib = attrib(1:ix-1)
         nc = str_first_in_set(fmt, '0123456789')
-        width = 0
-
-        if (nc /= 0) then
-          word1 = fmt(nc:)
-          ix = index(word1, '.')
-          if (ix /= 0) word1 = word1(1:ix-1)
-          if (is_integer(word1)) then
-            read (word1, *) width
-          else
-            call out_io (s_error$, r_name, 'BAD FORTRAN FORMAT.')
-            return
-          endif
-        endif
       endif
 
-      column(i0+i) = show_lat_column_struct(attrib, fmt, width, attrib, .false., 1.0_rp)
+      col(i0+i) = setup_lat_column(attrib, fmt, attrib, .false., 1.0_rp)
     enddo
 
   case ('energy')
-    column( 1)  = show_lat_column_struct('#',                      'i7',        7, '', .false., 1.0_rp)
-    column( 2)  = show_lat_column_struct('x',                      'x',         2, '', .false., 1.0_rp)
-    column( 3)  = show_lat_column_struct('ele::#[name]',           'a',         0, '', .false., 1.0_rp)
-    column( 4)  = show_lat_column_struct('ele::#[key]',            'a17',      17, '', .false., 1.0_rp)
-    column( 5)  = show_lat_column_struct('ele::#[s]',              'f10.3',    10, '', .false., 1.0_rp)
-    column( 6)  = show_lat_column_struct('ele::#[orbit_x]',        'es14.6',   14, '', .false., 1.0_rp)
-    column( 7)  = show_lat_column_struct('ele::#[orbit_y]',        'es14.6',   14, '', .false., 1.0_rp)
-    column( 8)  = show_lat_column_struct('ele::#[orbit_z]',        'es14.6',   14, '', .false., 1.0_rp)
-    column( 9)  = show_lat_column_struct('ele::#[orbit_pz]',       'es14.6',   14, '', .false., 1.0_rp)
-    column(10)  = show_lat_column_struct('ele::#[e_tot]',          'es14.6',   14, '', .false., 1.0_rp)
-    column(11)  = show_lat_column_struct('ele::#[pc]',             'es14.6',   14, '', .false., 1.0_rp)
+    col( 1)  = setup_lat_column('#',                      'i7',       '', .false., 1.0_rp)
+    col( 2)  = setup_lat_column('x',                      '2x',       '', .false., 1.0_rp)
+    col( 3)  = setup_lat_column('ele::#[name]',           'a0',       '', .false., 1.0_rp)
+    col( 4)  = setup_lat_column('ele::#[key]',            'a17',      '', .false., 1.0_rp)
+    col( 5)  = setup_lat_column('ele::#[s]',              'f10.3',    '', .false., 1.0_rp)
+    col( 6)  = setup_lat_column('ele::#[orbit_x]',        'es14.6',   '', .false., 1.0_rp)
+    col( 7)  = setup_lat_column('ele::#[orbit_y]',        'es14.6',   '', .false., 1.0_rp)
+    col( 8)  = setup_lat_column('ele::#[orbit_z]',        'es14.6',   '', .false., 1.0_rp)
+    col( 9)  = setup_lat_column('ele::#[orbit_pz]',       'es14.6',   '', .false., 1.0_rp)
+    col(10)  = setup_lat_column('ele::#[e_tot]',          'es14.6',   '', .false., 1.0_rp)
+    col(11)  = setup_lat_column('ele::#[pc]',             'es14.6',   '', .false., 1.0_rp)
 
   case ('floor_coords')
-    column( 1)  = show_lat_column_struct('#',                      'i7',        7, '', .false., 1.0_rp)
-    column( 2)  = show_lat_column_struct('x',                      'x',         2, '', .false., 1.0_rp)
-    column( 3)  = show_lat_column_struct('ele::#[name]',           'a',         0, '', .false., 1.0_rp)
-    column( 4)  = show_lat_column_struct('ele::#[key]',            'a17',      17, '', .false., 1.0_rp)
-    column( 5)  = show_lat_column_struct('ele::#[s]',              'f12.5',    12, '', .false., 1.0_rp)
-    column( 6)  = show_lat_column_struct('ele::#[l]',              'f10.5',    10, '', .false., 1.0_rp)
-    column( 7)  = show_lat_column_struct('ele::#[x_position]',     'f12.5',    12, 'X',     .false., 1.0_rp)
-    column( 8)  = show_lat_column_struct('ele::#[y_position]',     'f12.5',    12, 'Y',     .false., 1.0_rp)
-    column( 9)  = show_lat_column_struct('ele::#[z_position]',     'f12.5',    12, 'Z',     .false., 1.0_rp)
-    column(10)  = show_lat_column_struct('ele::#[theta_position]', 'f12.5',    12, 'Theta', .false., 1.0_rp)
-    column(11)  = show_lat_column_struct('ele::#[phi_position]',   'f12.5',    12, 'Phi',   .false., 1.0_rp)
-    column(12)  = show_lat_column_struct('ele::#[psi_position]',   'f12.5',    12, 'Psi',   .false., 1.0_rp)
+    col( 1)  = setup_lat_column('#',                      'i7',       '', .false., 1.0_rp)
+    col( 2)  = setup_lat_column('x',                      '2x',       '', .false., 1.0_rp)
+    col( 3)  = setup_lat_column('ele::#[name]',           'a0',       '', .false., 1.0_rp)
+    col( 4)  = setup_lat_column('ele::#[key]',            'a17',      '', .false., 1.0_rp)
+    col( 5)  = setup_lat_column('ele::#[s]',              'f12.5',    '', .false., 1.0_rp)
+    col( 6)  = setup_lat_column('ele::#[l]',              'f10.5',    '', .false., 1.0_rp)
+    col( 7)  = setup_lat_column('ele::#[x_position]',     'f12.5',    'X',     .false., 1.0_rp)
+    col( 8)  = setup_lat_column('ele::#[y_position]',     'f12.5',    'Y',     .false., 1.0_rp)
+    col( 9)  = setup_lat_column('ele::#[z_position]',     'f12.5',    'Z',     .false., 1.0_rp)
+    col(10)  = setup_lat_column('ele::#[theta_position]', 'f12.5',    'Theta', .false., 1.0_rp)
+    col(11)  = setup_lat_column('ele::#[phi_position]',   'f12.5',    'Phi',   .false., 1.0_rp)
+    col(12)  = setup_lat_column('ele::#[psi_position]',   'f12.5',    'Psi',   .false., 1.0_rp)
 
   case ('orbit')
-    column( 1)  = show_lat_column_struct('#',                      'i7',        7, '', .false., 1.0_rp)
-    column( 2)  = show_lat_column_struct('x',                      'x',         2, '', .false., 1.0_rp)
-    column( 3)  = show_lat_column_struct('ele::#[name]',           'a',         0, '', .false., 1.0_rp)
-    column( 4)  = show_lat_column_struct('ele::#[key]',            'a17',      17, '', .false., 1.0_rp)
-    column( 5)  = show_lat_column_struct('ele::#[s]',              'f10.3',    10, '', .false., 1.0_rp)
-    column( 6)  = show_lat_column_struct('ele::#[orbit_x]',        'es14.6',   14, '', .false., 1.0_rp)
-    column( 7)  = show_lat_column_struct('ele::#[orbit_px]',       'es14.6',   14, '', .false., 1.0_rp)
-    column( 8)  = show_lat_column_struct('ele::#[orbit_y]',        'es14.6',   14, '', .false., 1.0_rp)
-    column( 9)  = show_lat_column_struct('ele::#[orbit_py]',       'es14.6',   14, '', .false., 1.0_rp)
-    column(10)  = show_lat_column_struct('ele::#[orbit_z]',        'es14.6',   14, '', .false., 1.0_rp)
-    column(11)  = show_lat_column_struct('ele::#[orbit_pz]',       'es14.6',   14, '', .false., 1.0_rp)
+    col( 1)  = setup_lat_column('#',                      'i7',       '', .false., 1.0_rp)
+    col( 2)  = setup_lat_column('x',                      '2x',       '', .false., 1.0_rp)
+    col( 3)  = setup_lat_column('ele::#[name]',           'a0',       '', .false., 1.0_rp)
+    col( 4)  = setup_lat_column('ele::#[key]',            'a17',      '', .false., 1.0_rp)
+    col( 5)  = setup_lat_column('ele::#[s]',              'f10.3',    '', .false., 1.0_rp)
+    col( 6)  = setup_lat_column('ele::#[orbit_x]',        'es14.6',   '', .false., 1.0_rp)
+    col( 7)  = setup_lat_column('ele::#[orbit_px]',       'es14.6',   '', .false., 1.0_rp)
+    col( 8)  = setup_lat_column('ele::#[orbit_y]',        'es14.6',   '', .false., 1.0_rp)
+    col( 9)  = setup_lat_column('ele::#[orbit_py]',       'es14.6',   '', .false., 1.0_rp)
+    col(10)  = setup_lat_column('ele::#[orbit_z]',        'es14.6',   '', .false., 1.0_rp)
+    col(11)  = setup_lat_column('ele::#[orbit_pz]',       'es14.6',   '', .false., 1.0_rp)
 
   case ('orbit:spin')
-    column( 1)  = show_lat_column_struct('#',                      'i7',        7, '', .false., 1.0_rp)
-    column( 2)  = show_lat_column_struct('x',                      'x',         2, '', .false., 1.0_rp)
-    column( 3)  = show_lat_column_struct('ele::#[name]',           'a',         0, '', .false., 1.0_rp)
-    column( 4)  = show_lat_column_struct('ele::#[key]',            'a17',      17, '', .false., 1.0_rp)
-    column( 5)  = show_lat_column_struct('ele::#[s]',              'f10.3',    10, '', .false., 1.0_rp)
-    column( 6)  = show_lat_column_struct('ele::#[orbit_x]',        'es14.6',   14, '', .false., 1.0_rp)
-    column( 7)  = show_lat_column_struct('ele::#[orbit_px]',       'es14.6',   14, '', .false., 1.0_rp)
-    column( 8)  = show_lat_column_struct('ele::#[orbit_y]',        'es14.6',   14, '', .false., 1.0_rp)
-    column( 9)  = show_lat_column_struct('ele::#[orbit_py]',       'es14.6',   14, '', .false., 1.0_rp)
-    column(10)  = show_lat_column_struct('ele::#[orbit_z]',        'es14.6',   14, '', .false., 1.0_rp)
-    column(11)  = show_lat_column_struct('ele::#[orbit_pz]',       'es14.6',   14, '', .false., 1.0_rp)
-    column(12)  = show_lat_column_struct('ele::#[spin_x]',         'es14.6',   14, '', .false., 1.0_rp)
-    column(13)  = show_lat_column_struct('ele::#[spin_y]',         'es14.6',   14, '', .false., 1.0_rp)
-    column(14)  = show_lat_column_struct('ele::#[spin_z]',         'es14.6',   14, '', .false., 1.0_rp)
+    col( 1)  = setup_lat_column('#',                      'i7',       '', .false., 1.0_rp)
+    col( 2)  = setup_lat_column('x',                      '2x',       '', .false., 1.0_rp)
+    col( 3)  = setup_lat_column('ele::#[name]',           'a0',       '', .false., 1.0_rp)
+    col( 4)  = setup_lat_column('ele::#[key]',            'a17',      '', .false., 1.0_rp)
+    col( 5)  = setup_lat_column('ele::#[s]',              'f10.3',    '', .false., 1.0_rp)
+    col( 6)  = setup_lat_column('ele::#[orbit_x]',        'es14.6',   '', .false., 1.0_rp)
+    col( 7)  = setup_lat_column('ele::#[orbit_px]',       'es14.6',   '', .false., 1.0_rp)
+    col( 8)  = setup_lat_column('ele::#[orbit_y]',        'es14.6',   '', .false., 1.0_rp)
+    col( 9)  = setup_lat_column('ele::#[orbit_py]',       'es14.6',   '', .false., 1.0_rp)
+    col(10)  = setup_lat_column('ele::#[orbit_z]',        'es14.6',   '', .false., 1.0_rp)
+    col(11)  = setup_lat_column('ele::#[orbit_pz]',       'es14.6',   '', .false., 1.0_rp)
+    col(12)  = setup_lat_column('ele::#[spin_x]',         'es14.6',   '', .false., 1.0_rp)
+    col(13)  = setup_lat_column('ele::#[spin_y]',         'es14.6',   '', .false., 1.0_rp)
+    col(14)  = setup_lat_column('ele::#[spin_z]',         'es14.6',   '', .false., 1.0_rp)
 
   case ('spin')
-    column( 1)  = show_lat_column_struct('#',                        'i7',        7, '', .false., 1.0_rp)
-    column( 2)  = show_lat_column_struct('x',                        'x',         2, '', .false., 1.0_rp)
-    column( 3)  = show_lat_column_struct('ele::#[name]',             'a',         0, '', .false., 1.0_rp)
-    column( 4)  = show_lat_column_struct('ele::#[key]',              'a17',      17, '', .false., 1.0_rp)
-    column( 5)  = show_lat_column_struct('ele::#[s]',                'f10.3',    10, '', .false., 1.0_rp)
-    column( 6)  = show_lat_column_struct('ele::#[spin_x]',           'es14.6',   14, '', .false., 1.0_rp)
-    column( 7)  = show_lat_column_struct('ele::#[spin_y]',           'es14.6',   14, '', .false., 1.0_rp)
-    column( 8)  = show_lat_column_struct('ele::#[spin_z]',           'es14.6',   14, '', .false., 1.0_rp)
+    col( 1)  = setup_lat_column('#',                        'i7',       '', .false., 1.0_rp)
+    col( 2)  = setup_lat_column('x',                        '2x',       '', .false., 1.0_rp)
+    col( 3)  = setup_lat_column('ele::#[name]',             'a0',       '', .false., 1.0_rp)
+    col( 4)  = setup_lat_column('ele::#[key]',              'a17',      '', .false., 1.0_rp)
+    col( 5)  = setup_lat_column('ele::#[s]',                'f10.3',    '', .false., 1.0_rp)
+    col( 6)  = setup_lat_column('ele::#[spin_x]',           'es14.6',   '', .false., 1.0_rp)
+    col( 7)  = setup_lat_column('ele::#[spin_y]',           'es14.6',   '', .false., 1.0_rp)
+    col( 8)  = setup_lat_column('ele::#[spin_z]',           'es14.6',   '', .false., 1.0_rp)
     if (branch%param%geometry == closed$) then
-      column( 9)  = show_lat_column_struct('ele::#[spin_dn_dpz.x]',    'es14.6',   14, '', .false., 1.0_rp)
-      column(10)  = show_lat_column_struct('ele::#[spin_dn_dpz.y]',    'es14.6',   14, '', .false., 1.0_rp)
-      column(11)  = show_lat_column_struct('ele::#[spin_dn_dpz.z]',    'es14.6',   14, '', .false., 1.0_rp)
-      column(12)  = show_lat_column_struct('ele::#[spin_dn_dpz.amp]',  'es14.6',   14, '', .false., 1.0_rp)
+      col( 9)  = setup_lat_column('ele::#[spin_dn_dpz.x]',    'es14.6', '', .false., 1.0_rp)
+      col(10)  = setup_lat_column('ele::#[spin_dn_dpz.y]',    'es14.6', '', .false., 1.0_rp)
+      col(11)  = setup_lat_column('ele::#[spin_dn_dpz.z]',    'es14.6', '', .false., 1.0_rp)
+      col(12)  = setup_lat_column('ele::#[spin_dn_dpz.amp]',  'es14.6', '', .false., 1.0_rp)
     endif
 
   case ('rad_int')
-    column(1)  = show_lat_column_struct('#',                     'i7',        7, '', .false., 1.0_rp)
-    column(2)  = show_lat_column_struct('x',                     'x',         2, '', .false., 1.0_rp)
-    column(3)  = show_lat_column_struct('ele::#[name]',          'a',         0, '', .false., 1.0_rp)
-    column(4)  = show_lat_column_struct('ele::#[key]',           'a17',      17, '', .false., 1.0_rp)
-    column(5)  = show_lat_column_struct('ele::#[s]',             'f10.3',    10, '', .false., 1.0_rp)
+    col(1)  = setup_lat_column('#',                     'i7',       '', .false., 1.0_rp)
+    col(2)  = setup_lat_column('x',                     '2x',       '', .false., 1.0_rp)
+    col(3)  = setup_lat_column('ele::#[name]',          'a0',       '', .false., 1.0_rp)
+    col(4)  = setup_lat_column('ele::#[key]',           'a17',      '', .false., 1.0_rp)
+    col(5)  = setup_lat_column('ele::#[s]',             'f10.3',    '', .false., 1.0_rp)
     if (branch%param%geometry == open$) then
-      column(6)  = show_lat_column_struct('lat::rad_int1.i0[#]',     'es10.2',  10, '', .true., 1.0_rp)
-      column(7)  = show_lat_column_struct('lat::rad_int1.i1[#]',     'es10.2',  10, '', .true., 1.0_rp)
-      column(8)  = show_lat_column_struct('lat::rad_int1.i2_e4[#]',  'es10.2',  10, '', .false., 1.0_rp)
-      column(9)  = show_lat_column_struct('lat::rad_int1.i3_e7[#]',  'es10.2',  10, '', .false., 1.0_rp)
-      column(10) = show_lat_column_struct('lat::rad_int1.i5a_e6[#]', 'es10.2',  10, '', .false., 1.0_rp)
-      column(11) = show_lat_column_struct('lat::rad_int1.i5b_e6[#]', 'es10.2',  10, '', .false., 1.0_rp)
+      col(6)  = setup_lat_column('lat::rad_int1.i0[#]',     'es10.2',  '', .true., 1.0_rp)
+      col(7)  = setup_lat_column('lat::rad_int1.i1[#]',     'es10.2',  '', .true., 1.0_rp)
+      col(8)  = setup_lat_column('lat::rad_int1.i2_e4[#]',  'es10.2',  '', .false., 1.0_rp)
+      col(9)  = setup_lat_column('lat::rad_int1.i3_e7[#]',  'es10.2',  '', .false., 1.0_rp)
+      col(10) = setup_lat_column('lat::rad_int1.i5a_e6[#]', 'es10.2',  '', .false., 1.0_rp)
+      col(11) = setup_lat_column('lat::rad_int1.i5b_e6[#]', 'es10.2',  '', .false., 1.0_rp)
     else
-      column(6)  = show_lat_column_struct('lat::rad_int1.i0[#]',     'es10.2',  10, '', .true., 1.0_rp)
-      column(7)  = show_lat_column_struct('lat::rad_int1.i1[#]',     'es10.2',  10, '', .true., 1.0_rp)
-      column(8)  = show_lat_column_struct('lat::rad_int1.i2[#]',     'es10.2',  10, '', .false., 1.0_rp)
-      column(9)  = show_lat_column_struct('lat::rad_int1.i3[#]',     'es10.2',  10, '', .false., 1.0_rp)
-      column(10) = show_lat_column_struct('lat::rad_int1.i4a[#]',    'es10.2',  10, '', .false., 1.0_rp)
-      column(11) = show_lat_column_struct('lat::rad_int1.i5a[#]',    'es10.2',  10, '', .false., 1.0_rp)
-      column(12) = show_lat_column_struct('lat::rad_int1.i4b[#]',    'es10.2',  10, '', .false., 1.0_rp)
-      column(13) = show_lat_column_struct('lat::rad_int1.i5b[#]',    'es10.2',  10, '', .false., 1.0_rp)
-      column(14) = show_lat_column_struct('lat::rad_int1.i6b[#]',    'es10.2',  10, '', .false., 1.0_rp)
+      col(6)  = setup_lat_column('lat::rad_int1.i0[#]',     'es10.2',  '', .true., 1.0_rp)
+      col(7)  = setup_lat_column('lat::rad_int1.i1[#]',     'es10.2',  '', .true., 1.0_rp)
+      col(8)  = setup_lat_column('lat::rad_int1.i2[#]',     'es10.2',  '', .false., 1.0_rp)
+      col(9)  = setup_lat_column('lat::rad_int1.i3[#]',     'es10.2',  '', .false., 1.0_rp)
+      col(10) = setup_lat_column('lat::rad_int1.i4a[#]',    'es10.2',  '', .false., 1.0_rp)
+      col(11) = setup_lat_column('lat::rad_int1.i5a[#]',    'es10.2',  '', .false., 1.0_rp)
+      col(12) = setup_lat_column('lat::rad_int1.i4b[#]',    'es10.2',  '', .false., 1.0_rp)
+      col(13) = setup_lat_column('lat::rad_int1.i5b[#]',    'es10.2',  '', .false., 1.0_rp)
+      col(14) = setup_lat_column('lat::rad_int1.i6b[#]',    'es10.2',  '', .false., 1.0_rp)
     endif
 
   case ('sum_rad_int')
-    column(1)  = show_lat_column_struct('#',                     'i7',        7, '', .false., 1.0_rp)
-    column(2)  = show_lat_column_struct('x',                     'x',         2, '', .false., 1.0_rp)
-    column(3)  = show_lat_column_struct('ele::#[name]',          'a',         0, '', .false., 1.0_rp)
-    column(4)  = show_lat_column_struct('ele::#[key]',           'a17',      17, '', .false., 1.0_rp)
-    column(5)  = show_lat_column_struct('ele::#[s]',             'f10.3',    10, '', .false., 1.0_rp)
+    col(1)  = setup_lat_column('#',                     'i7',       '', .false., 1.0_rp)
+    col(2)  = setup_lat_column('x',                     '2x',       '', .false., 1.0_rp)
+    col(3)  = setup_lat_column('ele::#[name]',          'a0',       '', .false., 1.0_rp)
+    col(4)  = setup_lat_column('ele::#[key]',           'a17',      '', .false., 1.0_rp)
+    col(5)  = setup_lat_column('ele::#[s]',             'f10.3',    '', .false., 1.0_rp)
     if (branch%param%geometry == open$) then
-      column(6)  = show_lat_column_struct('lat::rad_int.i0[#]',     'es10.2',  10, '', .true., 1.0_rp)
-      column(7)  = show_lat_column_struct('lat::rad_int.i1[#]',     'es10.2',  10, '', .true., 1.0_rp)
-      column(8)  = show_lat_column_struct('lat::rad_int.i2_e4[#]',  'es10.2',  10, '', .false., 1.0_rp)
-      column(9)  = show_lat_column_struct('lat::rad_int.i3_e7[#]',  'es10.2',  10, '', .false., 1.0_rp)
-      column(10) = show_lat_column_struct('lat::rad_int.i5a_e6[#]', 'es10.2',  10, '', .false., 1.0_rp)
-      column(11) = show_lat_column_struct('lat::rad_int.i5b_e6[#]', 'es10.2',  10, '', .false., 1.0_rp)
-      column(12) = show_lat_column_struct('lat::emit.a[#]',         'es10.2',  10, '', .false., 1.0_rp)
-      column(13) = show_lat_column_struct('lat::emit.b[#]',         'es10.2',  10, '', .false., 1.0_rp)
-      column(14) = show_lat_column_struct('lat::sigma.pz[#]',       'es10.2',  10, '', .false., 1.0_rp)
+      col(6)  = setup_lat_column('lat::rad_int.i0[#]',     'es10.2',  '', .true., 1.0_rp)
+      col(7)  = setup_lat_column('lat::rad_int.i1[#]',     'es10.2',  '', .true., 1.0_rp)
+      col(8)  = setup_lat_column('lat::rad_int.i2_e4[#]',  'es10.2',  '', .false., 1.0_rp)
+      col(9)  = setup_lat_column('lat::rad_int.i3_e7[#]',  'es10.2',  '', .false., 1.0_rp)
+      col(10) = setup_lat_column('lat::rad_int.i5a_e6[#]', 'es10.2',  '', .false., 1.0_rp)
+      col(11) = setup_lat_column('lat::rad_int.i5b_e6[#]', 'es10.2',  '', .false., 1.0_rp)
+      col(12) = setup_lat_column('lat::emit.a[#]',         'es10.2',  '', .false., 1.0_rp)
+      col(13) = setup_lat_column('lat::emit.b[#]',         'es10.2',  '', .false., 1.0_rp)
+      col(14) = setup_lat_column('lat::sigma.pz[#]',       'es10.2',  '', .false., 1.0_rp)
     else
-      column(6)  = show_lat_column_struct('lat::rad_int.i0[#]',     'es10.2',  10, '', .true., 1.0_rp)
-      column(7)  = show_lat_column_struct('lat::rad_int.i1[#]',     'es10.2',  10, '', .true., 1.0_rp)
-      column(8)  = show_lat_column_struct('lat::rad_int.i2[#]',     'es10.2',  10, '', .false., 1.0_rp)
-      column(9)  = show_lat_column_struct('lat::rad_int.i3[#]',     'es10.2',  10, '', .false., 1.0_rp)
-      column(10) = show_lat_column_struct('lat::rad_int.i4a[#]',    'es10.2',  10, '', .false., 1.0_rp)
-      column(11) = show_lat_column_struct('lat::rad_int.i5a[#]',    'es10.2',  10, '', .false., 1.0_rp)
-      column(12) = show_lat_column_struct('lat::rad_int.i4b[#]',    'es10.2',  10, '', .false., 1.0_rp)
-      column(13) = show_lat_column_struct('lat::rad_int.i5b[#]',    'es10.2',  10, '', .false., 1.0_rp)
-      column(14) = show_lat_column_struct('lat::rad_int.i6b[#]',    'es10.2',  10, '', .false., 1.0_rp)
+      col(6)  = setup_lat_column('lat::rad_int.i0[#]',     'es10.2',  '', .true., 1.0_rp)
+      col(7)  = setup_lat_column('lat::rad_int.i1[#]',     'es10.2',  '', .true., 1.0_rp)
+      col(8)  = setup_lat_column('lat::rad_int.i2[#]',     'es10.2',  '', .false., 1.0_rp)
+      col(9)  = setup_lat_column('lat::rad_int.i3[#]',     'es10.2',  '', .false., 1.0_rp)
+      col(10) = setup_lat_column('lat::rad_int.i4a[#]',    'es10.2',  '', .false., 1.0_rp)
+      col(11) = setup_lat_column('lat::rad_int.i5a[#]',    'es10.2',  '', .false., 1.0_rp)
+      col(12) = setup_lat_column('lat::rad_int.i4b[#]',    'es10.2',  '', .false., 1.0_rp)
+      col(13) = setup_lat_column('lat::rad_int.i5b[#]',    'es10.2',  '', .false., 1.0_rp)
+      col(14) = setup_lat_column('lat::rad_int.i6b[#]',    'es10.2',  '', .false., 1.0_rp)
     endif
 
   case ('standard')
     if (branch%param%particle == photon$) then
-      column( 1) = show_lat_column_struct('#',                   'i7',          7, '', .false., 1.0_rp)
-      column( 2) = show_lat_column_struct('x',                   'x',           2, '', .false., 1.0_rp)
-      column( 3) = show_lat_column_struct('ele::#[name]',        'a',           0, '', .false., 1.0_rp)
-      column( 4) = show_lat_column_struct('ele::#[key]',         'a17',        17, '', .false., 1.0_rp)
-      column( 5) = show_lat_column_struct('ele::#[s]',           'f10.3',      10, '', .false., 1.0_rp)
-      column( 6) = show_lat_column_struct('ele::#[l]',           'f8.3',        8, '', .false., 1.0_rp)
-      column( 7) = show_lat_column_struct('ele::#[orbit_x]',     '3p, f10.5',  10, 'x [mm]', .false., 1.0_rp)
-      column( 8) = show_lat_column_struct('ele::#[orbit_px]',    '3p, f10.5',  10, 'px [mr]', .false., 1.0_rp)
-      column( 9) = show_lat_column_struct('ele::#[orbit_y]',     '3p, f10.5',  10, 'y [mm]', .false., 1.0_rp)
-      column(10) = show_lat_column_struct('ele::#[orbit_py]',    '3p, f10.5',  10, 'py [mr]', .false., 1.0_rp)
-      column(11) = show_lat_column_struct('ele::#[energy] - ele::#[E_tot]', &
-                                                                 'f10.4',      10, 'dE [eV]', .false., 1.0_rp)
-      column(12) = show_lat_column_struct('ele::#[intensity_x]', 'f8.4',        8, 'I_x', .false., 1.0_rp)
-      column(13) = show_lat_column_struct('ele::#[intensity_y]', 'f8.4',        8, 'I_y', .false., 1.0_rp)
-      column(14) = show_lat_column_struct('ele::#[phase_x]',     'f10.4',      10, 'phase_x', .false., 1.0_rp)
-      column(15) = show_lat_column_struct('ele::#[phase_y]',     'f10.4',      10, 'phase_y', .false., 1.0_rp)
-      column(16) = show_lat_column_struct('x',                   'x',           3, '', .false., 1.0_rp)
-      column(17) = show_lat_column_struct('ele::#[state]',       'a11',        11, 'Track|State', .false., 1.0_rp)
+      col( 1) = setup_lat_column('#',                   'i7',         '', .false., 1.0_rp)
+      col( 2) = setup_lat_column('x',                   '2x',         '', .false., 1.0_rp)
+      col( 3) = setup_lat_column('ele::#[name]',        'a0',         '', .false., 1.0_rp)
+      col( 4) = setup_lat_column('ele::#[key]',         'a17',        '', .false., 1.0_rp)
+      col( 5) = setup_lat_column('ele::#[s]',           'f10.3',      '', .false., 1.0_rp)
+      col( 6) = setup_lat_column('ele::#[l]',           'f8.3',       '', .false., 1.0_rp)
+      col( 7) = setup_lat_column('ele::#[orbit_x]',     '3pf10.5',    'x [mm]', .false., 1.0_rp)
+      col( 8) = setup_lat_column('ele::#[orbit_px]',    '3pf10.5',    'px [mr]', .false., 1.0_rp)
+      col( 9) = setup_lat_column('ele::#[orbit_y]',     '3pf10.5',    'y [mm]', .false., 1.0_rp)
+      col(10) = setup_lat_column('ele::#[orbit_py]',    '3pf10.5',    'py [mr]', .false., 1.0_rp)
+      col(11) = setup_lat_column('ele::#[energy] - ele::#[E_tot]', 'f10.4', 'dE [eV]', .false., 1.0_rp)
+      col(12) = setup_lat_column('ele::#[intensity_x]', 'f8.4',       'I_x', .false., 1.0_rp)
+      col(13) = setup_lat_column('ele::#[intensity_y]', 'f8.4',       'I_y', .false., 1.0_rp)
+      col(14) = setup_lat_column('ele::#[phase_x]',     'f10.4',      'phase_x', .false., 1.0_rp)
+      col(15) = setup_lat_column('ele::#[phase_y]',     'f10.4',      'phase_y', .false., 1.0_rp)
+      col(16) = setup_lat_column('x',                   '2x',         '', .false., 1.0_rp)
+      col(17) = setup_lat_column('ele::#[state]',       'a11',        'Track|State', .false., 1.0_rp)
     else
-      column(1)  = show_lat_column_struct('#',                   'i7',          7, '', .false., 1.0_rp)
-      column(2)  = show_lat_column_struct('x',                   'x',           2, '', .false., 1.0_rp)
-      column(3)  = show_lat_column_struct('ele::#[name]',        'a',           0, '', .false., 1.0_rp)
-      column(4)  = show_lat_column_struct('ele::#[key]',         'a17',        17, '', .false., 1.0_rp)
-      column(5)  = show_lat_column_struct('ele::#[s]',           'f10.3',      10, '', .false., 1.0_rp)
-      column(6)  = show_lat_column_struct('ele::#[l]',           'f8.3',        8, '', .false., 1.0_rp)
-      column(7)  = show_lat_column_struct('ele::#[beta_a]',      'f8.2',        8, '', .false., 1.0_rp)
-      column(8)  = show_lat_column_struct('ele::#[phi_a]',       'f8.3',        8, 'phi_a|[2pi]', .false., 1/twopi)
-      column(9)  = show_lat_column_struct('ele::#[eta_x]',       'f7.2',        7, '', .false., 1.0_rp)
-      column(10) = show_lat_column_struct('ele::#[orbit_x]',     '3p, f8.3',    8, 'orbit|x [mm]', .false., 1.0_rp)
-      column(11) = show_lat_column_struct('ele::#[beta_b]',      'f8.2',        8, '', .false., 1.0_rp)
-      column(12) = show_lat_column_struct('ele::#[phi_b]',       'f8.3',        8, 'phi_b|[2pi]', .false., 1/twopi)
-      column(13) = show_lat_column_struct('ele::#[eta_y]',       'f7.2',        7, '', .false., 1.0_rp)
-      column(14) = show_lat_column_struct('ele::#[orbit_y]',     '3p, f8.3',    8, 'orbit|y [mm]', .false., 1.0_rp)
-      column(15) = show_lat_column_struct('x',                   'x',           3, '', .false., 1.0_rp)
-      column(16) = show_lat_column_struct('ele::#[state]',       'a11',        11, 'Track|State', .false., 1.0_rp)
+      col(1)  = setup_lat_column('#',                   'i7',         '', .false., 1.0_rp)
+      col(2)  = setup_lat_column('x',                   '2x',         '', .false., 1.0_rp)
+      col(3)  = setup_lat_column('ele::#[name]',        'a0',         '', .false., 1.0_rp)
+      col(4)  = setup_lat_column('ele::#[key]',         'a17',        '', .false., 1.0_rp)
+      col(5)  = setup_lat_column('ele::#[s]',           'f10.3',      '', .false., 1.0_rp)
+      col(6)  = setup_lat_column('ele::#[l]',           'f8.3',       '', .false., 1.0_rp)
+      col(7)  = setup_lat_column('ele::#[beta_a]',      'f8.2',       '', .false., 1.0_rp)
+      col(8)  = setup_lat_column('ele::#[phi_a]',       'f8.3',       'phi_a|[2pi]', .false., 1/twopi)
+      col(9)  = setup_lat_column('ele::#[eta_x]',       'f7.2',       '', .false., 1.0_rp)
+      col(10) = setup_lat_column('ele::#[orbit_x]',     '3pf8.3',     'orbit|x [mm]', .false., 1.0_rp)
+      col(11) = setup_lat_column('ele::#[beta_b]',      'f8.2',       '', .false., 1.0_rp)
+      col(12) = setup_lat_column('ele::#[phi_b]',       'f8.3',       'phi_b|[2pi]', .false., 1/twopi)
+      col(13) = setup_lat_column('ele::#[eta_y]',       'f7.2',       '', .false., 1.0_rp)
+      col(14) = setup_lat_column('ele::#[orbit_y]',     '3pf8.3',     'orbit|y [mm]', .false., 1.0_rp)
+      col(15) = setup_lat_column('x',                   '2x',         '', .false., 1.0_rp)
+      col(16) = setup_lat_column('ele::#[state]',       'a11',        'Track|State', .false., 1.0_rp)
     endif
 
   end select
@@ -2615,10 +2959,10 @@ case ('lattice')
   do ix = 1, n_remove
     j = 0
     do i = 1, size(column)
-      if (column(i)%name == 'x') cycle
+      if (col(i)%name == 'x') cycle
       j = j + 1
       if (j == ix_remove(ix)) then
-        column(i)%remove_line_if_zero = .true.
+        col(i)%remove_line_if_zero = .true.
         exit
       endif
       if (i == size(column)) then
@@ -2631,12 +2975,12 @@ case ('lattice')
   ! Need to compute radiation integrals?
 
   do i = 1, size(column)
-    if (index(column(i)%name, 'rad_int') /= 0) then
+    if (index(col(i)%name, 'rad_int') /= 0) then
       ix = ix_branch
-      call radiation_integrals (u%model%lat, tao_branch%orbit, tao_branch%modes, tao_branch%ix_rad_int_cache, ix, u%model%rad_int)
-      call radiation_integrals (u%design%lat, design_tao_branch%orbit, design_tao_branch%modes, &
+      call radiation_integrals (u%model%lat, tao_branch%orbit, tao_branch%modes_ri, tao_branch%ix_rad_int_cache, ix, u%model%rad_int)
+      call radiation_integrals (u%design%lat, design_tao_branch%orbit, design_tao_branch%modes_ri, &
                                                             design_tao_branch%ix_rad_int_cache, ix, u%design%rad_int)
-      call radiation_integrals (u%base%lat, u%base%tao_branch(ix)%orbit, u%base%tao_branch(ix)%modes, &
+      call radiation_integrals (u%base%lat, u%base%tao_branch(ix)%orbit, u%base%tao_branch(ix)%modes_ri, &
                                                   u%base%tao_branch(ix)%ix_rad_int_cache, ix, u%base%rad_int)
       exit
     endif
@@ -2647,7 +2991,7 @@ case ('lattice')
   col_info = show_lat_column_info_struct()
 
   do i = 1, size(column)
-    name = column(i)%name
+    name = col(i)%name
 
     if (name(1:7) == 'ele::#[' .and. index(name, ']') /= 0) then
       ix = index(name, ']')-1
@@ -2699,6 +3043,9 @@ case ('lattice')
       if (print_lords == yes$ .and. eles(i)%ele%lord_status == not_a_lord$) cycle
       picked_ele(eles(i)%ele%ix_ele) = .true.
     enddo
+
+  elseif (what_to_show == 'rad_int' .or. what_to_show == 'sum_rad_int') then
+    picked_ele = .true.
 
   else
     picked_ele = .true.
@@ -2760,43 +3107,43 @@ case ('lattice')
   ! Setup columns
 
   do i = 1, size(column)
-    if (column(i)%name == '') cycle
+    if (col(i)%name == '') cycle
 
     ! Use finer scale for s and l if needed.
 
-    if (branch%param%total_length < 1.0_rp .and. what_to_print /= 'custom') then
-      select case (column(i)%name)
+    if (branch%param%total_length < 1.0_rp .and. what_to_show /= 'custom') then
+      select case (col(i)%name)
       case ('ele::#[s]')
-        column(i)%format = 'f13.6'
-        column(i)%width = 13
+        col(i)%format = 'F13.6'
+        col(i)%width = 13
 
       case ('ele::#[l]')
-        column(i)%format = 'f11.6'
-        column(i)%width = 11
+        col(i)%format = 'F11.6'
+        col(i)%width = 11
       end select
     endif
 
     !
 
-    column(i)%format = '(' // trim(upcase(column(i)%format)) // ')'
+    col(i)%format = '(' // trim(upcase(col(i)%format)) // ')'
 
-    if (column(i)%width == 0) then
-      if (column(i)%name /= 'ele::#[name]') then
+    if (col(i)%width == 0) then
+      if (col(i)%name /= 'ele::#[name]') then
         call out_io (s_error$, r_name, &
             'WIDTH = 0 CAN ONLY BE USED WITH "ele::#[name]" TYPE COLUMNS')
         return
       endif
-      column(i)%width = 5
+      col(i)%width = 5
       do ie = 0, branch%n_ele_max
         if (.not. picked_ele(ie)) cycle
-        column(i)%width = max(column(i)%width, len_trim(branch%ele(ie)%name)+1)
+        col(i)%width = max(col(i)%width, len_trim(branch%ele(ie)%name)+1)
       enddo
     endif
 
-    ix2 = ix1 + column(i)%width
+    ix2 = ix1 + col(i)%width
 
-    if (column(i)%label == '') then
-      name = column(i)%name
+    if (col(i)%label == '') then
+      name = col(i)%name
       if (index(name, 'ele::') /= 0) then
         i1 = index(name, '[')
         i2 = index(name, ']')
@@ -2835,9 +3182,9 @@ case ('lattice')
       n = len_trim(name)
 
       if (called_from_python_cmd) then
-        call set_this_show_lat_header (line2, line3, name, column(i)%format, called_from_python_cmd)
+        call set_this_show_lat_header (line2, line3, name, col(i)%format, called_from_python_cmd)
 
-      elseif (index(column(i)%format, 'A') /= 0) then
+      elseif (index(col(i)%format, 'A') /= 0) then
         line2(ix1:) = name
 
       elseif (ix == 0) then
@@ -2857,26 +3204,26 @@ case ('lattice')
       endif
 
     else
-      if (index(column(i)%name, '[') /= 0 .and. index(column(i)%label, '|') == 0) then
-        i1 = index(column(i)%name, '[')
-        i2 = index(column(i)%name, ']')
-        name = upcase(column(i)%name(i1+1:i2-1))
+      if (index(col(i)%name, '[') /= 0 .and. index(col(i)%label, '|') == 0) then
+        i1 = index(col(i)%name, '[')
+        i2 = index(col(i)%name, ']')
+        name = upcase(col(i)%name(i1+1:i2-1))
         if (attribute_units(name) == 'rad') then
-          column(i)%label = trim(column(i)%label) // '|[' // trim(phase_units_str) // ']'
-          column(i)%scale_factor = phase_units
+          col(i)%label = trim(col(i)%label) // '|[' // trim(phase_units_str) // ']'
+          col(i)%scale_factor = phase_units
         endif
       endif
 
-      name = column(i)%label
+      name = col(i)%label
 
       ix = index(name, '|')
 
       if (called_from_python_cmd) then
         if (ix /= 0) name(ix:ix) = '_'
-        call set_this_show_lat_header (line2, line3, name, column(i)%format, called_from_python_cmd)
+        call set_this_show_lat_header (line2, line3, name, col(i)%format, called_from_python_cmd)
 
       elseif (ix == 0) then
-        if (index(column(i)%format, 'A') /= 0) then
+        if (index(col(i)%format, 'A') /= 0) then
           line2(ix1:) = name
         else
           j = len_trim(name)
@@ -2884,7 +3231,7 @@ case ('lattice')
         endif
 
       else
-        if (index(column(i)%format, 'A') /= 0) then
+        if (index(col(i)%format, 'A') /= 0) then
           line2(ix1:) = name(1:ix-1)
           line3(ix1:) = trim(name(ix+1:))
         else
@@ -2950,10 +3297,10 @@ case ('lattice')
     do i = 1, size(column)
 
       j = max(i-1, 1)
-      if (i > 1 .and. column(j)%name /= '') then
+      if (i > 1 .and. col(j)%name /= '') then
         if (called_from_python_cmd) then
-          if (column(j)%name /= 'x') then
-            do i0 = nc, nc+column(j)%width
+          if (col(j)%name /= 'x') then
+            do i0 = nc, nc+col(j)%width
               if (line(i0:i0) /= ' ') exit
             enddo
             if (i0 > nc) line(nc:) = line(i0:)
@@ -2961,14 +3308,14 @@ case ('lattice')
             line(nc-1:nc-1) = ';'
           endif
         else
-          nc  = nc + column(i-1)%width
+          nc  = nc + col(i-1)%width
         endif
       endif
 
-      name = column(i)%name
+      name = col(i)%name
       if (name == '') cycle
 
-      if (column(i)%remove_line_if_zero) n_remove = n_remove + 1
+      if (col(i)%remove_line_if_zero) n_remove = n_remove + 1
 
       if ((name(1:7) == 'ele::#[' .and. index(name, ']') /= 0) .or. &
               col_info(i)%attrib_type == is_string$ .or. col_info(i)%attrib_type == is_switch$) then
@@ -2982,24 +3329,24 @@ case ('lattice')
         case (is_logical$, is_integer$, is_switch$)
           call pointer_to_attribute(ele, sub_name, .true., a_ptr, err, .false.)
           if (err) then
-            write (line(nc:), column(i)%format, iostat = ios) replacement_for_blank
+            write (line(nc:), col(i)%format, iostat = ios) replacement_for_blank
             cycle
           endif
 
           select case (a_type)
           case (is_logical$)
             if (associated(a_ptr%l)) then
-              write (line(nc:), column(i)%format, iostat = ios) a_ptr%l
+              write (line(nc:), col(i)%format, iostat = ios) a_ptr%l
             else  ! Must be stored as a real
-              write (line(nc:), column(i)%format, iostat = ios) is_true(a_ptr%r)
+              write (line(nc:), col(i)%format, iostat = ios) is_true(a_ptr%r)
             endif
           case (is_real$)
-            call err_exit  ! Should not be here. write (line(nc:), column(i)%format, iostat = ios) a_ptr%r
+            line(nc:) = '?????????' ! Should not be here. write (line(nc:), col(i)%format, iostat = ios) a_ptr%r
           case (is_integer$)
             if (associated(a_ptr%i)) then
-              write (line(nc:), column(i)%format, iostat = ios) a_ptr%i
+              write (line(nc:), col(i)%format, iostat = ios) a_ptr%i
             else  ! Must be stored as a real
-              write (line(nc:), column(i)%format, iostat = ios) nint(a_ptr%r)
+              write (line(nc:), col(i)%format, iostat = ios) nint(a_ptr%r)
             endif
           case (is_switch$)
             if (associated(a_ptr%r)) then
@@ -3007,15 +3354,15 @@ case ('lattice')
             else
               r = a_ptr%i
             endif
-            write (line(nc:), column(i)%format, iostat = ios) switch_attrib_value_name(sub_name, r, ele)
+            write (line(nc:), col(i)%format, iostat = ios) switch_attrib_value_name(sub_name, r, ele)
           end select
 
-          if (line(nc:) == '') write (line(nc:), column(i)%format, iostat = ios) replacement_for_blank
+          if (line(nc:) == '') write (line(nc:), col(i)%format, iostat = ios) replacement_for_blank
           cycle
 
         case (is_string$)
           call string_attrib (sub_name, ele, line(nc:))
-          if (line(nc:) == '') write (line(nc:), column(i)%format, iostat = ios) replacement_for_blank
+          if (line(nc:) == '') write (line(nc:), col(i)%format, iostat = ios) replacement_for_blank
           cycle
         end select
       endif
@@ -3025,18 +3372,18 @@ case ('lattice')
       if (name == '#' .or. name == '#index') then
         if (ele%ix_branch /= ix_branch) then
           aname = ele_loc_name(ele, .true.)
-          line(nc:) = adjustr(aname(1:column(i)%width))
+          line(nc:) = adjustr(aname(1:col(i)%width))
         else
-          write (line(nc:), column(i)%format, iostat = ios) ele%ix_ele
+          write (line(nc:), col(i)%format, iostat = ios) ele%ix_ele
         endif
 
       elseif (name == '#branch') then
-        write (line(nc:), column(i)%format, iostat = ios) ele%ix_branch
+        write (line(nc:), col(i)%format, iostat = ios) ele%ix_branch
 
       elseif (name == 'ele::#[type]') then
         if (ele%type == '') then
         else
-          write (line(nc:), column(i)%format, iostat = ios) ele%type
+          write (line(nc:), col(i)%format, iostat = ios) ele%type
         endif
 
       elseif (name /= 'x') then
@@ -3056,38 +3403,38 @@ case ('lattice')
                       dflt_uni = u%ix_uni, dflt_eval_point = eval_pt)
 
         if (err .or. .not. allocated(value) .or. size(value) /= 1) then
-          if (column(i)%remove_line_if_zero) n_zeros_found = n_zeros_found + 1
-          if (undef_uses_column_format .and. index(column(i)%format, 'A') == 0) then
-            if (index(column(i)%format, 'I') /= 0) then
-              write (line(nc:), column(i)%format, iostat = ios) 0
+          if (col(i)%remove_line_if_zero) n_zeros_found = n_zeros_found + 1
+          if (undef_uses_column_format .and. index(col(i)%format, 'A') == 0) then
+            if (index(col(i)%format, 'I') /= 0) then
+              write (line(nc:), col(i)%format, iostat = ios) 0
             else
-              write (line(nc:), column(i)%format, iostat = ios) 0.0_rp
+              write (line(nc:), col(i)%format, iostat = ios) 0.0_rp
             endif
           else
             n = len(undef_str)
-            k = min(n, column(i)%width - 1)
-            j = nc + column(i)%width - k
+            k = min(n, col(i)%width - 1)
+            j = nc + col(i)%width - k
             line(j:) = undef_str(n-k+1:n)
           endif
 
-        elseif (column(i)%name == 'ele::#[state]') then
-          write (line(nc:), column(i)%format, iostat = ios) coord_state_name(nint(value(1)))
+        elseif (col(i)%name == 'ele::#[state]') then
+          write (line(nc:), col(i)%format, iostat = ios) coord_state_name(nint(value(1)))
 
-        elseif (index(column(i)%format, 'L') /= 0) then
+        elseif (index(col(i)%format, 'L') /= 0) then
           if (value(1) == 0) then
-            write (line(nc:), column(i)%format, iostat = ios) .false.
+            write (line(nc:), col(i)%format, iostat = ios) .false.
           else
-            write (line(nc:), column(i)%format, iostat = ios) .true.
+            write (line(nc:), col(i)%format, iostat = ios) .true.
           endif
 
-        elseif (index(column(i)%format, 'I') /= 0) then
-          write (line(nc:), column(i)%format, iostat = ios) nint(value(1))
-          if (column(i)%remove_line_if_zero .and. nint(value(1)) == 0) n_zeros_found = n_zeros_found + 1
+        elseif (index(col(i)%format, 'I') /= 0) then
+          write (line(nc:), col(i)%format, iostat = ios) nint(value(1))
+          if (col(i)%remove_line_if_zero .and. nint(value(1)) == 0) n_zeros_found = n_zeros_found + 1
 
         else
-          r = value(1) * column(i)%scale_factor
-          call write_real (line(nc:), column(i)%format, r)
-          if (column(i)%remove_line_if_zero .and. value(1) == 0) then
+          r = value(1) * col(i)%scale_factor
+          call write_real (line(nc:), col(i)%format, r)
+          if (col(i)%remove_line_if_zero .and. value(1) == 0) then
             n_zeros_found = n_zeros_found + 1
           else
             col_info(i)%indent = nc
@@ -3107,8 +3454,8 @@ case ('lattice')
       endif
 
       if (ios /= 0) then
-        lines(1) = 'WIDTH TOO SMALL FOR NUMBER OR BAD FORMAT: ' // column(i)%format
-        lines(2) = 'FOR DISPLAYING: ' // column(i)%name
+        lines(1) = 'WIDTH TOO SMALL FOR NUMBER OR BAD FORMAT: ' // col(i)%format
+        lines(2) = 'FOR DISPLAYING: ' // col(i)%name
         nl = 2
         return
       endif
@@ -3155,8 +3502,8 @@ case ('lattice')
 
       mean = col_info(i)%sum / n
       rms = sqrt(max(0.0_rp, col_info(i)%sum2 / n - mean**2))
-      write (lines(nl+1)(nc:), column(i)%format) mean 
-      write (lines(nl+2)(nc:), column(i)%format) rms
+      write (lines(nl+1)(nc:), col(i)%format) mean 
+      write (lines(nl+2)(nc:), col(i)%format) rms
 
       aname = int_str(n)
       nc = len_trim(lines(nl+2)) - len_trim(aname) + 1
@@ -3166,8 +3513,8 @@ case ('lattice')
       if (ds /= 0) then
         mean = col_info(i)%int_sum / ds
         rms = sqrt(max(0.0_rp, col_info(i)%int_sum2 / ds - mean**2))
-        write (lines(nl+4)(nc:), column(i)%format) mean 
-        write (lines(nl+5)(nc:), column(i)%format) rms
+        write (lines(nl+4)(nc:), col(i)%format) mean 
+        write (lines(nl+5)(nc:), col(i)%format) rms
       endif
     enddo
 
@@ -3198,29 +3545,8 @@ case ('merit', 'top10')
 
 case ('normal_form')
 
-  if (branch%param%geometry /= closed$) then
-    nl=1;    lines(1) = 'BRANCH GEOMETRY NOT CLOSED'
-    nl=nl+1; lines(2) = 'USE THE "set branch ' // int_str(branch%ix_branch) // ' geometry = closed" TO CHANGE THIS.'
-    return
-  endif
-
-  tao_lat => tao_pointer_to_tao_lat (u, model$)
-  if (.not. u%calc%one_turn_map) call tao_ptc_normal_form (.true., tao_lat, ix_branch)
-
-  bmad_nf => tao_branch%bmad_normal_form
-  ptc_nf  => tao_branch%ptc_normal_form
-
-  expo = [0, 0, 0, 0, 0, 0]   ! Use expo(6) = i to get the i^th Taylor coef in tune vs pz curve.
-  nl=nl+1; write (lines(nl), '(a, es18.7)') 'spin_tune: ', real(ptc_nf%spin .sub. expo)
-  nl=nl+1; lines(nl) = '  N     chrom_ptc.a.N     chrom_ptc.b.N  momentum_compaction_ptc.N'
-
-  do i = 0, ptc_com%taylor_order_ptc
-    expo = [0, 0, 0, 0, 0, i]
-    nl=nl+1; write (lines(nl), '(i3, 2es18.7, 9x es18.7)') i, real(ptc_nf%phase(1) .sub. expo), real(ptc_nf%phase(2) .sub. expo), &
-                      -real(ptc_nf%phase(3) .sub. expo) / branch%param%total_length
-  enddo
-
-
+  nl=nl+1; lines(nl) = 'The "show normal_form" command is currently being reworked.'
+  nl=nl+1; lines(nl) = 'Use "show chromaticity" for the chromaticity, momentum compaction and phase slip Taylor maps.'
 
 !  select case(attrib0(1:5))
 !    case ('dhdj ')
@@ -3301,7 +3627,6 @@ case ('particle')
   ix_p = 1
 
   do
-
     call tao_next_switch (what2, [character(16):: '-element', '-particle', '-bunch', '-lost', '-all'], &
                           .true., switch, err, ix_word)
     if (err) return
@@ -3529,17 +3854,17 @@ case ('plot')
   select case (what)
   case ('-floor_plan', '-lat_layout')
 
-    nl=nl+1; lines(nl) = ''
-    nl=nl+1; lines(nl) = 'Element Shapes:'
-    nl=nl+1; lines(nl) = '                                                                                       Shape   Type    Shape  Multi  Line_'
-    nl=nl+1; lines(nl) = '                  Ele_Name                            Shape           Color             Size  Label     Draw  Shape  Width'
-    nl=nl+1; lines(nl) = '                  ------------------------------      ----------      -------           ----  -------  -----  -----  -----'
-
     if (what == '-floor_plan') then
       shapes => s%plot_page%floor_plan%ele_shape
     else
       shapes => s%plot_page%lat_layout%ele_shape
     endif
+
+    nl=nl+1; lines(nl) = ''
+    nl=nl+1; lines(nl) = 'Element Shapes:'
+    nl=nl+1; lines(nl) = '                                                                                       Shape   Type    Shape  Multi  Line_'
+    nl=nl+1; lines(nl) = '                  Ele_Name                            Shape           Color             Size  Label     Draw  Shape  Width'
+    nl=nl+1; lines(nl) = '                  ------------------------------      ----------      -------           ----  -------  -----  -----  -----'
 
     do i = 1, size(shapes)
       shape => shapes(i)
@@ -3559,6 +3884,15 @@ case ('plot')
         nl=nl+1; write (lines(nl), '(5x, 2f10.5)') pattern%pt(j)%s, pattern%pt(j)%x
       enddo
     enddo
+
+
+    nl=nl+1; lines(nl) = ''
+    nl=nl+1; lines(nl) = 'Shape label text size scales as:'
+    if (what == '-floor_plan') then
+      nl=nl+1; lines(nl) = '    plot_page%text_height * plot_page%legend_text_scale * plot_page%floor_plan_text_scale'
+    else
+      nl=nl+1; lines(nl) = '    plot_page%text_height * plot_page%legend_text_scale * plot_page%lat_layout_text_scale'
+    endif
 
     result_id = 'plot:floor_plan'
     return
@@ -3591,7 +3925,9 @@ case ('plot')
                                     '  %legend_text_scale             = ', s%plot_page%legend_text_scale, &
                                                                             '! For legends, plot_page, and lat_layout' 
     nl=nl+1; write(lines(nl), f3mt) '  %floor_plan_shape_scale        = ', s%plot_page%floor_plan_shape_scale 
+    nl=nl+1; write(lines(nl), f3mt) '  %floor_plan_text_scale         = ', s%plot_page%floor_plan_text_scale 
     nl=nl+1; write(lines(nl), f3mt) '  %lat_layout_shape_scale        = ', s%plot_page%lat_layout_shape_scale 
+    nl=nl+1; write(lines(nl), f3mt) '  %lat_layout_text_scale         = ', s%plot_page%lat_layout_text_scale 
     nl=nl+1; write(lines(nl), lmt)  '  %delete_overlapping_plots      = ', s%plot_page%delete_overlapping_plots
     nl=nl+1; write(lines(nl), lmt)  '  %draw_graph_title_suffix       = ', s%plot_page%draw_graph_title_suffix
     nl=nl+1; write(lines(nl), f3mt) '  %curve_legend_line_len         = ', s%plot_page%curve_legend_line_len
@@ -3663,7 +3999,7 @@ case ('plot')
 
 case ('ptc')
 
-  what_to_print = ''
+  what_to_show = ''
 
   do
     call tao_next_switch (what2, [character(24):: '-emittance'], .true., switch, err, ix)
@@ -3673,7 +4009,7 @@ case ('ptc')
     case ('')
       exit
     case ('-emittance')
-      what_to_print = switch
+      what_to_show = switch
     end select
   enddo
 
@@ -3683,50 +4019,179 @@ case ('ptc')
   endif
 
 
-  call ptc_emit_calc (branch%ele(0), norm_mode, sig_mat, orb)
+  call ptc_emit_calc (branch%ele(0), mode_ptc, sig_mat, orb)
   nl=nl+1; lines(nl) = '  Mode      Emit        Tune'
-  nl=nl+1; write(lines(nl), '(1x, a, 2x, es15.7, f12.6)') 'A', norm_mode%a%emittance, norm_mode%a%tune
-  nl=nl+1; write(lines(nl), '(1x, a, 2x, es15.7, f12.6)') 'B', norm_mode%b%emittance, norm_mode%b%tune
-  nl=nl+1; write(lines(nl), '(1x, a, 2x, es15.7, f12.6)') 'C', norm_mode%z%emittance, norm_mode%z%tune
+  nl=nl+1; write(lines(nl), '(1x, a, 2x, es15.7, f12.6)') 'A', mode_ptc%a%emittance, mode_ptc%a%tune
+  nl=nl+1; write(lines(nl), '(1x, a, 2x, es15.7, f12.6)') 'B', mode_ptc%b%emittance, mode_ptc%b%tune
+  nl=nl+1; write(lines(nl), '(1x, a, 2x, es15.7, f12.6)') 'C', mode_ptc%z%emittance, mode_ptc%z%tune
   nl=nl+1; lines(nl) = ''
   nl=nl+1; write(lines(nl), '(1x, a, 6es15.7)') 'Starting orbit:', orb%vec
+
+!----------------------------------------------------------------------
+! radiation_integrals
+
+case ('radiation_integrals')
+
+  ix_u = s%global%default_universe
+  b_name = ''
+
+  do
+    call tao_next_switch (what2, [character(20):: '-branch'], .true., switch, err, ix)
+    if (err) return
+    select case (switch)
+    case ('')
+      exit
+
+    case ('-branch')
+      b_name = what2(1:ix)
+
+    case default
+      read (switch, *, iostat = ios) ix_u
+      if (ios /= 0) then
+        nl=1; lines(1) = 'BAD UNIVERSE NUMBER'
+        return
+      endif
+      if (ix_u < lbound(s%u, 1) .or. ix_u > ubound(s%u, 1)) then
+        nl=1; lines(1) = 'UNIVERSE NUMBER OUT OF RANGE'
+        return
+      endif
+    end select
+  enddo
+
+  !
+
+  u => s%u(ix_u)
+  lat => u%model%lat
+
+  if (b_name /= '') then
+    branch => pointer_to_branch(b_name, u%model%lat)
+    if (.not. associated(branch)) then
+      nl=1; write(lines(1), *) 'Bad branch name or index: ', b_name
+      return
+    endif
+    ix_branch = branch%ix_branch
+  endif
+
+  branch => lat%branch(ix_branch)
+  model_branch => u%model_branch(ix_branch)
+  tao_branch => u%model%tao_branch(ix_branch)
+
+  design_lat => u%design%lat
+  design_branch => design_lat%branch(ix_branch)
+  design_tao_branch => u%design%tao_branch(ix_branch)
+
+  nl = 0
+  nl=nl+1; write(lines(nl), '(2(a, i0))') 'Universe: ', ix_u,      '  Of: ', ubound(s%u, 1)
+  nl=nl+1; write(lines(nl), '(3(a, i0))') 'Branch:   ', ix_branch, '  In range: [0, ', ubound(lat%branch,1), ']'
+
+  call radiation_integrals (lat, tao_branch%orbit, tao_branch%modes_ri, tao_branch%ix_rad_int_cache, ix_branch)
+
+  mode_d => design_tao_branch%modes_ri
+  mode_m => tao_branch%modes_ri
+  l_lat = branch%param%total_length
+  mode_d%momentum_compaction = mode_d%synch_int(1)/l_lat
+  mode_m%momentum_compaction = mode_m%synch_int(1)/l_lat
+
+  nt = branch%n_ele_track
+  time1 = branch%ele(nt)%ref_time
+  gamma = branch%ele(0)%value(e_tot$) / mass_of(branch%ele(0)%ref_species)
+
+  fmt  = '(1x, a16, 2es13.5, 2x, 2es13.5, 2x, a)'
+  fmt2 = '(1x, a16,  2f13.6, 2x,  2f13.6, 2x, a)'
+  fmt3 = '(1x, a16,         28x, 2es13.5, 2x, a)'
+
+  nl=nl+1; lines(nl) = ''
+  nl=nl+1; write(lines(nl), '(23x, a)') '         X            |              Y'
+  nl=nl+1; write(lines(nl), '(23x, a)') '  Model       Design  |       Model       Design'
+
+  if (branch%param%geometry == closed$) then
+    nl=nl+1; write(lines(nl), fmt2) 'J_damp', mode_m%a%j_damp, mode_d%a%j_damp, mode_m%b%j_damp, mode_d%b%j_damp, '! Damping Partition #'
+    nl=nl+1; write(lines(nl), fmt) 'Emittance', mode_m%a%emittance, mode_d%a%emittance, mode_m%b%emittance, mode_d%b%emittance, '! Unnormalized'
+    nl=nl+1; write(lines(nl), '(a43, 2x, 2es13.5)') 'Emit (photon vert opening angle ignored)', &
+                                                                      mode_m%b%emittance_no_vert, mode_d%b%emittance_no_vert
+    if (mode_m%b%alpha_damp /= 0) then
+      nl=nl+1; write(lines(nl), fmt) 'Alpha_damp', mode_m%a%alpha_damp, mode_d%a%alpha_damp, mode_m%b%alpha_damp, mode_d%b%alpha_damp, '! Damping per turn'
+      nl=nl+1; write(lines(nl), fmt) 'Damping_time', time1/mode_m%a%alpha_damp, time1/mode_d%a%alpha_damp, time1/mode_m%b%alpha_damp, time1/mode_d%b%alpha_damp, '! Sec'
+    endif
+
+    nl=nl+1; write(lines(nl), fmt) 'I4', mode_m%a%synch_int(4), mode_d%a%synch_int(4), mode_m%b%synch_int(4), mode_d%b%synch_int(4), '! Radiation Integral'
+    nl=nl+1; write(lines(nl), fmt) 'I5', mode_m%a%synch_int(5), mode_d%a%synch_int(5), mode_m%b%synch_int(5), mode_d%b%synch_int(5), '! Radiation Integral'
+    nl=nl+1; write(lines(nl), fmt3) 'I6b/gamma^2', mode_m%b%synch_int(6) / gamma**2, mode_d%b%synch_int(6) / gamma**2, '! Radiation Integral'
+  else
+    nl=nl+1; write(lines(nl), fmt) 'Final Emittance', mode_m%lin%a_emittance_end, mode_d%lin%a_emittance_end, mode_m%lin%b_emittance_end, mode_d%lin%b_emittance_end, '! Meters'
+    nl=nl+1; write(lines(nl), fmt) 'I5*gamma^6', mode_m%lin%i5a_e6, mode_d%lin%i5a_e6, mode_m%lin%i5b_e6, mode_d%lin%i5b_e6, '! Linac Radiation Integral'
+  endif
+
+  fmt  = '(1x, a16, 2es13.5, 3x, a)'
+  fmt2 = '(1x, a16, 2f13.7, 3x, a)'
+
+  nl=nl+1; lines(nl) = ''
+  nl=nl+1; write(lines(nl), '(23x, a)') '  Model       Design'
+
+  if (branch%param%geometry == closed$) then
+    if (mode_m%z%alpha_damp /= 0) then
+      nl=nl+1; write(lines(nl), fmt) 'Sig_E/E:', mode_m%sigE_E, mode_d%sigE_E
+      nl=nl+1; write(lines(nl), fmt) 'Sig_z:  ', mode_m%sig_z, mode_d%sig_z, '! Only calculated when RF is on'
+      nl=nl+1; write(lines(nl), fmt) 'Energy Loss:', mode_m%e_loss, mode_d%e_loss, '! Energy_Loss (eV / Turn)'
+      nl=nl+1; write(lines(nl), fmt) 'J_damp:', mode_m%z%j_damp, mode_d%z%j_damp, '! Longitudinal Damping Partition #'
+      nl=nl+1; write(lines(nl), fmt) 'Alpha_damp:', mode_m%z%alpha_damp, mode_d%z%alpha_damp, '! Longitudinal Damping per turn'
+      nl=nl+1; write(lines(nl), fmt) 'damp_time:', time1/mode_m%z%alpha_damp, time1/mode_d%z%alpha_damp, '! Longitudinal Damping time (sec)'
+    endif
+
+    nl=nl+1; write(lines(nl), fmt) 'Alpha_p:', mode_m%momentum_compaction, mode_d%momentum_compaction, '! Momentum Compaction'
+    nl=nl+1; write(lines(nl), fmt) 'Eta_p:', mode_m%momentum_compaction - 1.0_rp/gamma**2, mode_d%momentum_compaction - 1.0_rp/gamma**2, '! Slip factor'
+    if (mode_m%momentum_compaction > 0) then
+      nl=nl+1; write(lines(nl), fmt) 'gamma_trans:', sqrt(1.0_rp/mode_m%momentum_compaction), sqrt(1.0_rp/mode_d%momentum_compaction), '! Gamma at transition'
+    endif
+
+    nl=nl+1; write(lines(nl), fmt) 'I0:', mode_m%synch_int(0), mode_d%synch_int(0), '! Radiation Integral'
+    nl=nl+1; write(lines(nl), fmt) 'I1:', mode_m%synch_int(1), mode_d%synch_int(1), '! Radiation Integral'
+    nl=nl+1; write(lines(nl), fmt) 'I2:', mode_m%synch_int(2), mode_d%synch_int(2), '! Radiation Integral'
+    nl=nl+1; write(lines(nl), fmt) 'I3:', mode_m%synch_int(3), mode_d%synch_int(3), '! Radiation Integral'
+  else
+    nl=nl+1; write(lines(nl), fmt) 'I1:', mode_m%synch_int(1), mode_d%synch_int(1), '! Radiation Integral'
+    nl=nl+1; write(lines(nl), fmt) 'I2*gamma^4', mode_m%lin%i2_e4, mode_d%lin%i2_e4, '! Linac Radiation Integral'
+    nl=nl+1; write(lines(nl), fmt) 'I3*gamma^7', mode_m%lin%i3_e7, mode_d%lin%i3_e7, '! Linac Radiation Integral'
+  endif
+
 
 !----------------------------------------------------------------------
 ! spin
 
 case ('spin')
 
-  what_to_print = 'standard'
-  show_q = .false.
+  what_to_show = 'standard'
   show_mat = .false.
   sm => datum%spin_map
   sm%axis_input = spin_axis_struct()
   ele_ref_name = ''
   ele_ref => null()
   flip = .false.
+  logic = .false.
+  excite_zero = ''
 
   do
-    call tao_next_switch (what2, [character(24):: '-element', '-n_axis', '-l_axis', &
-                                   '-ref_element', '-q_map', '-g_map', '-flip_n_axis'], .true., switch, err, ix)
+    call tao_next_switch (what2, [character(24):: '-element', '-n_axis', '-l_axis', '-all', &
+                            '-g_map', '-flip_n_axis', '-new', '-x_zero', '-y_zero', &
+                            '-z_zero'], .true., switch, err, ix)
     if (err) return
 
     select case (switch)
     case ('')
       exit
+    case ('-new')
+      logic = .true.
     case ('-element')
-      what_to_print = 'element'
-      ele_name = upcase(what2(1:ix))
+      what_to_show = 'element'
+      ele_ref_name = upcase(what2(1:ix))
+      ele_name = ele_ref_name
       call string_trim(what2(ix+1:), what2, ix)
       if (what2(1:1) /= '-' .and. what2(1:1) /= ' ') then
-        ele_ref_name = ele_name
         ele_name = upcase(what2(1:ix))
         call string_trim(what2(ix+1:), what2, ix)
       endif
     case ('-flip_n_axis')
       flip = .true.
-    case ('-ref_element')  ! Note: This is old deprecated syntax.
-      ele_ref_name = upcase(what2(1:ix))
-      call string_trim(what2(ix+1:), what2, ix)
     case ('-n_axis')
       read (what2, *, iostat = ios) sm%axis_input%n0
       if (ios /= 0) then
@@ -3748,13 +4213,19 @@ case ('spin')
       call word_read(what2, ' ,', word1, ix, delim, delim_found, what2)
       call word_read(what2, ' ,', word1, ix, delim, delim_found, what2)
     case ('-q_map')
-      show_q = .true.
+      nl=nl+1; lines(nl) = 'Note: "-q_map" now no longer needed or used.'
     case ('-g_map')
       show_mat = .true.
+    case ('-x_zero')
+      call word_read(what2, '-', excite_zero(1), ix, delim, delim_found, what2)
+    case ('-y_zero')
+      call word_read(what2, '-', excite_zero(2), ix, delim, delim_found, what2)
+    case ('-z_zero')
+      call word_read(what2, '-', excite_zero(3), ix, delim, delim_found, what2)
     end select
   enddo
 
-  if (.not. show_mat) show_q = .true.
+  show_q = (.not. show_mat)
 
   !
 
@@ -3763,13 +4234,15 @@ case ('spin')
     bmad_com%spin_tracking_on = .true.
   endif
 
-  ! what_to_print = standard
+  ! what_to_show = standard
 
   r = anomalous_moment_of(branch%param%particle) * branch%ele(1)%value(e_tot$) / mass_of(branch%param%particle)
   nl=nl+1; lines(nl) = 'a_anomalous_moment * gamma = ' // real_str(r, 6)
   nl=nl+1; lines(nl) = 'E_tot = ' // real_str(branch%ele(1)%value(e_tot$), 6)
+  qs = branch%param%spin_tune/twopi
+  nl=nl+1; write (lines(nl), '(a, f12.6, a)') 'Spin Tune', qs, 'rad/2pi'
 
-  if (what_to_print == 'standard') then
+  if (what_to_show == 'standard') then
     ele => branch%ele(0)
 
     nl=nl+1; write(lines(nl), lmt) 'bmad_com%spin_tracking_on                = ', bmad_com%spin_tracking_on
@@ -3779,7 +4252,7 @@ case ('spin')
       nl=nl+1; lines(nl) = ''
       nl=nl+1; write(lines(nl), '(a, 3f12.8)') 'Beginning spin:', orb%spin
     else
-      call tao_spin_polarization_calc (branch, tao_branch)
+      call tao_spin_polarization_calc (branch, tao_branch, excite_zero)
       nl=nl+1; lines(nl) = ''
       nl=nl+1; write (lines(nl), '(a, es18.7)') 'spin_tune: ', tao_branch%spin%tune / twopi
       if (tao_branch%spin_valid) then
@@ -3787,18 +4260,73 @@ case ('spin')
           nl=nl+1; lines(nl) = 'No bends or other radiation producing lattice elements detected!'
         else
           r = c_light * tao_branch%orbit(0)%beta / branch%param%total_length
-          nl=nl+1; write(lines(nl), '(a, f12.8, es12.4)')  'Polarization Limit ST:                  ', tao_branch%spin%pol_limit_st
-          nl=nl+1; write(lines(nl), '(a, f12.8, es12.4)')  'Polarization Limit DKM:                 ', tao_branch%spin%pol_limit_dkm
-          nl=nl+1; write(lines(nl), '(a, f12.8, 3es12.4)') 'Polarization Limits DKM (a,b,c-modes):  ', tao_branch%spin%pol_limit_dkm_partial
-          x = 1.0_rp / tao_branch%spin%pol_rate_bks
-          nl=nl+1; write(lines(nl), '(a, a12, es12.4)')    'Polarization Time BKS (minutes, turns): ', real_str(x/60, 3), r*x
-          x = 1.0_rp / tao_branch%spin%depol_rate
-          nl=nl+1; write(lines(nl), '(a, a12, es12.4)')    'Depolarization Time (minutes, turns):   ', real_str(x/60, 3), r*x
-          v2 = 1 / tao_branch%spin%depol_rate_partial
-          nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (a-mode) (minutes, turns):', real_str(v2(1), 3), r*v2(1)
-          nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (b-mode) (minutes, turns):', real_str(v2(2), 3), r*v2(2)
-          nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (c-mode) (minutes, turns):', real_str(v2(3), 3), r*v2(3)
+          nl=nl+1; write(lines(nl), '(a, f12.8, es12.4)')  'Polarization Limit ST:                   ', tao_branch%spin%pol_limit_st
+          nl=nl+1; write(lines(nl), '(a, f12.8, es12.4)')  'Polarization Limit DK:                   ', tao_branch%spin%pol_limit_dk
+          nl=nl+1; write(lines(nl), '(a, f12.8, 3es12.4)') 'Polarization Limits DK (a,b,c-modes):    ', tao_branch%spin%pol_limit_dk_partial
+          nl=nl+1; write(lines(nl), '(a, f12.8, 3es12.4)') 'Polarization Limits DK (bc,ac,ab-modes): ', tao_branch%spin%pol_limit_dk_partial2
+
+          if (tao_branch%spin%pol_rate_bks == 0) then
+            nl=nl+1; write(lines(nl), '(a, a12, es12.4)')    'Polarization Time BKS (minutes, turns): plarization rate is zero!'
+          else
+            x = 1.0_rp / tao_branch%spin%pol_rate_bks
+            nl=nl+1; write(lines(nl), '(a, a12, es12.4)')    'Polarization Time BKS (minutes, turns): ', real_str(x/60.0_rp, 3), r*x
+          endif
+
+          if (1.0_rp / tao_branch%spin%depol_rate == 0) then
+            nl=nl+1; write(lines(nl), '(a, a12, es12.4)')    'Depolarization Time (minutes, turns):   Depolarization rate is zero!'
+          else
+            x = 1.0_rp / tao_branch%spin%depol_rate
+            nl=nl+1; write(lines(nl), '(a, a12, es12.4)')    'Depolarization Time (minutes, turns):   ', real_str(x/60.0_rp, 3), r*x
+          endif
+
+          if (tao_branch%spin%depol_rate_partial(1) == 0) then
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (a-mode) (minutes, turns): Depolarization rate is zero!'
+          else
+            x = 1 / tao_branch%spin%depol_rate_partial(1)
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (a-mode) (minutes, turns):', real_str(x/60.0_rp, 3), r*x
+          endif
+
+          if (tao_branch%spin%depol_rate_partial(2) == 0) then
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (b-mode) (minutes, turns): Depolarization rate is zero!'
+          else
+            x = 1 / tao_branch%spin%depol_rate_partial(2)
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (b-mode) (minutes, turns):', real_str(x/60.0_rp, 3), r*x
+          endif
+
+          if (tao_branch%spin%depol_rate_partial(3) == 0) then
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (c-mode) (minutes, turns): Depolarization rate is zero!'
+          else
+            x = 1 / tao_branch%spin%depol_rate_partial(3)
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (c-mode) (minutes, turns):', real_str(x/60.0_rp, 3), r*x
+          endif
+
+          if (tao_branch%spin%depol_rate_partial2(1) == 0) then
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (b&c modes) (minutes, turns): Depolarization rate is zero!'
+          else
+            x = 1 / tao_branch%spin%depol_rate_partial2(1)
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (b&c modes) (minutes, turns):', real_str(x/60.0_rp, 3), r*x
+          endif
+
+          if (tao_branch%spin%depol_rate_partial2(2) == 0) then
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (a&c modes) (minutes, turns): Depolarization rate is zero!'
+          else
+            x = 1 / tao_branch%spin%depol_rate_partial2(2)
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (a&c modes) (minutes, turns):', real_str(x/60.0_rp, 3), r*x
+          endif
+
+          if (tao_branch%spin%depol_rate_partial2(3) == 0) then
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (a&b modes) (minutes, turns): Depolarization rate is zero!'
+          else
+            x = 1 / tao_branch%spin%depol_rate_partial2(3)
+            nl=nl+1; write(lines(nl), '(a, a12, 3es12.4)')   'Depolarization Time (a&b modes) (minutes, turns):', real_str(x/60.0_rp, 3), r*x
+          endif
+
+          nl=nl+1; write(lines(nl), '(a, a14)')            'Integral g^3 * b_hat * n_0:         ', real_str(tao_branch%spin%integral_bn, 5)
+          nl=nl+1; write(lines(nl), '(a, a14)')            'Integral g^3 * b_hat * dn/ddelta:   ', real_str(tao_branch%spin%integral_bdn, 5)
+          nl=nl+1; write(lines(nl), '(a, a14)')            'Integral g^3 (1 - 2(n * s_hat)/9):  ', real_str(tao_branch%spin%integral_1ns, 5)
+          nl=nl+1; write(lines(nl), '(a, a14)')            'Integral g^3 * 11 (dn/ddelta)^2 / 9:', real_str(tao_branch%spin%integral_dn2, 5)
         endif
+
       else
         nl=nl+1; lines(nl) = 'Polarization calc not valid.'
       endif
@@ -3838,7 +4366,7 @@ case ('spin')
             nl=nl+1; write(lines(nl), '(i8, f12.6, 4x, a)') ix, d_ptr%spin_map%map1%spin_q(ix,0), reals_to_string(d_ptr%spin_map%map1%spin_q(ix,1:), 11, 1, 6, 6)
           enddo
           if (d_ptr%spin_map%ix_ref == d_ptr%spin_map%ix_ele) then
-            dn_dpz = spin_dn_dpz_from_qmap(real(d_ptr%spin_map%map1%orb_mat, rp), real(d_ptr%spin_map%map1%spin_q, rp), dn_partial, err)
+            dn_dpz = spin_dn_dpz_from_qmap(real(d_ptr%spin_map%map1%orb_mat, rp), real(d_ptr%spin_map%map1%spin_q, rp), dn_partial, dn_partial2, err)
             nl=nl+1; lines(nl) = ''
             nl=nl+1; write(lines(nl), '(3x, a, 3es14.6)') 'dn/dpz:', dn_dpz
           endif
@@ -3846,13 +4374,16 @@ case ('spin')
       enddo
     enddo
 
-  ! what_to_print = element
+  ! what_to_show = element
   else
     call tao_pick_universe (ele_name, ele_name, picked_uni, err, ix_u)
     if (err) return
     u => s%u(ix_u)
     call tao_locate_elements (ele_name, ix_u, eles, err)
-    if (err) return
+    if (err) then
+      nl = 0
+      return
+    endif
     ele => eles(1)%ele
 
     if (ele_ref_name /= '') then
@@ -3870,14 +4401,14 @@ case ('spin')
       if (flip) sm%axis_input%n0 = -sm%axis_input%n0 
     endif
 
-    datum%ix_branch = ix_branch
-    call tao_spin_matrix_calc (datum, u, ele_ref, ele)
-    if (.not. sm%valid) then
-      nl=nl+1; lines(nl) = 'INVALID: ' // datum%why_invalid
-      return
-    endif
-
     if (show_mat) then
+      datum%ix_branch = ix_branch
+      call tao_spin_matrix_calc (datum, u, ele_ref, ele, excite_zero)
+      if (.not. sm%valid) then
+        nl=nl+1; lines(nl) = 'INVALID: ' // datum%why_invalid
+        return
+      endif
+
       if (all(sm%axis_input%n0 == 0) .and. ele_ref%ix_ele /= ele%ix_ele) then
         nl=nl+1; lines(nl) = 'NO SPIN AXIS COMPUTED.' 
         nl=nl+1; lines(nl) = 'TO TURN SPIN TRACKING ON FROM THE COMMAND LINE: "set bmad spin_tracking_on = T"'
@@ -3895,54 +4426,57 @@ case ('spin')
       enddo
     endif
 
-    call spin_mat_to_eigen (sm%map1%orb_mat, sm%map1%spin_q, eval, evec, n0, n_eigen, err)
-    if (err) return
-
-    if (dot_product(n0, sm%axis0%n0) < 0) n_eigen = -n_eigen
-
     if (show_q) then
+      call spin_concat_linear_maps(err, sm%map1, branch, ele_ref%ix_ele, ele%ix_ele, &
+                                             orbit = tao_branch%orbit, excite_zero = excite_zero)
+      if (err) return
+
       nl=nl+1; lines(nl) = ''
       nl=nl+1; lines(nl) = 'Spin quaternion map - 1st order' 
-      nl=nl+1; write (lines(nl), '(14x, a, 7x, 6(2x, a, 7x))') '0th order', 'dx  ', 'dpx', 'dy ', 'dpy', 'dz ', 'dpz'
+      nl=nl+1; write (lines(nl), '(15x, a, 7x, 6(4x, a, 7x))') '0th order', 'dx  ', 'dpx', 'dy ', 'dpy', 'dz ', 'dpz'
       do i = 0, 3
-        nl=nl+1; write(lines(nl), '(i4, 2x, a, 2x, f12.6, 4x, a)') i, q_name(i), sm%map1%spin_q(i,0), reals_to_string(sm%map1%spin_q(i,1:), 11, 1, 6, 6)
+        nl=nl+1; write(lines(nl), '(i4, 2x, a, 2x, f14.8, 4x, a)') i, q_name(i), sm%map1%spin_q(i,0), reals_to_string(sm%map1%spin_q(i,1:), 13, 1, 8, 8)
       enddo
       if (ele_ref%ix_ele == ele%ix_ele) then
-        dn_dpz = spin_dn_dpz_from_qmap(sm%map1%orb_mat, sm%map1%spin_q, dn_partial, err)
+        dn_dpz = spin_dn_dpz_from_qmap(sm%map1%orb_mat, sm%map1%spin_q, dn_partial, dn_partial2, err)
         nl=nl+1; lines(nl) = ''
         nl=nl+1; write(lines(nl), '(3x, a, 3es14.6)') 'dn/dpz:', dn_dpz
       endif
     endif
 
-    if (ele%ix_ele == ele_ref%ix_ele) then
-      nl=nl+1; lines(nl) = ''
-      nl=nl+1; lines(nl) = 'Eigen:'
-      nl=nl+1; lines(nl) = '     |Eval|     E_val            x           px          y           py          z           pz              Sx          Sy          Sz'
+    if (ele_ref%ix_ele == ele%ix_ele) then
+      call spin_mat_to_eigen (sm%map1%orb_mat, sm%map1%spin_q, eval, evec, n0, n_eigen, err)
+      if (err) return
+      if (dot_product(n0, sm%axis0%n0) < 0) n_eigen = -n_eigen
 
-      do i = 1, 6
-        nl=nl+1; write (lines(nl), '(a, 2f10.6,     4x, 6f12.6, 4x, 3es12.4)', iostat = ios) 're', abs(eval(i)), real(eval(i),rp), real(evec(i,:),rp), real(n_eigen(i,:),rp)
-        nl=nl+1; write (lines(nl), '(a, 10x, f10.6, 4x, 6f12.6, 4x, 3es12.4)', iostat = ios) 'im', aimag(eval(i)), aimag(evec(i,:)), aimag(n_eigen(i,:))
+      if (ele%ix_ele == ele_ref%ix_ele) then
         nl=nl+1; lines(nl) = ''
-      enddo
+        nl=nl+1; lines(nl) = 'Eigen:'
+        nl=nl+1; lines(nl) = '     |Eval|     E_val            x           px          y           py          z           pz              Sx          Sy          Sz'
 
-      nl=nl+1; lines(nl) = ''
-      nl=nl+1; lines(nl) = 'Resonance strengths:'
-      nl=nl+1; lines(nl) = '            Tune        |Q-Qs|      Xi(quat.v1)  Xi(quat.v2)         Xi(G.v1)     Xi(G.v2)'
+        do i = 1, 6
+          nl=nl+1; write (lines(nl), '(a, 2f10.6,     4x, 6f12.6, 4x, 3es12.4)', iostat = ios) 're', abs(eval(i)), real(eval(i),rp), real(evec(i,:),rp), real(n_eigen(i,:),rp)
+          nl=nl+1; write (lines(nl), '(a, 10x, f10.6, 4x, 6f12.6, 4x, 3es12.4)', iostat = ios) 'im', aimag(eval(i)), aimag(evec(i,:)), aimag(n_eigen(i,:))
+          nl=nl+1; lines(nl) = ''
+        enddo
 
-      qs = branch%param%spin_tune/twopi
-      do i = 1, 3
-        j = 2 * i - 1
-        q = atan2(aimag(eval(j)), real(eval(j),rp)) / twopi
-        dq = min(abs(modulo2(q-qs, 0.5_rp)), abs(modulo2(q+qs, 0.5_rp)))
-        call spin_quat_resonance_strengths(evec(j,:), sm%map1%spin_q, xi_quat)
-        call spin_mat8_resonance_strengths(evec(j,:), sm%mat8, xi_mat8)
-        nl=nl+1; write (lines(nl), '(5x, a, 2f12.6, 8(4x, 2es13.5))') abc_name(i), q, dq, xi_quat, xi_mat8
-      enddo
-      nl=nl+1; write (lines(nl), '(2x, a, f12.6, es12.4)') 'Spin', qs
+        nl=nl+1; lines(nl) = ''
+        nl=nl+1; lines(nl) = 'Resonance strengths:'
+        nl=nl+1; lines(nl) = '          Orb_Tune   |Q+/-Qs|min           Xi1          Xi2   '
+
+        do i = 1, 3
+          j = 2 * i - 1
+          q = atan2(aimag(eval(j)), real(eval(j),rp)) / twopi
+          dq = min(abs(modulo2(q-qs, 0.5_rp)), abs(modulo2(q+qs, 0.5_rp)))
+          call spin_quat_resonance_strengths(evec(j,:), sm%map1%spin_q, xi_quat)
+          nl=nl+1; write (lines(nl), '(5x, a, 2f13.7, 8(4x, 2es13.5))') abc_name(i), q, dq, xi_quat 
+        enddo
+        nl=nl+1; lines(nl) = 'Note: "help show spin" will display information on this table.'
+      endif
     endif
   endif
 
-  result_id = 'spin:' // what_to_print
+  result_id = 'spin:' // what_to_show
   return
 
 !----------------------------------------------------------------------
@@ -3982,8 +4516,33 @@ case ('string')
       str = str(:n-1)
     endif
 
-    call tao_evaluate_expression (str, 0, .false., value, err)
-    if (err) return
+    ! If str evaluates to an element parameter. EG: "ele::34[name]".
+
+    call tao_parse_element_param_str(err, str, uni_str, ele_name, param_name, loc, component)
+    param_name = upcase(param_name)
+    if (.not. err .and. loc == anchor_end$ .and. ele_name /= '' .and. component == ''.and. &
+                                                            attribute_type(param_name) == is_string$) then
+      u => tao_pointer_to_universe(uni_str)
+      if (associated(u)) then
+        call tao_locate_elements(ele_name, u%ix_uni, eles, err, multiple_eles_is_err = .true.)
+        if (.not. err) then
+          call string_attrib(param_name, eles(1)%ele, str)
+          line = line(1:nc) // str
+          nc = len_trim(line)
+          cycle
+        endif
+      endif
+    else
+      call tao_evaluate_expression (str, 0, .false., value, err)
+    endif
+
+    if (err) then
+      line = line(1:nc) // '??????'
+      nc = len_trim(line)
+      cycle
+    endif
+
+    !
 
     if (size(value) == 1) then
       line = line(1:nc) // real_str(value(1), n_order)
@@ -4014,21 +4573,22 @@ case ('string')
 
 case ('symbolic_numbers')
 
-  what_to_print = 'tao'
+  what_to_show = 'tao'
 
   do
     call tao_next_switch (what2, [character(24):: '-physical_constants', '-lattice_constants'], .true., switch, err, ix)
     if (err) return
     select case (switch)
     case ('');           exit
-    case ('-physical_constants');    what_to_print = 'physical'
-    case ('-lattice_constants');     what_to_print = 'lattice'
+    case ('-physical_constants');    what_to_show = 'physical'
+    case ('-lattice_constants');     what_to_show = 'lattice'
     end select
   enddo
 
-  select case (what_to_print)
+  select case (what_to_show)
   case ('tao')
     if (allocated(s%com%symbolic_num)) then
+      n = nl+10+size(s%com%symbolic_num); if (n > size(lines)) call re_allocate (lines, n, .false.)
       do i = 1, size(s%com%symbolic_num)
         nl=nl+1; write (lines(nl), '(2x, 2a, es22.15)') s%com%symbolic_num(i)%name, '=', s%com%symbolic_num(i)%value
       enddo
@@ -4037,6 +4597,7 @@ case ('symbolic_numbers')
     endif
 
   case ('physical')
+    n = nl+10+size(physical_const_list); if (n > size(lines)) call re_allocate (lines, n, .false.)
     do i = 1, size(physical_const_list)
       if (physical_const_list(i)%name == 'emass' .or. physical_const_list(i)%name == 'pmass') then
         nl=nl+1; write (lines(nl), '(2x, 2a, es22.15, a)') physical_const_list(i)%name, '=', physical_const_list(i)%value, &
@@ -4048,6 +4609,7 @@ case ('symbolic_numbers')
 
   case ('lattice')
     if (allocated(lat%constant)) then
+      n = nl+10+size(lat%constant); if (n > size(lines)) call re_allocate (lines, n, .false.)
       do i = 1, size(lat%constant)
         nl=nl+1; write (lines(nl), '(2x, 2a, es22.15)') lat%constant(i)%name, '=', lat%constant(i)%value
       enddo
@@ -4100,10 +4662,9 @@ case ('taylor_map', 'matrix')
         return
       endif
       call string_trim (what2(ix+1:), what2, ix)
-      if (n_order > ptc_com%taylor_order_ptc) then
+      if (n_order > ptc_private%taylor_order_ptc) then
         nl=1; write(lines(nl), '(a, i0)') &
-                  'TAYLOR ORDER CANNOT BE ABOVE ORDER USED IN CALCULATIONS WHICH IS ', &
-                  ptc_com%taylor_order_ptc
+                  'TAYLOR ORDER CANNOT BE ABOVE ORDER USED IN CALCULATIONS WHICH IS ', ptc_private%taylor_order_ptc
         return
       endif
     case ('-ptc')
@@ -4172,7 +4733,7 @@ case ('taylor_map', 'matrix')
 
     call twiss_and_track_at_s (lat, s1, ele0, u%model%tao_branch(ix_branch)%orbit, orb, ix_branch)
 
-    if (n_order > 1 .or. print_ptc .or. disp_fmt == 'BMAD') then
+    if (n_order > 1 .or. print_ptc) then
       call transfer_map_from_s_to_s (lat, taylor, s1, s2, orb, ix_branch = ix_branch, &
                                                         one_turn = .true., concat_if_possible = s%global%concatenate_maps)
       call taylor_to_mat6(taylor, u%model%tao_branch(ix_branch)%orbit(ix1)%vec, vec0, mat6)
@@ -4282,7 +4843,7 @@ case ('taylor_map', 'matrix')
       nl=nl+1; lines(nl) = 'To:   ' // trim(branch%ele(ix2)%name)
     endif
 
-    if (n_order > 1 .or. print_ptc .or. disp_fmt == 'BMAD') then
+    if (n_order > 1 .or. print_ptc) then
       call transfer_map_calc (lat, taylor, err, ix1, ix2, u%model%tao_branch(ix_branch)%orbit(ix1), &
                                                       one_turn = .true., concat_if_possible = s%global%concatenate_maps)
       if (err) then
@@ -4322,11 +4883,15 @@ case ('taylor_map', 'matrix')
     enddo
 
   else
-    if (n_order > 1 .or. disp_fmt == 'BMAD') then
+    if (n_order > 1) then
       if (angle_units) call map_to_angle_coords (taylor, taylor)
       if (n_order > 1) call truncate_taylor_to_order (taylor, n_order, taylor)
       call type_taylors (taylor, lines = lines, n_lines = nl, out_style = disp_fmt, clean = .true.)
       if (print_eigen) call taylor_to_mat6 (taylor, taylor%ref, vec0, mat6)
+
+    elseif (disp_fmt == 'BMAD') then
+      call mat6_to_taylor (vec0, mat6, taylor, ref_vec)
+      call type_taylors (taylor, lines = lines, n_lines = nl, out_style = disp_fmt, clean = .true.)
 
     else
       if (angle_units) then
@@ -4383,6 +4948,8 @@ case ('taylor_map', 'matrix')
 
 case ('track')
 
+  what_to_show = ''
+  ele_name = ''
   velocity_fmt = ''
   e_field_fmt = ''
   b_field_fmt = ''
@@ -4405,7 +4972,7 @@ case ('track')
   do 
     call tao_next_switch (what2, [character(16):: '-e_field', '-b_field', '-velocity', '-momentum', &
                 '-energy', '-position', '-no_label_lines', '-s', '-spin', '-points', '-time', &
-                '-range', '-twiss', '-dispersion', '-branch', '-universe', '-design', '-base'], &
+                '-range', '-twiss', '-dispersion', '-branch', '-universe', '-design', '-base', '-element'], &
                 .false., switch, err, ix_s2)
 
     if (err) return
@@ -4416,6 +4983,9 @@ case ('track')
       e_field_fmt = get_this_track_fmt(what2, 'es15.6', err); if (err) return
     case ('-b_field')
       b_field_fmt = get_this_track_fmt(what2, 'es15.6', err); if (err) return
+    case ('-element')
+      ele_name = what2(1:ix_s2)
+      call string_trim(what2(ix_s2+1:), what2, ix_s2)
     case ('-energy')
       energy_fmt = get_this_track_fmt(what2, 'es15.6', err); if (err) return
     case ('-velocity')
@@ -4479,6 +5049,36 @@ case ('track')
   branch => lat%branch(branch%ix_branch)
   ix_branch = branch%ix_branch
   tao_branch => tao_lat%tao_branch(ix_branch)
+  if (ele_name /= '') then
+    call tao_locate_elements (ele_name, u%ix_uni, eles, err, lat_type, multiple_eles_is_err = .true.)
+    if (err) return
+    ele => eles(1)%ele
+    s1 = ele%s_start
+    s2 = ele%s
+    if (ele%key == beambeam$) what_to_show = 'beambeam'
+  endif
+
+  ! Beambeam element.
+
+  if (what_to_show == 'beambeam') then
+    call track1 (tao_branch%orbit(ele%ix_ele-1), ele, ele%branch%param, orb2, track, err)
+    call re_allocate(lines, nl+track%n_pt+10)
+
+    nl=nl+1; lines(nl) = '           |                 Tracked particle (Laboratory Coordinates)                     |         Strong Beam (Lab Coords)                            | Particle - Beam distance'
+    nl=nl+1; lines(nl) = '    s_body |       x            px           y            py           z            pz     | slice     x_center     y_center      x_sigma      y_sigma   |         dx           dy'
+
+    do i = 0, track%n_pt
+      tp => track%pt(i)
+      sb => tp%strong_beam
+      if (sb%ix_slice == 0) then
+        nl=nl+1; write (lines(nl), '(f11.6, 1x, 6es13.5)') tp%s_body, tp%orb%vec
+      else
+        nl=nl+1; write (lines(nl), '(f11.6, 1x, 6es13.5, i8, 2x, 4es13.5, 2x, 2es13.5)') tp%s_body, tp%orb%vec, &
+                                  sb%ix_slice, sb%x_center, sb%y_center, sb%x_sigma, sb%y_sigma, sb%dx, sb%dy
+      endif
+    enddo
+    return
+  endif
 
   !
 
@@ -4700,19 +5300,14 @@ case ('twiss_and_orbit')
 case ('universe')
 
   ix_u = s%global%default_universe
-  ele_name = ''
   b_name = ''
 
   do
-    call tao_next_switch (what2, [character(12):: '-element', '-branch'], .true., switch, err, ix)
+    call tao_next_switch (what2, [character(20):: '-branch'], .true., switch, err, ix)
     if (err) return
     select case (switch)
     case ('')
       exit
-
-    case ('-element')       
-      ele_name = what2(:ix)
-      call string_trim(what2(ix+1:), what2, ix)
 
     case ('-branch')
       b_name = what2(1:ix)
@@ -4751,6 +5346,8 @@ case ('universe')
   design_lat => u%design%lat
   design_branch => design_lat%branch(ix_branch)
   design_tao_branch => u%design%tao_branch(ix_branch)
+  nt = branch%n_ele_track
+  species = branch%param%default_tracking_species
 
   nl = 0
   nl=nl+1; write(lines(nl), '(2(a, i0))') 'Universe: ', ix_u,      '  Of: ', ubound(s%u, 1)
@@ -4761,37 +5358,45 @@ case ('universe')
   nl=nl+1; write(lines(nl), amt) 'Used line(s) in lat file: ', quote(lat%use_name)
   nl=nl+1; write(lines(nl), amt) 'Lattice file name:        ', quote(lat%input_file_name)
   nl=nl+1; write(lines(nl), amt) 'Reference species:        ', species_name(branch%param%particle)
-  species = branch%param%default_tracking_species
+
   if (species == ref_particle$ .or. species == anti_ref_particle$) then
     nl=nl+1; write(lines(nl), amt) 'Default tracking species: ', trim(species_name(species)), ' (', trim(species_name(default_tracking_species(branch%param))), ')'
   else
     nl=nl+1; write(lines(nl), amt) 'Default tracking species: ', species_name(species)
   endif
+
   if (branch%param%particle == photon$) then
     nl=nl+1; write(lines(nl), amt) 'photon_type:                 ', photon_type_name(lat%photon_type)
   else
     species = branch%ele(0)%ref_species
-    nl=nl+1; write(lines(nl), rmt) 'a_anomalous_moment * gamma   ', anomalous_moment_of(species) * branch%ele(0)%value(e_tot$) / mass_of(species)
-  endif
-  nl=nl+1; write(lines(nl), rmt) 'Reference energy:            ', branch%ele(0)%value(e_tot$)
-  nl=nl+1; write(lines(nl), rmt) 'Reference momentum:          ', branch%ele(0)%value(p0c$)
-  nl=nl+1; write(lines(nl), lmt) 'Absolute_Time_Tracking:      ', lat%absolute_time_tracking
-  nl=nl+1; write(lines(nl), amt) 'photon_type:                 ', photon_type_name(lat%photon_type)
-  nl=nl+1; write(lines(nl), amt) 'Geometry:                    ', geometry_name(branch%param%geometry)
-  nl=nl+1; write(lines(nl), lmt) 'global%rf_on:                ', s%global%rf_on
-  nl=nl+1; write(lines(nl), lmt) 'high_energy_space_charge_on: ', branch%param%high_energy_space_charge_on
-  nl=nl+1; write(lines(nl), imt) 'Elements used in tracking: From 1 through ', branch%n_ele_track
-  if (branch%n_ele_max > branch%n_ele_track) then
-    nl=nl+1; write(lines(nl), '(2(a, i0))') 'Lord elements:   ', &
-                      branch%n_ele_track+1, '  through ', branch%n_ele_max
-  else
-    nl=nl+1; write(lines(nl), '(a)') 'There are NO Lord elements'
+    gamma = branch%ele(0)%value(e_tot$) / mass_of(species)
+    nl=nl+1; write(lines(nl), rmt) 'a_anomalous_moment * gamma   ', anomalous_moment_of(species) * gamma
   endif
 
-  nl=nl+1; write(lines(nl), '(a, f0.3)')   'Lattice branch length:      ', branch%param%total_length
-  nl=nl+1; write(lines(nl), '(a, es13.6)')   'Lattice branch transit time:', branch%ele(branch%n_ele_track)%ref_time - branch%ele(0)%ref_time
-  nl=nl+1; write(lines(nl), '(a, 2(f0.3, a))') 'Lattice branch S-range:     [', &
-                                                branch%ele(0)%s, ', ', branch%ele(branch%n_ele_track)%s, ']'
+  if (branch%param%geometry == closed$ .or. branch%param%particle == photon$) then
+    nl=nl+1; write(lines(nl), rmt) 'Reference energy:            ', branch%ele(0)%value(e_tot$)
+    nl=nl+1; write(lines(nl), rmt) 'Reference momentum:          ', branch%ele(0)%value(p0c$)
+  else
+    nl=nl+1; write(lines(nl), rmt) 'Starting reference energy:   ', branch%ele(0)%value(e_tot$)
+    nl=nl+1; write(lines(nl), rmt) 'Starting reference momentum: ', branch%ele(0)%value(p0c$)
+    nl=nl+1; write(lines(nl), rmt) 'Ending reference energy:     ', branch%ele(nt)%value(e_tot$)
+    nl=nl+1; write(lines(nl), rmt) 'Ending reference momentum:   ', branch%ele(nt)%value(p0c$)
+  endif
+
+  nl=nl+1; write(lines(nl), lmt) 'Absolute_Time_Tracking:      ', bmad_com%absolute_time_tracking
+  nl=nl+1; write(lines(nl), amt) 'Geometry:                    ', geometry_name(branch%param%geometry)
+  nl=nl+1; write(lines(nl), lmt) 'global%rf_on:                ', s%global%rf_on
+  nl=nl+1; write(lines(nl), imt) 'Elements used in tracking: From 1 through ', nt
+  if (branch%n_ele_max > nt) then
+    nl=nl+1; write(lines(nl), '(2(a, i0))') 'Lord elements:   ', nt+1, '  through ', branch%n_ele_max
+  else
+    nl=nl+1; write(lines(nl), '(a)') 'There are no Lord elements'
+  endif
+
+  nl=nl+1; write(lines(nl), '(a, f0.3)')       'Lattice branch length:      ', branch%param%total_length
+  nl=nl+1; write(lines(nl), '(a, es13.6)')     'Lattice branch transit time:', branch%ele(nt)%ref_time - branch%ele(0)%ref_time
+  nl=nl+1; write(lines(nl), '(a, 2(f0.6, a))') 'Lattice branch S-range:     [', &
+                                                branch%ele(0)%s, ', ', branch%ele(nt)%s, ']'
 
   if (branch%param%geometry == open$ .and. tao_branch%track_state /= moving_forward$) then
     if (s%global%track_type == 'beam') then
@@ -4819,137 +5424,100 @@ case ('universe')
     enddo
   endif
  
-  if (s%global%rad_int_calc_on) then
-    call radiation_integrals (lat, tao_branch%orbit, tao_branch%modes, tao_branch%ix_rad_int_cache, ix_branch)
-  else
-    nl= nl+1; lines(nl) = ' Note: User has turned radiation integrals calculations off so emittances, etc. will not be displayed.'
-  endif
+  fmt  = '(1x, a16, 2es13.5, 2x, 2es13.5, 2x, a)'
+  fmt2 = '(1x, a16,  2f13.6, 2x,  2f13.6, 2x, a)'
+  fmt3 = '(1x, a16,         28x, 2es13.5, 2x, a)'
+  phase_units = 1 / twopi
+  time1 = branch%ele(nt)%ref_time
+
+  !
 
   if (lat%param%geometry == closed$) then
+    u%model%high_e_lat = u%model%lat
+    ele2 => u%model%high_e_lat%branch(ix_branch)%ele(0)
+    call emit_6d (ele2, .false., tao_branch%modes_6d, sig_mat)
+    call emit_6d (ele2, .true., tao_branch%modes_6d, sig_mat)
+
     call chrom_calc (lat, s%global%delta_e_chrom, tao_branch%a%chrom, tao_branch%b%chrom, &
                           pz = tao_branch%orbit(0)%vec(6), ix_branch = ix_branch)
-  endif
 
-  fmt  = '(1x, a16, 2es13.5, 2x, 2es13.5, 2x, a)'
-  fmt2 = '(1x, a16, 2f13.6, 2x, 2f13.6, 2x, a)'
-  fmt3 = '(1x, a16,        28x, 2es13.5, 2x, a)'
-  phase_units = 1 / twopi
-  l_lat = branch%param%total_length
-  gamma2 = (branch%ele(0)%value(e_tot$) / mass_of(branch%param%particle))**2
-  n = branch%n_ele_track
-  time1 = branch%ele(n)%ref_time
-
-  if (branch%param%geometry == closed$ .or. s%global%rad_int_calc_on) then
+    mode_d => design_tao_branch%modes_6d
+    mode_m => tao_branch%modes_6d
+    mode_m%momentum_compaction = momentum_compaction(branch)
 
     nl=nl+1; lines(nl) = ''
-    nl=nl+1; write(lines(nl), '(23x, a)') '         X            |              Y'
+    nl=nl+1; write(lines(nl), '(23x, a)') '       A-Mode         |            B-Mode'
     nl=nl+1; write(lines(nl), '(23x, a)') '  Model       Design  |       Model       Design'
 
-    if (branch%param%geometry == closed$) then
-      nl=nl+1; write(lines(nl), fmt2) 'Q', phase_units*branch%ele(n)%a%phi, &
-            phase_units*design_branch%ele(n)%a%phi, phase_units*branch%ele(n)%b%phi, phase_units*design_branch%ele(n)%b%phi,  '! Tune'
-      nl=nl+1; write(lines(nl), fmt2) 'Chrom', tao_branch%a%chrom, design_tao_branch%a%chrom, tao_branch%b%chrom, design_tao_branch%b%chrom, '! dQ/(dE/E)'
-      if (s%global%rad_int_calc_on) then
-        nl=nl+1; write(lines(nl), fmt2) 'J_damp', tao_branch%modes%a%j_damp, design_tao_branch%modes%a%j_damp, tao_branch%modes%b%j_damp, &
-            design_tao_branch%modes%b%j_damp, '! Damping Partition #'
-        nl=nl+1; write(lines(nl), fmt) 'Emittance', tao_branch%modes%a%emittance, &
-            design_tao_branch%modes%a%emittance, tao_branch%modes%b%emittance, design_tao_branch%modes%b%emittance, '! Meters'
-      endif
+    nl=nl+1; write(lines(nl), fmt2) 'Q', phase_units*branch%ele(nt)%a%phi, &
+          phase_units*design_branch%ele(nt)%a%phi, phase_units*branch%ele(nt)%b%phi, phase_units*design_branch%ele(nt)%b%phi,  '! Tune'
+    nl=nl+1; write(lines(nl), fmt2) 'Chrom', tao_branch%a%chrom, design_tao_branch%a%chrom, tao_branch%b%chrom, design_tao_branch%b%chrom, '! dQ/(dE/E)'
+    nl=nl+1; write(lines(nl), fmt2) 'J_damp', mode_m%a%j_damp, mode_d%a%j_damp, mode_m%b%j_damp, mode_d%b%j_damp, '! Damping Partition #'
+    nl=nl+1; write(lines(nl), fmt) 'Emittance', mode_m%a%emittance, mode_d%a%emittance, mode_m%b%emittance, mode_d%b%emittance, '! Unnormalized'
+    nl=nl+1; write(lines(nl), '(a43, 2x, 2es13.5)') 'Emit (photon vert opening angle ignored)', &
+                                                                    mode_m%b%emittance_no_vert, mode_d%b%emittance_no_vert
+    if (mode_m%b%alpha_damp /= 0) then
+      nl=nl+1; write(lines(nl), fmt) 'Alpha_damp', mode_m%a%alpha_damp, mode_d%a%alpha_damp, mode_m%b%alpha_damp, mode_d%b%alpha_damp, '! Damping per turn'
+      nl=nl+1; write(lines(nl), fmt) 'Damping_time', time1/mode_m%a%alpha_damp, time1/mode_d%a%alpha_damp, time1/mode_m%b%alpha_damp, time1/mode_d%b%alpha_damp, '! Sec'
     endif
+  endif
 
-    if (s%global%rad_int_calc_on) then
-      if (tao_branch%modes%b%alpha_damp /= 0) then
-        nl=nl+1; write(lines(nl), fmt) 'Alpha_damp', tao_branch%modes%a%alpha_damp, &
-              design_tao_branch%modes%a%alpha_damp, tao_branch%modes%b%alpha_damp, design_tao_branch%modes%b%alpha_damp, '! Damping per turn'
-        nl=nl+1; write(lines(nl), fmt) 'Damping_time', time1/tao_branch%modes%a%alpha_damp, &
-              time1/design_tao_branch%modes%a%alpha_damp, time1/tao_branch%modes%b%alpha_damp, time1/design_tao_branch%modes%b%alpha_damp, '! Sec'
-      endif
+  !
 
-      nl=nl+1; write(lines(nl), fmt) 'I4', tao_branch%modes%a%synch_int(4), &
-            design_tao_branch%modes%a%synch_int(4), tao_branch%modes%b%synch_int(4), design_tao_branch%modes%b%synch_int(4), '! Radiation Integral'
-      nl=nl+1; write(lines(nl), fmt) 'I5', tao_branch%modes%a%synch_int(5), &
-            design_tao_branch%modes%a%synch_int(5), tao_branch%modes%b%synch_int(5), design_tao_branch%modes%b%synch_int(5), '! Radiation Integral'
-      nl=nl+1; write(lines(nl), fmt3) 'I6/gamma^2', tao_branch%modes%b%synch_int(6) / gamma2, &
-            design_tao_branch%modes%b%synch_int(6) / gamma2, '! Radiation Integral'
+  fmt  = '(1x, a16, 2es13.5, 3x, a)'
+  fmt2 = '(1x, a16, 2f13.7, 3x, a)'
 
-      if (branch%param%geometry == open$) then
-        nl=nl+1; write(lines(nl), fmt) 'Final Emittance', tao_branch%modes%lin%a_emittance_end, &
-            design_tao_branch%modes%lin%a_emittance_end, tao_branch%modes%lin%b_emittance_end, design_tao_branch%modes%lin%b_emittance_end, '! Meters'
-        nl=nl+1; write(lines(nl), fmt) 'I5*gamma^6', tao_branch%modes%lin%i5a_e6, &
-            design_tao_branch%modes%lin%i5a_e6, tao_branch%modes%lin%i5b_e6, design_tao_branch%modes%lin%i5b_e6, '! Linac Radiation Integral'
-      endif
-    endif
-
+  if (branch%param%geometry == closed$) then
     nl=nl+1; lines(nl) = ''
     nl=nl+1; write(lines(nl), '(23x, a)') '  Model       Design'
-    fmt  = '(1x, a16, 2es13.5, 3x, a)'
-    fmt2 = '(1x, a16, 2f13.7, 3x, a)'
 
-    if (branch%param%geometry == closed$) then
-      call calc_z_tune(lat, ix_branch)
-      if (abs(design_lat%z%tune/twopi)  > 1d-3 .and. abs(branch%z%tune/twopi) > 1d-3) then
-        nl=nl+1; write(lines(nl), fmt) 'Z_tune:', -branch%z%tune/twopi, -design_lat%z%tune/twopi, '! The design value is calculated with RF on'
+    call calc_z_tune(branch)
+    if (abs(design_lat%z%tune/twopi)  > 1d-3 .and. abs(branch%z%tune/twopi) > 1d-3) then
+      nl=nl+1; write(lines(nl), fmt) 'Z_tune:', -branch%z%tune/twopi, -design_lat%z%tune/twopi
+    else
+      if (.not. branch%z%stable) then
+        str1 = '  Unstable'
       else
-        if (.not. branch%z%stable) then
-          str1 = '  Unstable'
-        else
-          write (str1, '(f13.7)') -branch%z%tune/twopi
-        endif
-        if (.not. design_lat%z%stable) then
-          str2 = '  Unstable'
-        else
-          write (str2, '(f13.7)') -design_lat%z%tune/twopi
-        endif
-        nl=nl+1; write(lines(nl), '(1x, a16, 2a13, 3x, a)') 'Z_tune:', str1, str2, '! The design value is calculated with RF on'
+        write (str1, '(f13.7)') -branch%z%tune/twopi
       endif
-
-    elseif (s%global%rad_int_calc_on) then
-      nl=nl+1; write (lines(nl), fmt) 'I2*gamma^4', tao_branch%modes%lin%i2_e4, &
-            design_tao_branch%modes%lin%i2_e4, '! Linac Radiation Integral'
-      nl=nl+1; write (lines(nl), fmt) 'I3*gamma^7', tao_branch%modes%lin%i3_e7, &
-            design_tao_branch%modes%lin%i3_e7, '! Linac Radiation Integral'
+      if (.not. design_lat%z%stable) then
+        str2 = '  Unstable'
+      else
+        write (str2, '(f13.7)') -design_lat%z%tune/twopi
+      endif
+      nl=nl+1; write(lines(nl), '(1x, a16, 2a13, 3x, a)') 'Z_tune:', str1, str2, '! The design value is calculated with RF on'
     endif
 
-    if (s%global%rad_int_calc_on) then
-      if (tao_branch%modes%z%alpha_damp /= 0) then
-        nl=nl+1; write(lines(nl), fmt) 'Sig_E/E:', tao_branch%modes%sigE_E, design_tao_branch%modes%sigE_E
-        nl=nl+1; write(lines(nl), fmt) 'Sig_z:  ', tao_branch%modes%sig_z, design_tao_branch%modes%sig_z, '! Only calculated when RF is on'
-        nl=nl+1; write(lines(nl), fmt) 'Energy Loss:', tao_branch%modes%e_loss, design_tao_branch%modes%e_loss, '! Energy_Loss (eV / Turn)'
-        nl=nl+1; write(lines(nl), fmt) 'J_damp:', tao_branch%modes%z%j_damp, design_tao_branch%modes%z%j_damp, '! Longitudinal Damping Partition #'
-        nl=nl+1; write(lines(nl), fmt) 'Alpha_damp:', tao_branch%modes%z%alpha_damp, &
-            design_tao_branch%modes%z%alpha_damp, '! Longitudinal Damping per turn'
-        nl=nl+1; write(lines(nl), fmt) 'damp_time:', time1/tao_branch%modes%z%alpha_damp, &
-              time1/design_tao_branch%modes%z%alpha_damp, '! Longitudinal Damping time (sec)'
-      endif
-      nl=nl+1; write(lines(nl), fmt) 'Alpha_p:', tao_branch%modes%synch_int(1)/l_lat, &
-                   design_tao_branch%modes%synch_int(1)/l_lat, '! Momentum Compaction'
-      nl=nl+1; write(lines(nl), fmt) 'I0:', tao_branch%modes%synch_int(0), design_tao_branch%modes%synch_int(0), '! Radiation Integral'
-      nl=nl+1; write(lines(nl), fmt) 'I1:', tao_branch%modes%synch_int(1), design_tao_branch%modes%synch_int(1), '! Radiation Integral'
-      nl=nl+1; write(lines(nl), fmt) 'I2:', tao_branch%modes%synch_int(2), design_tao_branch%modes%synch_int(2), '! Radiation Integral'
-      nl=nl+1; write(lines(nl), fmt) 'I3:', tao_branch%modes%synch_int(3), design_tao_branch%modes%synch_int(3), '! Radiation Integral'
+    if (mode_m%z%alpha_damp /= 0) then
+      nl=nl+1; write(lines(nl), fmt) 'Sig_E/E:', mode_m%sigE_E, mode_d%sigE_E
+      nl=nl+1; write(lines(nl), fmt) 'Sig_z:', mode_m%sig_z, mode_d%sig_z, '! Only calculated when RF is on'
+      nl=nl+1; write(lines(nl), fmt) 'Emittance_z:', mode_m%z%emittance, mode_d%z%emittance, '! Only calculated when RF is on'
+      nl=nl+1; write(lines(nl), fmt) 'Energy Loss:', mode_m%e_loss, mode_d%e_loss, '! Energy_Loss (eV / Turn)'
+      nl=nl+1; write(lines(nl), fmt) 'J_damp:', mode_m%z%j_damp, mode_d%z%j_damp, '! Longitudinal Damping Partition #'
+      nl=nl+1; write(lines(nl), fmt) 'Alpha_damp:', mode_m%z%alpha_damp, mode_d%z%alpha_damp, '! Longitudinal Damping per turn'
+      nl=nl+1; write(lines(nl), fmt) 'damp_time:', time1/mode_m%z%alpha_damp, time1/mode_d%z%alpha_damp, '! Longitudinal Damping time (sec)'
+    endif
+
+    nl=nl+1; write(lines(nl), fmt) 'Alpha_p:', mode_m%momentum_compaction, mode_d%momentum_compaction, '! Momentum Compaction'
+    nl=nl+1; write(lines(nl), fmt) 'Eta_p:', mode_m%momentum_compaction - 1.0_rp/gamma**2, mode_d%momentum_compaction - 1.0_rp/gamma**2, '! Slip factor'
+    if (mode_m%momentum_compaction > 0) then
+      nl=nl+1; write(lines(nl), fmt) 'gamma_trans:', sqrt(1.0_rp/mode_m%momentum_compaction), sqrt(1.0_rp/mode_d%momentum_compaction), '! Gamma at transition'
     endif
 
     if (bmad_com%spin_tracking_on) then
-      nl=nl+1; write(lines(nl), fmt) 'Spin Tune:', branch%param%spin_tune/twopi, &
-                                            design_branch%param%spin_tune/twopi, '! Spin Tune on Closed Orbit (Units of 2pi)'
+      nl=nl+1; write(lines(nl), fmt) 'Spin Tune:', branch%param%spin_tune/twopi, design_branch%param%spin_tune/twopi, '! Spin Tune on Closed Orbit (Units of 2pi)'
     endif
 
-    if (branch%param%geometry == closed$) then
-      pz1 = 0;  pz2 = 0
-      do i = 1, branch%n_ele_track
-        pz1 = pz1 + branch%ele(i)%value(l$) * (tao_branch%orbit(i-1)%vec(6) + tao_branch%orbit(i)%vec(6)) / (2 * branch%param%total_length)
-        pz2 = pz2 + branch%ele(i)%value(l$) * (design_tao_branch%orbit(i-1)%vec(6) + design_tao_branch%orbit(i)%vec(6)) / (2 * branch%param%total_length)
-      enddo
-      nl=nl+1; write(lines(nl), fmt) '<pz>:', pz1, pz2, '! Average closed orbit pz (momentum deviation)'
-    endif
-
-  elseif (bmad_com%spin_tracking_on) then
-    nl=nl+1; lines(nl) = ''
-    nl=nl+1; write(lines(nl), '(23x, a)') '  Model       Design'
-    fmt  = '(1x, a16, 2es13.5, 3x, a)'
-    nl=nl+1; write(lines(nl), fmt) 'Spin Tune:', branch%param%spin_tune/twopi, &
-                                            design_branch%param%spin_tune/twopi, '! Spin Tune on Closed Orbit (Units of 2pi)'
+    pz1 = 0;  pz2 = 0
+    do i = 1, branch%n_ele_track
+      pz1 = pz1 + branch%ele(i)%value(l$) * (tao_branch%orbit(i-1)%vec(6) + tao_branch%orbit(i)%vec(6)) / (2 * branch%param%total_length)
+      pz2 = pz2 + branch%ele(i)%value(l$) * (design_tao_branch%orbit(i-1)%vec(6) + design_tao_branch%orbit(i)%vec(6)) / (2 * branch%param%total_length)
+    enddo
+    nl=nl+1; write(lines(nl), fmt) '<pz>:', pz1, pz2, '! Average closed orbit pz (momentum deviation)'
   endif
+
+  nl=nl+1; lines(nl) = ''
+  nl=nl+1; lines(nl) = '[Note: The emittance, energy loss, etc. calcs have changed. Use "help show universe" for more info.]'
 
 !----------------------------------------------------------------------
 ! variable
@@ -5004,8 +5572,10 @@ case ('use')
 
 case ('value')
 
+
   s_fmt = 'es24.16'
   ix = index(what2, '-f')
+
   if (ix /= 0) then
     ix2 = index(what2(ix:), ' ')
     if (index('-format', what2(ix:ix+ix2-2)) == 1) then
@@ -5014,6 +5584,13 @@ case ('value')
       s_fmt = what2(1:ix)
       what2 = trim(str) // what2(ix+1:)
     endif
+  endif
+
+
+  if (index(what2, 'chrom') /= 0) then
+    s%com%force_chrom_calc = .true.
+    s%u%calc%lattice = .true.
+    call tao_lattice_calc(ok)
   endif
 
   call tao_evaluate_expression (what2, 0, .false., value, err)
@@ -5028,15 +5605,21 @@ case ('value')
     endif
 
   else
-    s_fmt = '(i5, a, ' // trim(s_fmt) // ')'
-    call re_allocate (lines, size(value)+100, .false.)
-    do i = 1, size(value)
-      nl=nl+1; write(lines(nl), s_fmt, iostat = ios) i, ':  ', value(i)
-      ! For some funny reason ios can be zero on a bad format so check for a star in the string.
-      if (ios /= 0 .or. index(lines(nl), '*') /= 0) then
-        write(lines(nl), '(i5, a, es24.16, a)', iostat = ios) i, ':  ', value(i), '  ! Note: Value/format mismatch detected'
-      endif
-    enddo
+    if (is_integer(s_fmt(1:1)) .or. index(s_fmt, ',') /= 0) then   ! print value on a single line
+      s_fmt = '(5x, ' // trim(s_fmt) // ')'    
+      nl=nl+1; write(lines(nl), s_fmt, iostat = ios) value
+
+    else
+      s_fmt = '(i5, a, ' // trim(s_fmt) // ')'    
+      call re_allocate (lines, size(value)+100, .false.)
+      do i = 1, size(value)
+        nl=nl+1; write(lines(nl), s_fmt, iostat = ios) i, ':  ', value(i)
+        ! For some funny reason ios can be zero on a bad format so check for a star in the string.
+        if (ios /= 0 .or. index(lines(nl), '*') /= 0) then
+          write(lines(nl), '(i5, a, es24.16, a)', iostat = ios) i, ':  ', value(i), '  ! Note: Value/format mismatch detected'
+        endif
+      enddo
+    endif
   endif
 
 !----------------------------------------------------------------------
@@ -5193,13 +5776,6 @@ case ('variables')
           nl=nl+1; write(lines(nl), irmt)  '%slave(', i, ')%Base_value:  <not associated>'
         endif
       enddo
-    endif
-
-    if (associated (v_ptr%common_slave%model_value)) then
-      nl=nl+1; write(lines(nl), imt)  '%common_slave%ix_uni:      ', v_ptr%common_slave%ix_uni
-      nl=nl+1; write(lines(nl), imt)  '%common_slave%ix_ele:      ', v_ptr%common_slave%ix_ele
-      nl=nl+1; write(lines(nl), rmt)  '%common_slave%Model_value: ', v_ptr%common_slave%model_value
-      nl=nl+1; write(lines(nl), rmt)  '%common_slave%Base_value:  ', v_ptr%common_slave%base_value
     endif
 
     nl=nl+1; write(lines(nl), rmt)  '%design           = ', v_ptr%design_value
@@ -5890,5 +6466,31 @@ line = ''
 line(wid-ix+1:) = num_str
 
 end subroutine write_real
+
+!------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------
+! contains
+
+function setup_lat_column(name, format, label, remove_line_if_zero, scale_factor) result (col)
+
+type (show_lat_column_struct) col
+character(*) :: name, format, label
+character(4) descrip
+character(20) fmt
+logical :: remove_line_if_zero
+real(rp) :: scale_factor
+integer :: width, multi, power, digits
+
+!
+
+fmt = upcase(format)
+col = show_lat_column_struct(name, fmt, label, remove_line_if_zero, scale_factor, 0)
+
+call parse_fortran_format (fmt, multi, power, descrip, col%width, digits)
+call upcase_string(descrip)
+if (descrip == 'X') col%width = max(1, multi, col%width) 
+if (fmt == 'A') col%width = 0
+
+end function setup_lat_column
 
 end subroutine tao_show_this

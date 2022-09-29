@@ -35,7 +35,7 @@ module tree_element_MODULE
 
 
   private EQUAL_RF8_RF8 !,extract_envelope_probe8
-  PRIVATE EQUAL_RF8_RF,EQUAL_RF_RF8,print_rf_phasor_8 !,extract_envelope_damap
+  PRIVATE EQUAL_RF8_RF,EQUAL_RF_RF8,print_rf_phasor_8,print_rf_phasor !,extract_envelope_damap
   private EQUAL_DAMAP_RAY8,cross_spinor,cross_spinor8
   private flip  ! flip in lielib
   integer, target :: spin_extra_tpsa = 0 ,n0_normal= 2
@@ -118,6 +118,7 @@ module tree_element_MODULE
      MODULE PROCEDURE PRINT_probe8
      MODULE PROCEDURE PRINT_spinor_8
      MODULE PROCEDURE print_rf_phasor_8
+     MODULE PROCEDURE print_rf_phasor
   END INTERFACE
 
 
@@ -867,6 +868,8 @@ CONTAINS
     ENDDO
     P8%om=P%om
     P8%t=P%t
+    P8%f=P%f
+    P8%phase=P%phase
 
   END subroutine EQUAL_RF8_RF8
 
@@ -881,7 +884,8 @@ CONTAINS
     ENDDO
     P8%om=P%om
     P8%t=P%t
-
+    P8%f=P%f
+    P8%phase=P%phase
   END subroutine EQUAL_RF8_RF
 
   subroutine EQUAL_RF_RF8(P,P8)
@@ -895,7 +899,8 @@ CONTAINS
     ENDDO
     P%om=P8%om
     P%t=P8%t
-
+    P%f=P8%f
+    P%phase=P8%phase
   END subroutine EQUAL_RF_RF8
 
 
@@ -1182,7 +1187,15 @@ CONTAINS
     WRITE(MFi,*) " SPIN Z "
        write(mfi,'(3(1X,G20.13))') ds%s(3)%x 
    endif
- 
+     if(doing_ac_modulation_in_ptc) then
+      write(mfi,*) ds%nac, " clocks "
+       do i=1,ds%nac
+        call print(ds%ac(i),mfi)
+       enddo
+    else
+       WRITE(MFi,*) "NO MODULATION  "
+
+    endif
 
   END subroutine print_probe
 
@@ -1262,9 +1275,32 @@ CONTAINS
     do i=1,2
        call print(s%x(i),mfi)
     enddo
+    write(mfi,*) ' Harmonic amplitude and phase '
+    do i=1,size(s%f)
+       write(mfi,*) s%f(i),s%phase(i)
+    enddo
 
   END subroutine print_rf_phasor_8
 
+  subroutine print_rf_phasor(S,MF)
+    implicit none
+    TYPE(rf_phasor), INTENT(INOUT) :: s
+    INTEGER MFi,I
+    integer,optional :: mf
+     mfi=6
+     if(present(mf)) mfi=mf
+
+    write(mfi,*) ' AC INFORMATION : omega, pseudo-time, hands of the clock'
+    write(mfi,*) s%om 
+    write(mfi,*) s%t 
+    do i=1,2
+        write(mfi,*)s%x(i),mfi 
+    enddo
+    write(mfi,*) ' Harmonic amplitude and phase '
+    do i=1,size(s%f)
+       write(mfi,*) s%f(i),s%phase(i)
+    enddo
+  END subroutine print_rf_phasor
 
   subroutine print_spinor_8(S,MF)
     implicit none
@@ -1406,6 +1442,9 @@ CONTAINS
        CALL alloc(R%X(I))
     ENDDO
     CALL alloc(R%om)
+    r%f=0
+    r%phase=0
+    r%f(1)=1
 !    CALL alloc(R%t)
 
   END    subroutine ALLOC_rf_phasor_8
@@ -1478,7 +1517,8 @@ end subroutine alloc_probes_8
     ENDDO
     CALL KILL(R%om)
 !    CALL KILL(R%t)
-
+    r%f=0
+    r%phase=0
   END    subroutine kill_rf_phasor_8
 
 

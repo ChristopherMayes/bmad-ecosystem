@@ -11,6 +11,141 @@ contains
 !-----------------------------------------------------------------------------
 !-----------------------------------------------------------------------------
 !+
+! Subroutine tao_set_tune_cmd (branch_str, mask_str, print_list, qa_str, qb_str, delta_input)
+!
+! Routine to set the transverse tunes.
+!
+! Input:
+!   branch_str    -- character(*): List of branches to apply tune set to.
+!   mask_str      -- character(*): List of quadrupoles to veto.
+!   print_list    -- logical: If True, print a list of elements varied and coefficients.
+!   qa_str        -- character(*): Expression for Qa tune.
+!   qb_str        -- character(*): Expression for Qb tune.
+!   delta_input   -- logical: If true then qa_str and qb_str are deltas from present tune.
+!-
+
+subroutine tao_set_tune_cmd (branch_str, mask_str, print_list, qa_str, qb_str, delta_input)
+
+implicit none
+
+type (branch_pointer_struct), allocatable, target :: branches(:)
+type (branch_struct), pointer :: branch
+type (tao_universe_pointer_struct), allocatable, target :: unis(:)
+type (tao_universe_struct), pointer :: u
+type (ele_pointer_struct), allocatable :: eles(:)
+type (lat_ele_order_struct) order
+type (nametable_struct) nametab
+
+real(rp) qa_val, qb_val
+real(rp), allocatable :: dk1(:)
+
+integer n, i, j, k, n_match
+integer, allocatable :: indx(:)
+
+logical print_list, delta_input, err
+
+character(40) ele_name
+character(*) branch_str, mask_str, qa_str, qb_str
+character(*), parameter :: r_name = 'tao_set_tune_cmd'
+
+! Evaluate expressions
+
+call tao_pointer_to_branches(branch_str, branches, unis, err); if (err) return
+
+do i = 1, size(branches)
+  u => unis(i)%u
+  branch => branches(i)%branch
+
+  n = branch%n_ele_track
+  qa_val = tao_evaluate_tune (qa_str, branch%ele(n)%a%phi/twopi, delta_input); if (qa_val == 0) return
+  qb_val = tao_evaluate_tune (qb_str, branch%ele(n)%b%phi/twopi, delta_input); if (qb_val == 0) return
+
+  call choose_quads_for_set_tune(branch, dk1, eles, mask_str, err)
+  if (err) then
+    call out_io (s_error$, r_name, &
+      'CANNOT FIND A QUAD WITH BETA_A < BETA_B AND A QUAD WITH BETA_A > BETA_B (BOTH WITH NO TILT).')
+    return
+  endif
+
+  if (print_list .and. i == 1) then
+    call ele_order_calc (branch%lat, order)
+    allocate(indx(size(dk1)))
+    call nametable_init(nametab)
+    do j = 1, size(dk1)
+      ele_name = eles(j)%ele%name
+      n = nametable_bracket_indexx (nametab, ele_name, n_match)
+      if (n_match == 0) then
+        call nametable_add (nametab, ele_name, nametab%n_max+1)
+        indx(nametab%n_max) = j
+        call out_io (s_blank$, r_name, ele_name // real_str(dk1(j), 4))
+
+      else
+        k = nametab%index(n)
+        if (dk1(j) == dk1(indx(k))) cycle
+        call out_io (s_blank$, r_name, ele_unique_name(eles(j)%ele, order) // real_str(dk1(j), 4))
+      endif
+    enddo
+  endif
+
+  err = .not. set_tune(twopi*qa_val, twopi*qb_val, dk1, eles, branch, u%model%tao_branch(branch%ix_branch)%orbit)
+  u%calc%lattice = .true.
+enddo
+
+end subroutine tao_set_tune_cmd
+
+!-----------------------------------------------------------------------------
+!-----------------------------------------------------------------------------
+!-----------------------------------------------------------------------------
+!+
+! Subroutine tao_set_z_tune_cmd (branch_str, q_str, delta_input)
+!
+! Routine to set the z-tune.
+!
+! Input:
+!   branch_str    -- character(*): List of branches to apply tune set to.
+!   q_str         -- character(*): Expression for Qc tune.
+!   delta_input   -- logical: If true then qa_str and qb_str are deltas from present tune.
+!-
+
+subroutine tao_set_z_tune_cmd (branch_str, q_str, delta_input)
+
+implicit none
+
+type (branch_pointer_struct), allocatable, target :: branches(:)
+type (branch_struct), pointer :: branch
+type (tao_universe_pointer_struct), allocatable, target :: unis(:)
+type (tao_universe_struct), pointer :: u
+
+real(rp) q_val 
+real(rp), allocatable :: dk1(:)
+
+integer n, i
+logical delta_input, err, ok
+
+character(*) branch_str, q_str
+character(*), parameter :: r_name = 'tao_set_z_tune_cmd'
+
+! Evaluate expressions
+
+call tao_pointer_to_branches(branch_str, branches, unis, err); if (err) return
+
+do i = 1, size(branches)
+  u => unis(i)%u
+  branch => branches(i)%branch
+
+  call calc_z_tune(branch)
+  q_val = tao_evaluate_tune (q_str, branch%z%tune/twopi, delta_input); if (q_val == 0) return
+
+  call set_z_tune(branch, twopi*q_val, ok)
+  u%calc%lattice = .true.
+enddo
+
+end subroutine tao_set_z_tune_cmd
+
+!-----------------------------------------------------------------------------
+!-----------------------------------------------------------------------------
+!-----------------------------------------------------------------------------
+!+
 ! Subroutine tao_set_calculate_cmd (switch)
 !
 ! Toggles off lattice calc and plotting.
@@ -461,7 +596,7 @@ case ('track_type')
     return
   endif
   s%u%calc%lattice = .true.
-case ('srdt_gen_n_slices', 'srdt_sxt_n_slices', 'srdt_use_cache')
+case ('srdt_gen_n_slices', 'srdt_sxt_n_slices', 'srdt_use_cache', 'init_lat_sigma_from_beam')
   s%u%calc%lattice = .true.
 case ('symbol_import')
   if (global%symbol_import) then
@@ -493,39 +628,39 @@ end subroutine tao_set_global_cmd
 !-----------------------------------------------------------------------------
 !------------------------------------------------------------------------------
 !+
-! Subroutine tao_set_csr_param_cmd (who, value_str)
+! Subroutine tao_set_space_charge_com_cmd (who, value_str)
 !
-! Routine to set csr_param variables
+! Routine to set space_charge_com variables
 ! 
 ! Input:
-!   who       -- Character(*): which csr_param variable to set
+!   who       -- Character(*): which space_charge_com variable to set
 !   value_str -- Character(*): Value to set to.
 !
 ! Output:
-!    csr_param  -- Csr_param variables structure.
+!    space_charge_com  -- space_charge_com variables structure.
 !-
 
-subroutine tao_set_csr_param_cmd (who, value_str)
+subroutine tao_set_space_charge_com_cmd (who, value_str)
 
 implicit none
 
-type (csr_parameter_struct) local_csr_param
+type (space_charge_common_struct) local_space_charge_com
 
 character(*) who, value_str
 character(len(value_str)+24) val
-character(*), parameter :: r_name = 'tao_set_csr_param_cmd'
+character(*), parameter :: r_name = 'tao_set_space_charge_com_cmd'
 
 real(rp), allocatable :: set_val(:)
 integer iu, ios
 logical err
 
-namelist / params / local_csr_param
+namelist / params / local_space_charge_com
 
 ! open a scratch file for a namelist read
 
 select case (who)
-case ('wake_output_file')
-  csr_param%wake_output_file = value_str
+case ('diagnostic_output_file')
+  space_charge_com%diagnostic_output_file = value_str
   return
 
 case ('ds_track_step', 'beam_chamber_height', 'sigma_cutoff')
@@ -543,10 +678,10 @@ end select
 iu = tao_open_scratch_file (err);  if (err) return
 
 write (iu, '(a)') '&params'
-write (iu, '(a)') ' local_csr_param%' // trim(who) // ' = ' // trim(val)
+write (iu, '(a)') ' local_space_charge_com%' // trim(who) // ' = ' // trim(val)
 write (iu, '(a)') '/'
 rewind (iu)
-local_csr_param = csr_param  ! set defaults
+local_space_charge_com = space_charge_com  ! set defaults
 read (iu, nml = params, iostat = ios)
 close (iu, status = 'delete')
 
@@ -555,10 +690,10 @@ if (ios /= 0) then
   return
 endif
 
-csr_param = local_csr_param
+space_charge_com = local_space_charge_com
 s%u%calc%lattice = .true.
 
-end subroutine tao_set_csr_param_cmd
+end subroutine tao_set_space_charge_com_cmd
 
 !-----------------------------------------------------------------------------
 !-----------------------------------------------------------------------------
@@ -610,6 +745,44 @@ else
 endif
 
 end subroutine tao_set_bmad_com_cmd
+
+!-----------------------------------------------------------------------------
+!-----------------------------------------------------------------------------
+!------------------------------------------------------------------------------
+!+
+! Subroutine tao_set_ptc_com_cmd (who, value_str)
+!
+! Routine to set ptc_com variables
+! 
+! Input:
+!   who       -- Character(*): which ptc_com variable to set
+!   value_str -- Character(*): Value to set to.
+!-
+
+subroutine tao_set_ptc_com_cmd (who, value_str)
+
+implicit none
+
+character(*) who, value_str
+character(*), parameter :: r_name = 'tao_set_ptc_com_cmd'
+
+logical err
+
+!
+
+select case (who)
+case ('vertical_kick');           call tao_set_real_value (ptc_com%vertical_kick, who, value_str, err)
+case ('cut_factor');              call tao_set_real_value (ptc_com%cut_factor, who, value_str, err)
+case ('max_fringe_order');        call tao_set_integer_value (ptc_com%max_fringe_order, who, value_str, err)
+case ('old_integrator');          call tao_set_integer_value (ptc_com%old_integrator, who, value_str, err)
+case ('exact_model');             call tao_set_logical_value (ptc_com%exact_model, who, value_str, err)
+case ('exact_misalign');          call tao_set_logical_value (ptc_com%exact_misalign, who, value_str, err)
+case ('use_orientation_patches'); call tao_set_logical_value (ptc_com%use_orientation_patches, who, value_str, err)
+case ('print_info_messages');     call tao_set_logical_value (ptc_com%print_info_messages, who, value_str, err)
+case default;                     call out_io (s_error$, r_name, 'BAD COMPONENT OR NUMBER')
+end select
+
+end subroutine tao_set_ptc_com_cmd
 
 !-----------------------------------------------------------------------------
 !-----------------------------------------------------------------------------
@@ -775,28 +948,32 @@ end subroutine tao_set_wave_cmd
 !-----------------------------------------------------------------------------
 !------------------------------------------------------------------------------
 !+
-! Subroutine tao_set_beam_cmd (who, value_str)
+! Subroutine tao_set_beam_cmd (who, value_str, branch_str)
 !
 ! Routine to set various beam parameters.
 ! 
 ! Input:
-!   who       -- Character(*): which parameter to set.
-!   value_str -- Character(*): Value to set to.
+!   who         -- character(*): which parameter to set.
+!   value_str   -- character(*): Value to set to.
+!   branch_str  -- character(*): Branch to use. '' => branch 0.
 !-
 
-subroutine tao_set_beam_cmd (who, value_str)
+subroutine tao_set_beam_cmd (who, value_str, branch_str)
 
 type (tao_universe_struct), pointer :: u
 type (ele_pointer_struct), allocatable, target :: eles(:)
 type (ele_struct), pointer :: ele
 type (beam_struct), pointer :: beam
 type (tao_beam_branch_struct), pointer :: bb
-integer ix, iu, n_loc, ie
+
+real(rp) com_ds_step
+
+integer ix, iu, n_loc, ie, ix_branch
 
 logical, allocatable :: this_u(:)
 logical err, logic, always_reinit
 
-character(*) who, value_str
+character(*) who, value_str, branch_str
 character(20) switch, who2
 character(*), parameter :: r_name = 'tao_set_beam_cmd'
 
@@ -804,15 +981,16 @@ character(*), parameter :: r_name = 'tao_set_beam_cmd'
 
 call tao_pick_universe (unquote(who), who2, this_u, err); if (err) return
 
-call match_word (who2, [character(32):: 'track_start', 'track_end', 'saved_at', 'beam_track_data_file', &
+call match_word (who2, [character(32):: 'track_start', 'track_end', 'saved_at', 'comb_ds_step', &
                     'beam_track_start', 'beam_track_end', 'beam_init_file_name', 'beam_saved_at', &
                     'beginning', 'add_saved_at', 'subtract_saved_at', 'beam_init_position_file', &
-                    'beam_dump_at', 'beam_dump_file', 'dump_at', 'dump_file', 'track_data_file', &
+                    'beam_dump_at', 'beam_dump_file', 'dump_at', 'dump_file', &
                     'always_reinit'], ix, matched_name=switch)
 
 do iu = lbound(s%u, 1), ubound(s%u, 1)
   if (.not. this_u(iu)) cycle
   u => s%u(iu)
+
   bb => u%model_branch(0)%beam
 
   if (switch /= 'beginning') then
@@ -822,8 +1000,8 @@ do iu = lbound(s%u, 1), ubound(s%u, 1)
 
   select case (switch)
   case ('beginning')
-    call tao_locate_elements (value_str, u%ix_uni, eles, err, multiple_eles_is_err = .true.)
-    ele => eles(1)%ele
+    ele => tao_beam_track_endpoint (value_str, u%model%lat, '', 'BEGGINING')
+    if (.not. associated(ele)) return
     beam => u%model_branch(ele%ix_branch)%ele(ele%ix_ele)%beam
     if (.not. allocated(beam%bunch)) then
       call out_io (s_error$, r_name, 'BEAM NOT SAVED AT: ' // who, 'NOTHING DONE.')
@@ -833,22 +1011,30 @@ do iu = lbound(s%u, 1), ubound(s%u, 1)
     bb%beam_at_start = beam
     u%calc%lattice = .true.
 
+  case ('comb_ds_step')
+    call tao_set_real_value (u%beam%comb_ds_step, switch, value_str, err)
+
   case ('always_reinit')
     call tao_set_logical_value (u%beam%always_reinit, switch, value_str, err)
 
-  case ('track_start', 'beam_track_start')
-    call set_this_track(bb%track_start, bb%ix_track_start)
+  case ('track_start', 'beam_track_start', 'track_end', 'beam_track_end')
+    ele => tao_beam_track_endpoint (value_str, u%model%lat, branch_str, switch)
+    if (.not. associated(ele)) return
 
-  case ('track_end', 'beam_track_end')
-    call set_this_track(bb%track_end, bb%ix_track_end)
+    bb => u%model_branch(ele%ix_branch)%beam
 
-  case ('track_data_file', 'beam_track_data_file')
-    u%beam%track_data_file = value_str
+    if (switch == 'track_start' .or. switch == 'beam_track_start') then
+      bb%track_start = value_str
+      bb%ix_track_start = ele%ix_ele
+    else
+      bb%track_end = value_str
+      bb%ix_track_end = ele%ix_ele
+    endif
 
   case ('beam_init_position_file', 'beam_init_file_name')
     if (switch == 'beam_init_file_name') call out_io (s_warn$, r_name, 'Note: "beam_init_file_name" has been renamed to "beam_init_position_file".')
     bb%beam_init%position_file = value_str
-
+    bb%init_starting_distribution = .true.
   case ('dump_file', 'beam_dump_file')
     u%beam%dump_file = value_str
 
@@ -902,38 +1088,167 @@ do iu = lbound(s%u, 1), ubound(s%u, 1)
     enddo
 
   case default
-    call out_io (s_fatal$, r_name, 'PARAMETER NOT RECOGNIZED: ' // who2)
+    call out_io (s_warn$, r_name, 'PARAMETER NOT RECOGNIZED: ' // who2)
     return
   end select
 enddo
 
-!-------------------------------------------------------------
-contains
+end subroutine tao_set_beam_cmd 
 
-subroutine set_this_track (track_ele, ix_track_ele)
+!-----------------------------------------------------------------------------
+!-----------------------------------------------------------------------------
+!------------------------------------------------------------------------------
+!+
+! Subroutine tao_set_beam_init_cmd (who, value_str, branch_str)
+!
+! Routine to set beam_init variables
+! 
+! Input:
+!   who         -- character(*): which beam_init variable to set
+!   value_str   -- character(*): Value to set to.
+!   branch_str  -- character(*): Branch to use. '' => branch 0
+!
+! Output:
+!    s%beam_init  -- Beam_init variables structure.
+!-
 
-type (ele_pointer_struct), allocatable, target :: eles(:)
-integer ix_track_ele, n_loc
-character(*) track_ele
+subroutine tao_set_beam_init_cmd (who, value_str, branch_str)
+
+implicit none
+
+type (beam_init_struct) beam_init
+type (tao_universe_struct), pointer :: u
+type (ele_pointer_struct), allocatable :: eles(:)
+type (ele_struct), pointer :: ele
+type (tao_beam_branch_struct), pointer :: bb
+
+character(*) who, value_str, branch_str
+character(40) who2
+character(*), parameter :: r_name = 'tao_set_beam_init_cmd'
+
+real(rp), allocatable :: set_val(:)
+real(rp) r_val
+integer i, ix, iu, ios, ib, n_loc
+logical err, eval_err
+logical, allocatable :: picked_uni(:)
+
+character(40) name, switch
+
+namelist / params / beam_init
+
+! get universe
+
+call tao_pick_universe (unquote(who), who2, picked_uni, err)
+call downcase_string(who2)
+
+! Special cases not associated with the beam_init structure
+
+call match_word (who2, [character(32):: 'track_start', 'track_end', 'saved_at', 'comb_ds_step', &
+                    'beam_track_start', 'beam_track_end', 'beam_init_file_name', 'beam_saved_at', &
+                    'beginning', 'add_saved_at', 'subtract_saved_at', 'beam_init_position_file', &
+                    'beam_dump_at', 'beam_dump_file', 'dump_at', 'dump_file', &
+                    'always_reinit'], ix, matched_name=switch)
+
+if (ix > 0) then
+  call tao_set_beam_cmd(who, value_str, branch_str)
+  return
+endif
+
+! Beam_init. open a scratch file for a namelist read
+
+eval_err = .false.
+if (who2 == 'sig_e') who2 = 'sig_pz'
+iu = tao_open_scratch_file (err);  if (err) return
+
+write (iu, '(a)') '&params'
+
+if (is_real(value_str, real_num = r_val) .or. is_logical(value_str)) then
+  if (who2 == 'n_particle') then  ! Sometimes people use "1E3" for the value
+    write (iu, '(a, i0)') ' beam_init%' // trim(who2) // ' = ', nint(r_val)
+  else
+    write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', trim(value_str)
+  endif
+
+elseif (who(1:17) == 'distribution_type') then  ! Value is a vector so quote() function is not good here.
+  write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', value_str
+
+else
+  select case (who2)
+  case ('random_engine')
+    call downcase_string(value_str)
+    call match_word(unquote(value_str), random_engine_name, ix, .true., .false.)
+    if (ix == 0) then
+      call out_io (s_error$, r_name, 'INVALID RANDOM_ENGINE VALUE: ' // value_str)
+      return
+    endif
+    write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', quote(value_str)
+
+  case ('random_gauss_converter')
+    call downcase_string(value_str)
+    call match_word(unquote(value_str), random_gauss_converter_name, ix, .true., .false.)
+    if (ix == 0) then
+      call out_io (s_error$, r_name, 'INVALID RANDOM_GAUSS_CONVERTER VALUE: ' // value_str)
+      return
+    endif
+    write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', quote(value_str)
+
+  case ('species')
+    if (species_id(unquote(value_str)) == invalid$) then
+      call out_io (s_error$, r_name, 'INVALID SPECIES VALUE: ' // value_str)
+      return
+    endif
+    write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', quote(value_str)
+
+  case ('position_file')
+    write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', quote(value_str)
+
+  case default
+    ! If tao_evaluate_expression fails then the root cause may be that the User is trying
+    ! something like "set beam_init beam_saved_at = END" so the basic problem is that beam_saved_at
+    ! is not a valid beam_init component. So delay error messages until we know for sure.
+    call tao_evaluate_expression (value_str, 1, .false., set_val, eval_err, print_err = .false.)
+    if (eval_err) then
+      write (iu, '(a)') ' beam_init%' // trim(who2) // ' = 0'  ! For a test
+    else
+      write (iu, '(a, es23.15)') ' beam_init%' // trim(who2) // ' = ', set_val(1)
+    endif
+  end select
+endif
+
+write (iu, '(a)') '/'
 
 !
 
-call lat_ele_locator (value_str, u%design%lat, eles, n_loc, err)
-if (err .or. n_loc == 0) then
-  call out_io (s_fatal$, r_name, 'ELEMENT NOT FOUND: ' // value_str)
-  call err_exit
-endif
-if (n_loc > 1) then
-  call out_io (s_fatal$, r_name, 'MULTIPLE ELEMENTS FOUND: ' // value_str)
-  call err_exit
-endif
+do i = lbound(s%u, 1), ubound(s%u, 1)
+  if (.not. picked_uni(i)) cycle
 
-track_ele = value_str
-ix_track_ele = eles(1)%ele%ix_ele
+  rewind (iu)
+  u => s%u(i)
+  bb => u%model_branch(0)%beam
+  beam_init = bb%beam_init  ! set defaults
+  read (iu, nml = params, iostat = ios)
+  if (ios /= 0 .or. eval_err) then
+    if (ios /= 0) then
+      call out_io (s_error$, r_name, 'BAD BEAM_INIT COMPONENT: ' // who2)
+    else
+      call tao_evaluate_expression (value_str, 1, .false., set_val, eval_err, print_err = .true.) ! Print error message
+    endif
+    exit
+  endif
 
-end subroutine set_this_track
+  bb%beam_init = beam_init
+  bb%init_starting_distribution = .true.  ! Force reinit
+  if (bb%beam_init%use_particle_start) then
+    bb%beam_init%center = u%model%lat%particle_start%vec
+    bb%beam_init%spin = u%model%lat%particle_start%spin
+  endif
+  u%calc%lattice = .true.
+enddo
 
-end subroutine tao_set_beam_cmd 
+close (iu, status = 'delete') 
+deallocate (picked_uni)
+
+end subroutine tao_set_beam_init_cmd
 
 !-----------------------------------------------------------------------------
 !-----------------------------------------------------------------------------
@@ -1021,176 +1336,6 @@ end subroutine tao_set_particle_start_cmd
 !-----------------------------------------------------------------------------
 !-----------------------------------------------------------------------------
 !------------------------------------------------------------------------------
-!+
-! Subroutine tao_set_beam_init_cmd (who, value_str)
-!
-! Routine to set beam_init variables
-! 
-! Input:
-!   who       -- Character(*): which beam_init variable to set
-!   value_str -- Character(*): Value to set to.
-!
-! Output:
-!    s%beam_init  -- Beam_init variables structure.
-!-
-
-subroutine tao_set_beam_init_cmd (who, value_str)
-
-implicit none
-
-type (beam_init_struct) beam_init
-type (tao_universe_struct), pointer :: u
-type (ele_pointer_struct), allocatable :: eles(:)
-type (ele_struct), pointer :: ele
-type (tao_beam_branch_struct), pointer :: bb
-
-character(*) who, value_str
-character(40) who2
-character(*), parameter :: r_name = 'tao_set_beam_init_cmd'
-
-real(rp), allocatable :: set_val(:)
-real(rp) r_val
-integer i, ix, iu, ios, ib, n_loc
-logical err, eval_err
-logical, allocatable :: picked_uni(:)
-
-character(40) name
-
-namelist / params / beam_init
-
-! get universe
-
-call tao_pick_universe (who, who2, picked_uni, err)
-call downcase_string(who2)
-
-! Special cases not associated with the beam_init structure
-
-select case (who2)
-case ('beam_track_start', 'beam_track_end')
-  do i = lbound(s%u, 1), ubound(s%u, 1)
-    if (.not. picked_uni(i)) cycle
-    u => s%u(i)
-    bb => u%model_branch(0)%beam
-    call lat_ele_locator (value_str, u%design%lat, eles, n_loc, err)
-    if (err .or. n_loc == 0) then
-      call out_io (s_fatal$, r_name, 'ELEMENT NOT FOUND: ' // value_str)
-      return
-    endif
-    if (n_loc > 1) then
-      call out_io (s_fatal$, r_name, 'MULTIPLE ELEMENTS FOUND FOR: ' // value_str)
-      return
-    endif
-    ele => eles(1)%ele
-
-    select case (who2)
-    case ('beam_track_start')
-      bb%track_start = value_str
-      bb%ix_track_start = ele%ix_ele
-    case ('beam_track_end')
-      bb%track_end = value_str
-      bb%ix_track_end = ele%ix_ele
-    end select
-  enddo
-
-  return
-end select
-
-! Beam_init. open a scratch file for a namelist read
-
-eval_err = .false.
-if (who2 == 'sig_e') who2 = 'sig_pz'
-iu = tao_open_scratch_file (err);  if (err) return
-
-write (iu, '(a)') '&params'
-
-if (is_real(value_str, real_num = r_val) .or. is_logical(value_str)) then
-  if (who2 == 'n_particle') then  ! Sometimes people use "1E3" for the value
-    write (iu, '(a, i0)') ' beam_init%' // trim(who2) // ' = ', nint(r_val)
-  else
-    write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', trim(value_str)
-  endif
-
-elseif (who(1:17) == 'distribution_type') then  ! Value is a vector so quote() function is not good here.
-  write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', value_str
-
-else
-  select case (who2)
-  case ('random_engine')
-    call downcase_string(value_str)
-    call match_word(unquote(value_str), random_engine_name, ix, .true., .false.)
-    if (ix == 0) then
-      call out_io (s_error$, r_name, 'INVALID RANDOM_ENGINE VALUE: ' // value_str)
-      return
-    endif
-    write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', quote(value_str)
-
-  case ('random_gauss_converter')
-    call downcase_string(value_str)
-    call match_word(unquote(value_str), random_gauss_converter_name, ix, .true., .false.)
-    if (ix == 0) then
-      call out_io (s_error$, r_name, 'INVALID RANDOM_GAUSS_CONVERTER VALUE: ' // value_str)
-      return
-    endif
-    write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', quote(value_str)
-
-  case ('species')
-    if (species_id(unquote(value_str)) == invalid$) then
-      call out_io (s_error$, r_name, 'INVALID SPECIES VALUE: ' // value_str)
-      return
-    endif
-    write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', quote(value_str)
-
-  case ('position_file')
-    write (iu, '(2a)') ' beam_init%' // trim(who2) // ' = ', quote(value_str)
-
-  case default
-    ! If tao_evaluate_expression fails then the root cause may be that the User is trying
-    ! something like "set beam_init beam_saved_at = END" so the basic problem is that beam_saved_at
-    ! is not a valid beam_init component. So delay error messages until we know for sure.
-    call tao_evaluate_expression (value_str, 1, .false., set_val, eval_err, print_err = .false.)
-    if (eval_err) then
-      write (iu, '(a)') ' beam_init%' // trim(who2) // ' = 0'  ! For a test
-    else
-      write (iu, '(a, es23.15)') ' beam_init%' // trim(who2) // ' = ', set_val(1)
-    endif
-  end select
-endif
-
-write (iu, '(a)') '/'
-
-!
-
-do i = lbound(s%u, 1), ubound(s%u, 1)
-  if (.not. picked_uni(i)) cycle
-
-  rewind (iu)
-  u => s%u(i)
-  bb => u%model_branch(0)%beam
-  beam_init = bb%beam_init  ! set defaults
-  read (iu, nml = params, iostat = ios)
-  if (ios /= 0 .or. eval_err) then
-    if (ios /= 0) then
-      call out_io (s_error$, r_name, 'BAD BEAM_INIT COMPONENT: ' // who2)
-    else
-      call tao_evaluate_expression (value_str, 1, .false., set_val, eval_err, print_err = .true.) ! Print error message
-    endif
-    exit
-  endif
-
-  bb%beam_init = beam_init
-  bb%init_starting_distribution = .true.  ! Force reinit
-  if (bb%beam_init%use_particle_start_for_center) bb%beam_init%center = u%model%lat%particle_start%vec
-  u%calc%lattice = .true.
-enddo
-
-close (iu, status = 'delete') 
-deallocate (picked_uni)
-
-end subroutine tao_set_beam_init_cmd
-
-!-----------------------------------------------------------------------------
-!-----------------------------------------------------------------------------
-!------------------------------------------------------------------------------
 ! Subroutine tao_set_plot_page_cmd (component, value_str, value_str2)
 !
 !  Set various aspects of the plotting window
@@ -1207,6 +1352,7 @@ end subroutine tao_set_beam_init_cmd
 subroutine tao_set_plot_page_cmd (component, value_str, value_str2)
 
 use tao_input_struct, only: tao_plot_page_input, tao_set_plotting
+use tao_plot_window_mod, only: tao_destroy_plot_window, tao_create_plot_window
 
 implicit none
 
@@ -1266,6 +1412,11 @@ if (ios /= 0) then
 endif
 
 call tao_set_plotting (plot_page, s%plot_page, .false.)
+
+if (component == 'size') then
+  call tao_destroy_plot_window()
+  call tao_create_plot_window()
+endif
 
 end subroutine tao_set_plot_page_cmd
 
@@ -2114,7 +2265,7 @@ endif
 
 call match_word (component_str, [character(28):: 'particle', 'default_tracking_species', 'geometry', 'live_branch'], &
                                                                                                     ix, matched_name = c_str)
-if (ix < 1) THEN
+if (ix < 1) then
   call out_io (s_error$, r_name, 'BAD BRANCH COMPONENT NAME: ' // component_str)
   return
 endif
@@ -2141,6 +2292,7 @@ case ('geometry')
   if (err) return
   branch%param%geometry = ix
   if (ix == open$) u%model%lat%particle_start = u%model%tao_branch(branch%ix_branch)%orbit(0)
+  if (ix == closed$) s%com%force_chrom_calc = .true.
 
 case ('live_branch')
   call tao_set_logical_value (branch%param%live_branch, c_str, value_str, err)
@@ -2191,7 +2343,7 @@ integer, allocatable :: int_save(:)
 character(*) who_str, value_str
 character(20) component
 character(*), parameter :: r_name = 'tao_set_data_cmd'
-character(200) :: tmpstr, why_invalid
+character(100) :: why_invalid, tmpstr
 character, allocatable :: s_save(:)
 
 logical err, l1
@@ -2349,9 +2501,8 @@ elseif (size(s_dat) /= 0) then
     endif
 
     do i = 1, size(s_dat)
-      tmpstr = value_str
-      s_save(i) = tmpstr
-      s_dat(i)%s = tmpstr   ! Use temp due to bug on Windows
+      s_save(i) = value_str
+      s_dat(i)%s = value_str
     enddo
   endif
 
@@ -2610,153 +2761,139 @@ subroutine tao_set_universe_cmd (uni, who, what)
 
 implicit none
 
-integer i, n_uni
+type (tao_universe_struct), pointer :: u
+
+integer i, iu
 
 character(*) uni, who, what
 character(*), parameter :: r_name = "tao_set_universe_cmd"
+character(40) str
 
-logical is_on, err, mat6_toggle
+logical err, mat6_toggle, calc_ok
+logical, allocatable :: picked(:)
 
 
 ! Pick universe
 
 call downcase_string(what)
 
-if (uni /= '*') then
-  call tao_to_int (uni, n_uni, err)
-  if (err) return
-  if (n_uni < -1 .or. n_uni > ubound(s%u, 1)) then
-    call out_io (s_warn$, r_name, "Invalid Universe specifier")
-    return 
-  endif
-  n_uni = tao_universe_number (n_uni)
+call tao_pick_universe(uni, str, picked, err, dflt_uni = -1, pure_uni = .true.)
+if (err) return
+if (str /= '') then
+  call out_io (s_error$, r_name, 'MALFORMED "SET UNIVERSE" COMMAND.')
 endif
 
-! Twiss calc.
-! "mat6_recalc" is old style
+s%u%picked_uni = .false.  ! Used by recalculate command.
 
-if (index('twiss_calc', trim(who)) == 1 .or. index('mat6_recalc', trim(who)) == 1) then
-  if (what == 'on') then
-    is_on = .true.
-  elseif (what == 'off') then
-    is_on = .false.
-  else
-    call out_io (s_error$, r_name, 'Syntax is: "set universe <uni_num> twiss_calc on/off"')
+do iu = 1, ubound(s%u, 1)
+  if (.not. picked(iu)) cycle
+  u => s%u(iu)
+
+  ! Twiss calc.
+  ! "mat6_recalc" is old style
+
+  if (index('twiss_calc', trim(who)) == 1 .or. index('mat6_recalc', trim(who)) == 1) then
+    if (what == 'on') then
+      u%calc%twiss = .true.
+      u%calc%lattice = .true.
+    elseif (what == 'off') then
+      u%calc%twiss = .false.
+    else
+      call out_io (s_error$, r_name, 'Syntax is: "set universe <uni_num> twiss_calc on/off"')
+      return
+    endif
+    cycle
+  endif
+
+  ! Track calc
+  ! "track_recalc" is old style.
+
+  if (index('track_calc', trim(who)) == 1 .or. index('track_recalc', trim(who)) == 1) then
+    if (what == 'on') then
+      u%calc%track = .true.
+      u%calc%lattice = .true.
+    elseif (what == 'off') then
+      u%calc%track = .false.
+    else
+      call out_io (s_error$, r_name, 'Syntax is: "set universe <uni_num> track_calc on/off"')
+      return
+    endif
+
+    cycle
+  endif
+
+  ! Dynamic aperture calc.
+
+  if (index('dynamic_aperture_calc', trim(who)) == 1) then
+    if (what == 'on') then
+      u%calc%dynamic_aperture = .true.
+      u%calc%lattice = .true.
+    elseif (what == 'off') then
+      u%calc%lattice = .false.
+    else
+      call out_io (s_error$, r_name, 'Syntax is: "set universe <uni_num> dynamic_aperture_calc on/off"')
+      return
+    endif
+
+    cycle
+  endif  
+
+  ! One turn map calc.
+
+  if ('one_turn_map_calc' == trim(who)) then
+    if (what == 'on' .or. index('true', trim(what)) == 1) then
+      u%calc%one_turn_map = .true.
+      u%calc%lattice = .true.
+    elseif (what == 'off' .or. index('false', trim(what)) == 1) then
+      u%calc%one_turn_map = .false.
+    else
+      call out_io (s_error$, r_name, 'Syntax is: "set universe <uni_num> one_turn_map_calc on/off"')
+      return
+    endif
+
+    cycle
+  endif  
+    
+  ! Recalc.
+  ! If universe is off then turn on and mark it to be turned off after a recalc.
+
+  if (what /= '') then
+    call out_io (s_error$, r_name, 'Extra stuff on line. Nothing done.')
     return
   endif
-  if (uni == '*') then
-    s%u(:)%calc%twiss = is_on
-    if (is_on) s%u(:)%calc%lattice = .true.
-  else
-    s%u(n_uni)%calc%twiss = is_on
-    if (is_on) s%u(n_uni)%calc%lattice = .true.
+
+  if (index('recalculate', trim(who)) == 1) then
+    u%calc%lattice = .true.
+    if (.not. u%is_on) then
+      u%is_on = .true.
+      u%picked_uni = .true.
+    endif
+    cycle
   endif
-  return
-endif
 
-! Track calc
-! "track_recalc" is old style.
+  !
 
-if (index('track_calc', trim(who)) == 1 .or. index('track_recalc', trim(who)) == 1) then
-  if (what == 'on') then
-    is_on = .true.
-  elseif (what == 'off') then
-    is_on = .false.
+  if (who == 'on') then
+    u%is_on = .true.
+  elseif (who == 'off') then
+    u%is_on = .false.
   else
-    call out_io (s_error$, r_name, 'Syntax is: "set universe <uni_num> track_calc on/off"')
+    call out_io (s_error$, r_name, 'Choices are: "on", "off", "recalculate", "track_recalc", "twiss_calc", etc.')
     return
   endif
 
-  if (uni == '*') then
-    s%u(:)%calc%track = is_on
-    if (is_on) s%u(:)%calc%lattice = .true.
-  else
-    s%u(n_uni)%calc%track = is_on
-    if (is_on) s%u(n_uni)%calc%lattice = .true.
-  endif
-  return
-endif
-
-! Dynamic aperture calc.
-
-if (index('dynamic_aperture_calc', trim(who)) == 1) then
-  if (what == 'on') then
-    is_on = .true.
-  elseif (what == 'off') then
-    is_on = .false.
-  else
-    call out_io (s_error$, r_name, 'Syntax is: "set universe <uni_num> dynamic_aperture_calc on/off"')
-    return
-  endif
-
-  if (uni == '*') then
-    s%u(:)%calc%dynamic_aperture = is_on
-    if (is_on) s%u(:)%calc%lattice = .true.
-  else
-    s%u(n_uni)%calc%dynamic_aperture = is_on
-    if (is_on) s%u(n_uni)%calc%lattice = .true.
-  endif
-  return
-endif  
-
-! One turn map calc.
-
-if ('one_turn_map_calc' == trim(who)) then
-  if (what == 'on' .or. index('true', trim(what)) == 1) then
-    is_on = .true.
-  elseif (what == 'off' .or. index('false', trim(what)) == 1) then
-    is_on = .false.
-  else
-    call out_io (s_error$, r_name, 'Syntax is: "set universe <uni_num> one_turn_map_calc on/off"')
-    return
-  endif
-  if (uni == '*') then
-    s%u(:)%calc%one_turn_map = is_on
-    if (is_on) s%u(:)%calc%lattice = .true.
-  else
-    s%u(n_uni)%calc%one_turn_map = is_on
-    if (is_on) s%u(n_uni)%calc%lattice = .true.
-  endif
-  return
-endif  
-  
-! Recalc.
-
-if (what /= '') then
-  call out_io (s_error$, r_name, 'Extra stuff on line. Nothing done.')
-  return
-endif
-
-if (index('recalculate', trim(who)) == 1) then
-  if (uni == '*') then
-    s%u(:)%calc%lattice = .true.
-  else
-    s%u(n_uni)%calc%lattice = .true.
-  endif
-  return
-endif
+enddo
 
 !
 
-if (who == 'on') then
-  is_on = .true.
-elseif (who == 'off') then
-  is_on = .false.
-else
-  call out_io (s_error$, r_name, "Choices are: 'on', 'off', 'recalculate', 'track_recalc', 'twiss_calc', etc.")
-  return
-endif
-
-if (uni == '*') then
-  call out_io (s_blank$, r_name, "Setting all universes to: " // on_off_logic(is_on))
-  s%u(:)%is_on = is_on
-else
-  s%u(n_uni)%is_on = is_on
-  call out_io (s_blank$, r_name, "Setting universe \i0\ to: " // on_off_logic(is_on), n_uni)
-endif
-
 call tao_set_data_useit_opt()
+call tao_lattice_calc (calc_ok)
   
+do iu = 1, ubound(s%u, 1)
+  u => s%u(iu)
+  if (u%picked_uni) u%is_on = .false.
+enddo
+
 end subroutine tao_set_universe_cmd
 
 !-----------------------------------------------------------------------------
@@ -3222,7 +3359,9 @@ if (ix /= 0) then
   case ('shape', 'color', 'label', 'ele_name')
     needs_quotes = .true.
   end select
-  if (value_str(1:1) == "'" .or. value_str(1:1) == '"') needs_quotes = .false.
+  ! Something like 30*"XXX" does not need quotes
+  n = len_trim(value_str)
+  if (value_str(n:n) == "'" .or. value_str(n:n) == '"') needs_quotes = .false.
 endif
 
 ! open a scratch file for a namelist read
@@ -3469,10 +3608,12 @@ case ('label_color')
 
 case ('major_div')
   call tao_set_integer_value (qp_axis%major_div, qp_axis_name, value, error, 1)
-  if (.not. error) qp_axis%major_div_nominal = qp_axis%major_div
+  ! If %major_div_nominal is positive, setting %major_div does not make sense.
+  ! So if %major_div_nominal is positive, set %major_div_nominal to the set value.
+  if (.not. error .and. qp_axis%major_div_nominal > 0) qp_axis%major_div_nominal = qp_axis%major_div
 
 case ('major_div_nominal')
-  call tao_set_integer_value (qp_axis%major_div_nominal, qp_axis_name, value, error, 1)
+  call tao_set_integer_value (qp_axis%major_div_nominal, qp_axis_name, value, error)
 case ('minor_div')
   call tao_set_integer_value (qp_axis%minor_div, qp_axis_name, value, error, 0)
 case ('minor_div_max')

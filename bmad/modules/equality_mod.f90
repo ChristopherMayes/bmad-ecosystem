@@ -22,16 +22,16 @@ interface operator (==)
   module procedure eq_cartesian_map, eq_cylindrical_map_term1, eq_cylindrical_map_term, eq_cylindrical_map, eq_grid_field_pt1
   module procedure eq_grid_field_pt, eq_grid_field, eq_taylor_field_plane1, eq_taylor_field_plane, eq_taylor_field
   module procedure eq_floor_position, eq_high_energy_space_charge, eq_xy_disp, eq_twiss, eq_mode3
-  module procedure eq_bookkeeping_state, eq_rad_int_ele_cache, eq_surface_grid_pt, eq_surface_grid, eq_target_point
-  module procedure eq_surface_curvature, eq_photon_target, eq_photon_material, eq_pixel_grid_pt, eq_pixel_grid
-  module procedure eq_photon_element, eq_wall3d_vertex, eq_wall3d_section, eq_wall3d, eq_control
-  module procedure eq_controller_var1, eq_controller, eq_ellipse_beam_init, eq_kv_beam_init, eq_grid_beam_init
-  module procedure eq_beam_init, eq_lat_param, eq_mode_info, eq_pre_tracker, eq_anormal_mode
-  module procedure eq_linac_normal_mode, eq_normal_modes, eq_em_field, eq_track_point, eq_track
-  module procedure eq_synch_rad_common, eq_csr_parameter, eq_bmad_common, eq_rad_int1, eq_rad_int_branch
-  module procedure eq_rad_int_all_ele, eq_ele, eq_complex_taylor_term, eq_complex_taylor, eq_branch
-  module procedure eq_lat, eq_bunch, eq_bunch_params, eq_beam, eq_aperture_point
-  module procedure eq_aperture_param, eq_aperture_scan
+  module procedure eq_bookkeeping_state, eq_rad_map, eq_rad_int_ele_cache, eq_surface_grid_pt, eq_surface_grid
+  module procedure eq_target_point, eq_surface_curvature, eq_photon_target, eq_photon_material, eq_pixel_pt
+  module procedure eq_pixel_detec, eq_photon_element, eq_wall3d_vertex, eq_wall3d_section, eq_wall3d
+  module procedure eq_control, eq_controller_var1, eq_controller, eq_ellipse_beam_init, eq_kv_beam_init
+  module procedure eq_grid_beam_init, eq_beam_init, eq_lat_param, eq_mode_info, eq_pre_tracker
+  module procedure eq_anormal_mode, eq_linac_normal_mode, eq_normal_modes, eq_em_field, eq_strong_beam
+  module procedure eq_track_point, eq_track, eq_synch_rad_common, eq_space_charge_common, eq_bmad_common
+  module procedure eq_rad_int1, eq_rad_int_branch, eq_rad_int_all_ele, eq_ele, eq_complex_taylor_term
+  module procedure eq_complex_taylor, eq_branch, eq_lat, eq_bunch, eq_bunch_params
+  module procedure eq_beam, eq_aperture_point, eq_aperture_param, eq_aperture_scan
 end interface
 
 contains
@@ -151,6 +151,8 @@ is_eq = is_eq .and. (f1%f == f2%f)
 is_eq = is_eq .and. (f1%amp == f2%amp)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%phi == f2%phi)
+!! f_side.equality_test[integer, 0, NOT]
+is_eq = is_eq .and. (f1%rf_clock_harmonic == f2%rf_clock_harmonic)
 
 end function eq_ac_kicker_freq
 
@@ -174,11 +176,11 @@ if (allocated(f1%amp_vs_time)) is_eq = all(shape(f1%amp_vs_time) == shape(f2%amp
 if (.not. is_eq) return
 if (allocated(f1%amp_vs_time)) is_eq = all(f1%amp_vs_time == f2%amp_vs_time)
 !! f_side.equality_test[type, 1, ALLOC]
-is_eq = is_eq .and. (allocated(f1%frequencies) .eqv. allocated(f2%frequencies))
+is_eq = is_eq .and. (allocated(f1%frequency) .eqv. allocated(f2%frequency))
 if (.not. is_eq) return
-if (allocated(f1%frequencies)) is_eq = all(shape(f1%frequencies) == shape(f2%frequencies))
+if (allocated(f1%frequency)) is_eq = all(shape(f1%frequency) == shape(f2%frequency))
 if (.not. is_eq) return
-if (allocated(f1%frequencies)) is_eq = all(f1%frequencies == f2%frequencies)
+if (allocated(f1%frequency)) is_eq = all(f1%frequency == f2%frequency)
 
 end function eq_ac_kicker
 
@@ -316,7 +318,7 @@ is_eq = is_eq .and. all(f1%phase == f2%phase)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%charge == f2%charge)
 !! f_side.equality_test[real, 0, NOT]
-is_eq = is_eq .and. (f1%path_len == f2%path_len)
+is_eq = is_eq .and. (f1%dt_ref == f2%dt_ref)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%r == f2%r)
 !! f_side.equality_test[real, 0, NOT]
@@ -1229,6 +1231,30 @@ end function eq_bookkeeping_state
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
 
+elemental function eq_rad_map (f1, f2) result (is_eq)
+
+implicit none
+
+type(rad_map_struct), intent(in) :: f1, f2
+logical is_eq
+
+!
+
+is_eq = .true.
+!! f_side.equality_test[real, 1, NOT]
+is_eq = is_eq .and. all(f1%ref_orb == f2%ref_orb)
+!! f_side.equality_test[real, 1, NOT]
+is_eq = is_eq .and. all(f1%damp_vec == f2%damp_vec)
+!! f_side.equality_test[real, 2, NOT]
+is_eq = is_eq .and. all(f1%damp_mat == f2%damp_mat)
+!! f_side.equality_test[real, 2, NOT]
+is_eq = is_eq .and. all(f1%stoc_mat == f2%stoc_mat)
+
+end function eq_rad_map
+
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
+
 elemental function eq_rad_int_ele_cache (f1, f2) result (is_eq)
 
 implicit none
@@ -1239,16 +1265,10 @@ logical is_eq
 !
 
 is_eq = .true.
-!! f_side.equality_test[real, 1, NOT]
-is_eq = is_eq .and. all(f1%orb0 == f2%orb0)
-!! f_side.equality_test[real, 0, NOT]
-is_eq = is_eq .and. (f1%g2_0 == f2%g2_0)
-!! f_side.equality_test[real, 0, NOT]
-is_eq = is_eq .and. (f1%g3_0 == f2%g3_0)
-!! f_side.equality_test[real, 1, NOT]
-is_eq = is_eq .and. all(f1%dg2_dorb == f2%dg2_dorb)
-!! f_side.equality_test[real, 1, NOT]
-is_eq = is_eq .and. all(f1%dg3_dorb == f2%dg3_dorb)
+!! f_side.equality_test[type, 0, NOT]
+is_eq = is_eq .and. (f1%rm0 == f2%rm0)
+!! f_side.equality_test[type, 0, NOT]
+is_eq = is_eq .and. (f1%rm1 == f2%rm1)
 !! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%stale .eqv. f2%stale)
 
@@ -1417,17 +1437,17 @@ end function eq_photon_material
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
 
-elemental function eq_pixel_grid_pt (f1, f2) result (is_eq)
+elemental function eq_pixel_pt (f1, f2) result (is_eq)
 
 implicit none
 
-type(pixel_grid_pt_struct), intent(in) :: f1, f2
+type(pixel_pt_struct), intent(in) :: f1, f2
 logical is_eq
 
 !
 
 is_eq = .true.
-!! f_side.equality_test[integer, 0, NOT]
+!! f_side.equality_test[integer8, 0, NOT]
 is_eq = is_eq .and. (f1%n_photon == f2%n_photon)
 !! f_side.equality_test[complex, 0, NOT]
 is_eq = is_eq .and. (f1%e_x == f2%e_x)
@@ -1448,16 +1468,16 @@ is_eq = is_eq .and. all(f1%init_orbit == f2%init_orbit)
 !! f_side.equality_test[real, 1, NOT]
 is_eq = is_eq .and. all(f1%init_orbit_rms == f2%init_orbit_rms)
 
-end function eq_pixel_grid_pt
+end function eq_pixel_pt
 
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
 
-elemental function eq_pixel_grid (f1, f2) result (is_eq)
+elemental function eq_pixel_detec (f1, f2) result (is_eq)
 
 implicit none
 
-type(pixel_grid_struct), intent(in) :: f1, f2
+type(pixel_detec_struct), intent(in) :: f1, f2
 logical is_eq
 
 !
@@ -1467,6 +1487,12 @@ is_eq = .true.
 is_eq = is_eq .and. all(f1%dr == f2%dr)
 !! f_side.equality_test[real, 1, NOT]
 is_eq = is_eq .and. all(f1%r0 == f2%r0)
+!! f_side.equality_test[integer8, 0, NOT]
+is_eq = is_eq .and. (f1%n_track_tot == f2%n_track_tot)
+!! f_side.equality_test[integer8, 0, NOT]
+is_eq = is_eq .and. (f1%n_hit_detec == f2%n_hit_detec)
+!! f_side.equality_test[integer8, 0, NOT]
+is_eq = is_eq .and. (f1%n_hit_pixel == f2%n_hit_pixel)
 !! f_side.equality_test[type, 2, ALLOC]
 is_eq = is_eq .and. (allocated(f1%pt) .eqv. allocated(f2%pt))
 if (.not. is_eq) return
@@ -1474,7 +1500,7 @@ if (allocated(f1%pt)) is_eq = all(shape(f1%pt) == shape(f2%pt))
 if (.not. is_eq) return
 if (allocated(f1%pt)) is_eq = all(f1%pt == f2%pt)
 
-end function eq_pixel_grid
+end function eq_pixel_detec
 
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
@@ -1885,7 +1911,7 @@ is_eq = is_eq .and. (f1%init_spin .eqv. f2%init_spin)
 !! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%full_6d_coupling_calc .eqv. f2%full_6d_coupling_calc)
 !! f_side.equality_test[logical, 0, NOT]
-is_eq = is_eq .and. (f1%use_particle_start_for_center .eqv. f2%use_particle_start_for_center)
+is_eq = is_eq .and. (f1%use_particle_start .eqv. f2%use_particle_start)
 !! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%use_t_coords .eqv. f2%use_t_coords)
 !! f_side.equality_test[logical, 0, NOT]
@@ -1894,6 +1920,8 @@ is_eq = is_eq .and. (f1%use_z_as_t .eqv. f2%use_z_as_t)
 is_eq = is_eq .and. (f1%sig_e_jitter == f2%sig_e_jitter)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%sig_e == f2%sig_e)
+!! f_side.equality_test[logical, 0, NOT]
+is_eq = is_eq .and. (f1%use_particle_start_for_center .eqv. f2%use_particle_start_for_center)
 
 end function eq_beam_init
 
@@ -1931,11 +1959,15 @@ is_eq = is_eq .and. (f1%geometry == f2%geometry)
 !! f_side.equality_test[integer, 0, NOT]
 is_eq = is_eq .and. (f1%ixx == f2%ixx)
 !! f_side.equality_test[logical, 0, NOT]
-is_eq = is_eq .and. (f1%high_energy_space_charge_on .eqv. f2%high_energy_space_charge_on)
-!! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%stable .eqv. f2%stable)
 !! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%live_branch .eqv. f2%live_branch)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%g1_integral == f2%g1_integral)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%g2_integral == f2%g2_integral)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%g3_integral == f2%g3_integral)
 !! f_side.equality_test[type, 0, NOT]
 is_eq = is_eq .and. (f1%bookkeeping_state == f2%bookkeeping_state)
 !! f_side.equality_test[type, 0, NOT]
@@ -2010,6 +2042,8 @@ logical is_eq
 is_eq = .true.
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%emittance == f2%emittance)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%emittance_no_vert == f2%emittance_no_vert)
 !! f_side.equality_test[real, 1, NOT]
 is_eq = is_eq .and. all(f1%synch_int == f2%synch_int)
 !! f_side.equality_test[real, 0, NOT]
@@ -2078,6 +2112,12 @@ is_eq = is_eq .and. (f1%e_loss == f2%e_loss)
 is_eq = is_eq .and. (f1%rf_voltage == f2%rf_voltage)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%pz_aperture == f2%pz_aperture)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%pz_average == f2%pz_average)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%momentum_compaction == f2%momentum_compaction)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%dpz_damp == f2%dpz_damp)
 !! f_side.equality_test[type, 0, NOT]
 is_eq = is_eq .and. (f1%a == f2%a)
 !! f_side.equality_test[type, 0, NOT]
@@ -2122,6 +2162,36 @@ end function eq_em_field
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
 
+elemental function eq_strong_beam (f1, f2) result (is_eq)
+
+implicit none
+
+type(strong_beam_struct), intent(in) :: f1, f2
+logical is_eq
+
+!
+
+is_eq = .true.
+!! f_side.equality_test[integer, 0, NOT]
+is_eq = is_eq .and. (f1%ix_slice == f2%ix_slice)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%x_center == f2%x_center)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%y_center == f2%y_center)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%x_sigma == f2%x_sigma)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%y_sigma == f2%y_sigma)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%dx == f2%dx)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%dy == f2%dy)
+
+end function eq_strong_beam
+
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
+
 elemental function eq_track_point (f1, f2) result (is_eq)
 
 implicit none
@@ -2138,6 +2208,8 @@ is_eq = is_eq .and. (f1%s_body == f2%s_body)
 is_eq = is_eq .and. (f1%orb == f2%orb)
 !! f_side.equality_test[type, 0, NOT]
 is_eq = is_eq .and. (f1%field == f2%field)
+!! f_side.equality_test[type, 0, NOT]
+is_eq = is_eq .and. (f1%strong_beam == f2%strong_beam)
 !! f_side.equality_test[real, 1, NOT]
 is_eq = is_eq .and. all(f1%vec0 == f2%vec0)
 !! f_side.equality_test[real, 2, NOT]
@@ -2204,11 +2276,11 @@ end function eq_synch_rad_common
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
 
-elemental function eq_csr_parameter (f1, f2) result (is_eq)
+elemental function eq_space_charge_common (f1, f2) result (is_eq)
 
 implicit none
 
-type(csr_parameter_struct), intent(in) :: f1, f2
+type(space_charge_common_struct), intent(in) :: f1, f2
 logical is_eq
 
 !
@@ -2216,6 +2288,14 @@ logical is_eq
 is_eq = .true.
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%ds_track_step == f2%ds_track_step)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%dt_track_step == f2%dt_track_step)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%cathode_strength_cutoff == f2%cathode_strength_cutoff)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%rel_tol_tracking == f2%rel_tol_tracking)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%abs_tol_tracking == f2%abs_tol_tracking)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%beam_chamber_height == f2%beam_chamber_height)
 !! f_side.equality_test[real, 0, NOT]
@@ -2234,18 +2314,10 @@ is_eq = is_eq .and. (f1%n_shield_images == f2%n_shield_images)
 is_eq = is_eq .and. (f1%sc_min_in_bin == f2%sc_min_in_bin)
 !! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%lsc_kick_transverse_dependence .eqv. f2%lsc_kick_transverse_dependence)
-!! f_side.equality_test[logical, 0, NOT]
-is_eq = is_eq .and. (f1%print_taylor_warning .eqv. f2%print_taylor_warning)
-!! f_side.equality_test[logical, 0, NOT]
-is_eq = is_eq .and. (f1%write_csr_wake .eqv. f2%write_csr_wake)
-!! f_side.equality_test[logical, 0, NOT]
-is_eq = is_eq .and. (f1%use_csr_old .eqv. f2%use_csr_old)
-!! f_side.equality_test[logical, 0, NOT]
-is_eq = is_eq .and. (f1%small_angle_approx .eqv. f2%small_angle_approx)
 !! f_side.equality_test[character, 0, NOT]
-is_eq = is_eq .and. (f1%wake_output_file == f2%wake_output_file)
+is_eq = is_eq .and. (f1%diagnostic_output_file == f2%diagnostic_output_file)
 
-end function eq_csr_parameter
+end function eq_space_charge_common
 
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
@@ -2291,8 +2363,6 @@ is_eq = is_eq .and. (f1%autoscale_phase_tol == f2%autoscale_phase_tol)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%electric_dipole_moment == f2%electric_dipole_moment)
 !! f_side.equality_test[real, 0, NOT]
-is_eq = is_eq .and. (f1%ptc_cut_factor == f2%ptc_cut_factor)
-!! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%sad_eps_scale == f2%sad_eps_scale)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%sad_amp_max == f2%sad_amp_max)
@@ -2313,9 +2383,9 @@ is_eq = is_eq .and. (f1%sr_wakes_on .eqv. f2%sr_wakes_on)
 !! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%lr_wakes_on .eqv. f2%lr_wakes_on)
 !! f_side.equality_test[logical, 0, NOT]
-is_eq = is_eq .and. (f1%ptc_use_orientation_patches .eqv. f2%ptc_use_orientation_patches)
-!! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%auto_bookkeeper .eqv. f2%auto_bookkeeper)
+!! f_side.equality_test[logical, 0, NOT]
+is_eq = is_eq .and. (f1%high_energy_space_charge_on .eqv. f2%high_energy_space_charge_on)
 !! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%csr_and_space_charge_on .eqv. f2%csr_and_space_charge_on)
 !! f_side.equality_test[logical, 0, NOT]
@@ -2333,13 +2403,13 @@ is_eq = is_eq .and. (f1%radiation_fluctuations_on .eqv. f2%radiation_fluctuation
 !! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%conserve_taylor_maps .eqv. f2%conserve_taylor_maps)
 !! f_side.equality_test[logical, 0, NOT]
-is_eq = is_eq .and. (f1%absolute_time_tracking_default .eqv. f2%absolute_time_tracking_default)
+is_eq = is_eq .and. (f1%absolute_time_tracking .eqv. f2%absolute_time_tracking)
+!! f_side.equality_test[logical, 0, NOT]
+is_eq = is_eq .and. (f1%absolute_time_ref_shift .eqv. f2%absolute_time_ref_shift)
 !! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%convert_to_kinetic_momentum .eqv. f2%convert_to_kinetic_momentum)
 !! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%aperture_limit_on .eqv. f2%aperture_limit_on)
-!! f_side.equality_test[logical, 0, NOT]
-is_eq = is_eq .and. (f1%ptc_print_info_messages .eqv. f2%ptc_print_info_messages)
 !! f_side.equality_test[logical, 0, NOT]
 is_eq = is_eq .and. (f1%debug .eqv. f2%debug)
 
@@ -2513,6 +2583,8 @@ if (.not. is_eq) return
 if (associated(f1%rad_int_cache)) is_eq = (f1%rad_int_cache == f2%rad_int_cache)
 !! f_side.equality_test[type, 1, NOT]
 is_eq = is_eq .and. all(f1%taylor == f2%taylor)
+!! f_side.equality_test[real, 1, NOT]
+is_eq = is_eq .and. all(f1%spin_taylor_ref_orb_in == f2%spin_taylor_ref_orb_in)
 !! f_side.equality_test[type, 1, NOT]
 is_eq = is_eq .and. all(f1%spin_taylor == f2%spin_taylor)
 !! f_side.equality_test[type, 0, PTR]
@@ -2559,11 +2631,11 @@ is_eq = is_eq .and. (f1%time_ref_orb_in == f2%time_ref_orb_in)
 !! f_side.equality_test[type, 0, NOT]
 is_eq = is_eq .and. (f1%time_ref_orb_out == f2%time_ref_orb_out)
 !! f_side.equality_test[real, 1, NOT]
-is_eq = is_eq .and. all(f1%spin_taylor_ref_orb_in == f2%spin_taylor_ref_orb_in)
-!! f_side.equality_test[real, 1, NOT]
 is_eq = is_eq .and. all(f1%value == f2%value)
 !! f_side.equality_test[real, 1, NOT]
 is_eq = is_eq .and. all(f1%old_value == f2%old_value)
+!! f_side.equality_test[real, 2, NOT]
+is_eq = is_eq .and. all(f1%spin_q == f2%spin_q)
 !! f_side.equality_test[real, 1, NOT]
 is_eq = is_eq .and. all(f1%vec0 == f2%vec0)
 !! f_side.equality_test[real, 2, NOT]
@@ -2572,8 +2644,6 @@ is_eq = is_eq .and. all(f1%mat6 == f2%mat6)
 is_eq = is_eq .and. all(f1%c_mat == f2%c_mat)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%gamma_c == f2%gamma_c)
-!! f_side.equality_test[real, 2, NOT]
-is_eq = is_eq .and. all(f1%spin_q == f2%spin_q)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%s_start == f2%s_start)
 !! f_side.equality_test[real, 0, NOT]
@@ -2906,8 +2976,6 @@ if (allocated(f1%ic)) is_eq = all(f1%ic == f2%ic)
 is_eq = is_eq .and. (f1%photon_type == f2%photon_type)
 !! f_side.equality_test[integer, 0, NOT]
 is_eq = is_eq .and. (f1%creation_hash == f2%creation_hash)
-!! f_side.equality_test[logical, 0, NOT]
-is_eq = is_eq .and. (f1%absolute_time_tracking .eqv. f2%absolute_time_tracking)
 
 end function eq_lat
 
@@ -2944,12 +3012,20 @@ is_eq = is_eq .and. (f1%charge_live == f2%charge_live)
 is_eq = is_eq .and. (f1%z_center == f2%z_center)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%t_center == f2%t_center)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%t0 == f2%t0)
 !! f_side.equality_test[integer, 0, NOT]
 is_eq = is_eq .and. (f1%ix_ele == f2%ix_ele)
 !! f_side.equality_test[integer, 0, NOT]
 is_eq = is_eq .and. (f1%ix_bunch == f2%ix_bunch)
 !! f_side.equality_test[integer, 0, NOT]
+is_eq = is_eq .and. (f1%ix_turn == f2%ix_turn)
+!! f_side.equality_test[integer, 0, NOT]
 is_eq = is_eq .and. (f1%n_live == f2%n_live)
+!! f_side.equality_test[integer, 0, NOT]
+is_eq = is_eq .and. (f1%n_good == f2%n_good)
+!! f_side.equality_test[integer, 0, NOT]
+is_eq = is_eq .and. (f1%n_bad == f2%n_bad)
 
 end function eq_bunch
 
@@ -2990,6 +3066,8 @@ is_eq = is_eq .and. all(f1%rel_max == f2%rel_max)
 is_eq = is_eq .and. all(f1%rel_min == f2%rel_min)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%s == f2%s)
+!! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%t == f2%t)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%charge_live == f2%charge_live)
 !! f_side.equality_test[real, 0, NOT]

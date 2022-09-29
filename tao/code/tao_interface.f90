@@ -59,22 +59,12 @@ function tao_beam_emit_calc (plane, emit_type, ele, bunch_params) result (emit)
   real(rp) emit
 end function
 
-function tao_beam_sigma_calc_needed (data_type, data_source) result (do_beam_sigma)
+function tao_beam_track_endpoint (ele_id, lat, branch_str, where) result (ele)
   import
   implicit none
-  character(*) data_type, data_source
-  logical do_beam_sigma
-end function
- 
-function tao_param_value_at_s (dat_name, ele, orbit, err_flag, why_invalid) result (value)
-  import
-  implicit none
-  type (ele_struct) ele
-  type (coord_struct) orbit
-  real(rp) value
-  character(*) dat_name
-  character(*), optional :: why_invalid
-  logical err_flag
+  type (ele_struct), pointer :: ele
+  type (lat_struct), target :: lat
+  character(*) ele_id, where, branch_str
 end function
 
 subroutine tao_call_cmd (file_name, cmd_arg)
@@ -231,6 +221,15 @@ subroutine tao_ele_to_ele_track (ix_universe, ix_branch, ix_ele, ix_ele_track)
   implicit none
   integer ix_universe, ix_branch, ix_ele, ix_ele_track
 end subroutine
+
+function tao_evaluate_tune (q_str, q0, delta_input) result (q_val)
+  import
+  implicit none
+  real(rp) q0, q_val
+  real(rp), allocatable :: set_val(:)
+  character(*) q_str
+  logical delta_input
+end function
 
 subroutine tao_evaluate_element_parameters (err, param_name, values, print_err, dflt_ele, &
                                                        dflt_source, dflt_component, dflt_uni, eval_point)
@@ -513,9 +512,10 @@ subroutine tao_init_find_elements (u, search_string, eles, attribute, found_one)
   logical, optional :: found_one
 end subroutine
 
-subroutine tao_init_lattice (lat_file)
+subroutine tao_init_lattice (lat_file, err_flag)
   implicit none
   character(*) lat_file
+  logical err_flag
 end subroutine
 
 subroutine tao_init_plotting (plot_file)
@@ -559,6 +559,13 @@ function tao_lat_emit_calc (plane, emit_type, ele, modes) result (emit)
   real(rp) emit
 end function
 
+function tao_lat_sigma_calc_needed (data_type, data_source) result (do_lat_sigma)
+  import
+  implicit none
+  character(*) data_type, data_source
+  logical do_lat_sigma
+end function
+ 
 subroutine tao_lattice_calc (calc_ok, print_err)
   implicit none
   logical calc_ok
@@ -645,6 +652,15 @@ function tao_pointer_to_datum (d1, ele_name) result (datum_ptr)
   character(*) ele_name
 end function
 
+subroutine tao_pointer_to_branches (branch_str, branches, unis, err)
+  import
+  implicit none
+  character(*) branch_str
+  type (branch_pointer_struct), allocatable :: branches(:)
+  type (tao_universe_pointer_struct), allocatable, target :: unis(:)
+  logical err
+end subroutine
+
 subroutine tao_pointer_to_universes (name_in, unis, err, name_out, explicit_uni, dflt_uni)
   import
   implicit none
@@ -656,11 +672,31 @@ subroutine tao_pointer_to_universes (name_in, unis, err, name_out, explicit_uni,
   logical, optional :: explicit_uni
 end subroutine
 
+function tao_param_value_at_s (dat_name, ele, orbit, err_flag, why_invalid, print_err) result (value)
+  import
+  implicit none
+  type (ele_struct) ele
+  type (coord_struct) orbit
+  real(rp) value
+  character(*) dat_name
+  character(*), optional :: why_invalid
+  logical err_flag
+  logical, optional :: print_err
+end function
+
 subroutine tao_parse_command_args (error, cmd_line)
   import
   implicit none
   character(*), optional :: cmd_line
   logical error
+end subroutine
+
+subroutine tao_parse_element_param_str (err, in_str, uni, element, parameter, where, component)
+  import
+  implicit none
+  character(*) in_str, uni, element, parameter, component
+  integer where
+  logical err
 end subroutine
 
 subroutine tao_pause_cmd (time)
@@ -669,14 +705,14 @@ subroutine tao_pause_cmd (time)
   real(rp) time
 end subroutine
 
-subroutine tao_pick_universe (name_in, name_out, picked, err, ix_uni, explicit_uni, dflt_uni)
+subroutine tao_pick_universe (name_in, name_out, picked, err, ix_uni, explicit_uni, dflt_uni, pure_uni)
   import
   implicit none
   character(*) name_in, name_out
   integer, optional :: ix_uni, dflt_uni
   logical, allocatable :: picked(:)
   logical err
-  logical, optional :: explicit_uni
+  logical, optional :: explicit_uni, pure_uni
 end subroutine
  
 subroutine tao_place_cmd (where, who, no_buffer)
@@ -734,11 +770,12 @@ subroutine tao_print_command_line_info
   implicit none
 end subroutine
 
-subroutine tao_ptc_normal_form (do_calc, tao_lat, ix_branch)
+subroutine tao_ptc_normal_form (do_calc, tao_lat, ix_branch, rf_on)
   import
   type (tao_lattice_struct), target :: tao_lat
   integer ix_branch
   logical do_calc
+  integer, optional :: rf_on
 end subroutine
 
 subroutine tao_python_cmd (input_str)
@@ -863,19 +900,21 @@ subroutine tao_split_component (comp_str, comp, err)
   logical err
 end subroutine
 
-subroutine tao_spin_matrix_calc (datum, u, ele_ref, ele)
+subroutine tao_spin_matrix_calc (datum, u, ele_ref, ele, excite_zero)
   import
   implicit none
   type (tao_data_struct), target :: datum
   type (tao_universe_struct), target :: u
   type (ele_struct), pointer :: ele_ref, ele
+  character(*), optional :: excite_zero(3)
 end subroutine
 
-subroutine tao_spin_polarization_calc (branch, tao_branch)
+subroutine tao_spin_polarization_calc (branch, tao_branch, excite_zero)
   import
   implicit none
   type (branch_struct), target :: branch
   type (tao_lattice_branch_struct), target :: tao_branch
+  character(*), optional :: excite_zero(3)
 end subroutine
 
 function tao_spin_matrices_calc_needed (data_type, data_source) result (do_calc)
@@ -1122,13 +1161,14 @@ implicit none
 integer ix_amp, i
 character(*) string
 
-! Any characters before a uni "@" must be in the set '0123456789:,[]*'.
+! Any characters before a uni "@" must be in the set '-0123456789:,[]*'.
 
 ix_amp = 0
 
 do i = 1, len(string)
-  if (index('0123456789:,[]*', string(i:i)) == 0 .and. string(i:i) /= '@') return
+  if (index('-0123456789:,[]*', string(i:i)) == 0 .and. string(i:i) /= '@') return
   if (string(i:i) /= '@') cycle
+  if (index(string(1:i), '::') /= 0) return
   ix_amp = i
   return
 enddo

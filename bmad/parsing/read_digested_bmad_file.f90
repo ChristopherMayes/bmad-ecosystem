@@ -1,10 +1,9 @@
 !+
 ! Subroutine read_digested_bmad_file (digested_file, lat, inc_version, err_flag, parser_calling, lat_files)
 !
-! Subroutine to read in a digested file. The subroutine will check that
-! the version of the digested file is up to date and that the digested file
-! is current with respect to the original BMAD files that were used. [See
-! write_digested_bmad_file.]
+! Subroutine to read in a digested file. The subroutine will check that the version of the digested file 
+! is up to date and that the digested file is current with respect to the original BMAD files that were used. 
+! [See write_digested_bmad_file.]
 !
 ! Note: This subroutine also reads in the common structures for bmad_parser2
 !
@@ -38,11 +37,13 @@ type (lat_struct), target, intent(inout) :: lat
 type (branch_struct), pointer :: branch
 type (extra_parsing_info_struct) :: extra
 type (bmad_common_struct) bmad_com_read
+type (space_charge_common_struct) space_charge_com_read
+type (ptc_common_struct) ptc_com_read
 real(rp) value(num_ele_attrib$)
 
 integer inc_version, d_unit, n_files, file_version, i, j, k, ix, ix_value(num_ele_attrib$)
 integer stat_b(13), stat_b2, stat_b8, stat_b10, n_branch, n, nk, control_type, coupler_at
-integer ierr, stat, ios, ios2, n_wall_section, garbage, j1, j2, io_err_level, n_custom, n_print
+integer ierr, stat, ios, ios2, ios3, ios4, n_wall_section, garbage, j1, j2, io_err_level, n_custom, n_print
 integer, allocatable :: index_list(:)
 
 character(*) digested_file
@@ -56,7 +57,7 @@ logical, optional :: err_flag, parser_calling
 logical is_ok, parser_call
 logical found_it, mode3, error, is_match, err, err_found
 
-! init all elements in lat
+! Init all elements in lat
 
 call init_bmad()
 
@@ -70,10 +71,14 @@ else
   io_err_level = s_error$
 endif
 
+if (digested_file == '') then ! For some reason the inquire statement will not catch this error.
+  call out_io (io_err_level, r_name, 'DIGESTED FILE NAME IS BLANK!')
+  return
+endif
+
 call init_lat (lat)
 
 ! Read the digested file.
-! Some old versions can be read even though they are not the current version.
 
 d_unit = lunget()
 inc_version = -1
@@ -82,8 +87,7 @@ lat%n_ele_track = 0
 call fullfilename (digested_file, fname_full)
 inquire (file = fname_full, name = full_digested_file)
 call simplify_path (full_digested_file, full_digested_file)
-open (unit = d_unit, file = full_digested_file, status = 'old',  &
-                     form = 'unformatted', action = 'READ', err = 9000)
+open (unit = d_unit, file = full_digested_file, status = 'old',  form = 'unformatted', action = 'READ', err = 9000)
 
 read (d_unit, err = 9010, end = 9010) n_files, file_version
 if (present(lat_files)) call re_allocate (lat_files, n_files)
@@ -172,14 +176,14 @@ enddo
 read (d_unit, err = 9030, end = 9030) lat%use_name, lat%machine, lat%lattice, lat%input_file_name, lat%title
 read (d_unit, err = 9030, end = 9030) lat%a, lat%b, lat%z, lat%param, lat%version, lat%n_ele_track
 read (d_unit, err = 9030, end = 9030) lat%n_ele_track, lat%n_ele_max, lat%lord_state, lat%n_control_max, lat%n_ic_max
-read (d_unit, err = 9030, end = 9030) lat%input_taylor_order, lat%absolute_time_tracking, lat%photon_type
+read (d_unit, err = 9030, end = 9030) lat%input_taylor_order, lat%photon_type
 read (d_unit, err = 9070, end = 9070) n_branch, lat%pre_tracker, n_custom, n_print
 
 ! Different compilers (EG ifort and gfortran) will produce different binary formats. 
 ! As a double check, check the version number again.
 
 if (lat%version /= bmad_inc_version$) then
-  call out_io (s_error$, r_name, 'DIGESTED FILE BINARY FORMAT IS WRONG.', &
+  call out_io (io_err_level, r_name, 'DIGESTED FILE BINARY FORMAT IS WRONG.', &
          '[CAN HAPPEN IF THE DIGESTED FILE IS CREATED WITH A PROGRAM COMPILED WITH A DIFFERENT COMPILER.]')
   close (d_unit)
   return
@@ -263,23 +267,22 @@ enddo
 read (d_unit, err = 9060, end = 9060) lat%particle_start
 read (d_unit, err = 9060, end = 9060) lat%beam_init
 
-! Read PTC info
-
-read (d_unit, iostat = ios) ptc_com%old_integrator, ptc_com%exact_model, ptc_com%exact_misalign, ptc_com%max_fringe_order
-if (ios /= 0) then
-  call out_io(s_error$, r_name, 'ERROR READING PTC PARAMETERS.')
-  close (d_unit)
-  return
-endif
-
 ! Read extra state info.
 
 read (d_unit, iostat = ios) found_it
 if (found_it) then
+  allocate (ptc_com_read%vertical_kick, ptc_com_read%old_integrator, ptc_com_read%exact_model, &
+            ptc_com_read%exact_misalign, ptc_com_read%max_fringe_order)
   read (d_unit, iostat = ios) extra
   read (d_unit, iostat = ios2) bmad_com_read
-  if (ios /= 0 .or. ios2 /= 0) then
-    call out_io (s_error$, r_name, 'ERROR READING BMAD COMMON PARAMETERS')
+  read (d_unit, iostat = ios3) space_charge_com_read
+  read (d_unit, iostat = ios4) ptc_com_read%max_fringe_order, ptc_com_read%exact_model, ptc_com_read%exact_misalign, &
+          ptc_com_read%vertical_kick, ptc_com_read%cut_factor, ptc_com_read%old_integrator, &
+          ptc_com_read%use_orientation_patches, ptc_com_read%print_info_messages
+
+
+  if (ios /= 0 .or. ios2 /= 0 .or. ios3 /= 0 .or. ios4 /= 0) then
+    call out_io (io_err_level, r_name, 'ERROR READING BMAD/SPACE_CHARGE/PTC COMMON PARAMETERS')
     close (d_unit)
     return
   endif
@@ -298,15 +301,13 @@ if (found_it) then
   if (extra%autoscale_phase_tol_set)              bmad_com%autoscale_phase_tol             = bmad_com_read%autoscale_phase_tol
   if (extra%rf_phase_below_transition_ref_set)    bmad_com%rf_phase_below_transition_ref   = bmad_com_read%rf_phase_below_transition_ref
   if (extra%electric_dipole_moment_set)           bmad_com%electric_dipole_moment          = bmad_com_read%electric_dipole_moment
-  if (extra%ptc_cut_factor_set)                   bmad_com%ptc_cut_factor                  = bmad_com_read%ptc_cut_factor
   if (extra%taylor_order_set)                     bmad_com%taylor_order                    = bmad_com_read%taylor_order
   if (extra%d_orb_set)                            bmad_com%d_orb                           = bmad_com_read%d_orb
   if (extra%default_integ_order_set)              bmad_com%default_integ_order             = bmad_com_read%default_integ_order
   if (extra%runge_kutta_order_set)                bmad_com%runge_kutta_order               = bmad_com_read%runge_kutta_order
   if (extra%sr_wakes_on_set)                      bmad_com%sr_wakes_on                     = bmad_com_read%sr_wakes_on
   if (extra%lr_wakes_on_set)                      bmad_com%lr_wakes_on                     = bmad_com_read%lr_wakes_on
-  if (extra%ptc_use_orientation_patches_set)      bmad_com%ptc_use_orientation_patches     = bmad_com_read%ptc_use_orientation_patches
-  if (extra%auto_bookkeeper_set)                  bmad_com%auto_bookkeeper                 = bmad_com_read%auto_bookkeeper
+  if (extra%high_energy_space_charge_on_set)      bmad_com%high_energy_space_charge_on     = bmad_com_read%high_energy_space_charge_on
   if (extra%csr_and_space_charge_on_set)          bmad_com%csr_and_space_charge_on         = bmad_com_read%csr_and_space_charge_on
   if (extra%spin_tracking_on_set)                 bmad_com%spin_tracking_on                = bmad_com_read%spin_tracking_on
   if (extra%backwards_time_tracking_on_set)       bmad_com%backwards_time_tracking_on      = bmad_com_read%backwards_time_tracking_on
@@ -315,14 +316,40 @@ if (found_it) then
   if (extra%radiation_zero_average_set)           bmad_com%radiation_zero_average          = bmad_com_read%radiation_zero_average
   if (extra%radiation_fluctuations_on_set)        bmad_com%radiation_fluctuations_on       = bmad_com_read%radiation_fluctuations_on
   if (extra%conserve_taylor_maps_set)             bmad_com%conserve_taylor_maps            = bmad_com_read%conserve_taylor_maps
-  if (extra%absolute_time_tracking_default_set)   bmad_com%absolute_time_tracking_default  = bmad_com_read%absolute_time_tracking_default
+  if (extra%absolute_time_tracking_set)           bmad_com%absolute_time_tracking          = bmad_com_read%absolute_time_tracking
+  if (extra%absolute_time_ref_shift_set)          bmad_com%absolute_time_ref_shift         = bmad_com_read%absolute_time_ref_shift
   if (extra%convert_to_kinetic_momentum_set)      bmad_com%convert_to_kinetic_momentum     = bmad_com_read%convert_to_kinetic_momentum
   if (extra%aperture_limit_on_set)                bmad_com%aperture_limit_on               = bmad_com_read%aperture_limit_on
   if (extra%sad_eps_scale_set)                    bmad_com%sad_eps_scale                   = bmad_com_read%sad_eps_scale
   if (extra%sad_amp_max_set)                      bmad_com%sad_amp_max                     = bmad_com_read%sad_amp_max
   if (extra%sad_n_div_max_set)                    bmad_com%sad_n_div_max                   = bmad_com_read%sad_n_div_max
   if (extra%max_num_runge_kutta_step_set)         bmad_com%max_num_runge_kutta_step        = bmad_com_read%max_num_runge_kutta_step
-  if (extra%ptc_print_info_messages_set)          bmad_com%ptc_print_info_messages         = bmad_com_read%ptc_print_info_messages
+  if (extra%debug_set)                            bmad_com%debug                           = bmad_com_read%debug
+
+  if (extra%ds_track_step_set)                    space_charge_com%ds_track_step                    = space_charge_com_read%ds_track_step
+  if (extra%dt_track_step_set)                    space_charge_com%dt_track_step                    = space_charge_com_read%dt_track_step
+  if (extra%cathode_strength_cutoff_set)          space_charge_com%cathode_strength_cutoff          = space_charge_com_read%cathode_strength_cutoff
+  if (extra%sc_rel_tol_tracking_set)              space_charge_com%rel_tol_tracking                 = space_charge_com_read%rel_tol_tracking
+  if (extra%sc_abs_tol_tracking_set)              space_charge_com%abs_tol_tracking                 = space_charge_com_read%abs_tol_tracking
+  if (extra%beam_chamber_height_set)              space_charge_com%beam_chamber_height              = space_charge_com_read%beam_chamber_height
+  if (extra%sigma_cutoff_set)                     space_charge_com%sigma_cutoff                     = space_charge_com_read%sigma_cutoff
+  if (extra%space_charge_mesh_size_set)           space_charge_com%space_charge_mesh_size           = space_charge_com_read%space_charge_mesh_size
+  if (extra%csr3d_mesh_size_set)                  space_charge_com%csr3d_mesh_size                  = space_charge_com_read%csr3d_mesh_size
+  if (extra%n_bin_set)                            space_charge_com%n_bin                            = space_charge_com_read%n_bin
+  if (extra%particle_bin_span_set)                space_charge_com%particle_bin_span                = space_charge_com_read%particle_bin_span
+  if (extra%n_shield_images_set)                  space_charge_com%n_shield_images                  = space_charge_com_read%n_shield_images
+  if (extra%sc_min_in_bin_set)                    space_charge_com%sc_min_in_bin                    = space_charge_com_read%sc_min_in_bin
+  if (extra%lsc_kick_transverse_dependence_set)   space_charge_com%lsc_kick_transverse_dependence   = space_charge_com_read%lsc_kick_transverse_dependence
+  if (extra%diagnostic_output_file_set)           space_charge_com%diagnostic_output_file           = space_charge_com_read%diagnostic_output_file
+
+  if (extra%use_orientation_patches_set)          ptc_com%use_orientation_patches                   = ptc_com_read%use_orientation_patches
+  if (extra%print_info_messages_set)              ptc_com%print_info_messages                       = ptc_com_read%print_info_messages
+  if (extra%cut_factor_set)                       ptc_com%cut_factor                                = ptc_com_read%cut_factor
+  if (extra%max_fringe_order_set)                 ptc_com%max_fringe_order                          = ptc_com_read%max_fringe_order
+  if (extra%vertical_kick_set)                    ptc_com%vertical_kick                             = ptc_com_read%vertical_kick
+  if (extra%old_integrator_set)                   ptc_com%old_integrator                            = ptc_com_read%old_integrator
+  if (extra%exact_model_set)                      ptc_com%exact_model                               = ptc_com_read%exact_model
+  if (extra%exact_misalign_set)                   ptc_com%exact_misalign                            = ptc_com_read%exact_misalign
 endif
 
 ! Setup any attribute aliases in the global attribute name table.
@@ -352,7 +379,7 @@ if (.not. err_found .and. allocated(lat%print_str)) then
 endif
 
 if (.not. err_found) then
-  if (lat%input_taylor_order /= 0) ptc_com%taylor_order_saved = lat%input_taylor_order
+  if (lat%input_taylor_order /= 0) ptc_private%taylor_order_saved = lat%input_taylor_order
   call set_ptc (1.0e12_rp, lat%param%particle)  ! Energy value used does not matter here
   call parser_init_custom_elements (lat)
 endif
@@ -366,7 +393,7 @@ return
 
 9000  continue
 if (.not. parser_call) then
-  call out_io (s_error$, r_name, 'DIGESTED FILE DOES NOT EXIST: ' // trim(full_digested_file))
+  call out_io (io_err_level, r_name, 'DIGESTED FILE DOES NOT EXIST: ' // trim(full_digested_file))
 endif
 close (d_unit)
 return
@@ -374,56 +401,56 @@ return
 !--------------------------------------------------------------
 
 9010  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE VERSION.')
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE VERSION.')
 close (d_unit)
 return
 
 !--------------------------------------------------------------
 
 9020  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE FILE AND DATE.')
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE FILE AND DATE.')
 close (d_unit)
 return
 
 !--------------------------------------------------------------
 
 9025  continue
-call out_io(s_error$, r_name, 'ERROR READING BMAD_COM COMMON BLOCK.')
+call out_io(io_err_level, r_name, 'ERROR READING BMAD_COM COMMON BLOCK.')
 close (d_unit)
 return
 
 !--------------------------------------------------------------
 
 9030  continue
- call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE LATTICE GLOBALS.')
+ call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE LATTICE GLOBALS.')
 close (d_unit)
 return
 
 !--------------------------------------------------------------
 
 9035  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE GENERAL PARAMETER NAME LIST.')
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE GENERAL PARAMETER NAME LIST.')
 close (d_unit)
 return
 
 !--------------------------------------------------------------
 
 9050  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE IC.')
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE IC.')
 close (d_unit)
 return
 
 !--------------------------------------------------------------
 
 9060  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED PARTICLE_START/BEAM_INIT.')
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED PARTICLE_START/BEAM_INIT.')
 close (d_unit)
 return
 
 !--------------------------------------------------------------
 
 9070  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE BRANCH DATA.')
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE BRANCH DATA.')
 close (d_unit)
 return
 
@@ -473,9 +500,9 @@ read (d_unit, err = 9100, end = 9100) &
         ele%ix_ele, ele%mat6_calc_method, ele%tracking_method, &
         ele%spin_tracking_method, ele%symplectify, ele%mode_flip, &
         ele%multipoles_on, ele%taylor_map_includes_offsets, ele%Field_master, &
-        ele%logic, ele%field_calc, ele%aperture_at, &
+        ele%logic, ele%field_calc, ele%aperture_at, ele%spin_taylor_ref_orb_in, &
         ele%aperture_type, ele%csr_method, ele%space_charge_method, ele%orientation, &
-        ele%map_ref_orb_in, ele%map_ref_orb_out, ele%time_ref_orb_in, ele%time_ref_orb_out, ele%spin_taylor_ref_orb_in, &
+        ele%map_ref_orb_in, ele%map_ref_orb_out, ele%time_ref_orb_in, ele%time_ref_orb_out, &
         ele%offset_moves_aperture, ele%ix_branch, ele%ref_time, ele%scale_multipoles, &
         ele%bookkeeping_state, ele%ptc_integration_type, ele%ref_species
 
@@ -527,9 +554,9 @@ if (ac_kicker_alloc) then
   endif
 
   if (n2 > -1) then
-    allocate(ac%frequencies(n2))
-    do n = lbound(ac%frequencies, 1), ubound(ac%frequencies, 1)
-      read (d_unit, err = 9130, end = 9130) ac%frequencies(n)
+    allocate(ac%frequency(n2))
+    do n = lbound(ac%frequency, 1), ubound(ac%frequency, 1)
+      read (d_unit, err = 9130, end = 9130) ac%frequency(n)
     enddo
   endif
 endif
@@ -718,8 +745,8 @@ if (ix_s /= 0) then
 
   if (is_alloc_pix) then
     read (d_unit, err = 9361, end = 9361) i0, j0, i1, j1
-    allocate(ph%grid%pt(i0:i1, j0:j1))
-    ! Detectors do not have any grid data that needs saving
+    allocate(ph%pixel%pt(i0:i1, j0:j1))
+    ! Note: At startup detectors do not have any grid data that needs saving
   endif
 endif
 
@@ -787,7 +814,7 @@ elseif (ix_wall3d < 0) then
   read (d_unit, err = 9900, end = 9900) idum
   ele%wall3d => lat%branch(ix_wall3d_branch)%ele(abs(ix_wall3d))%wall3d
   if (.not. associated(ele%wall3d)) then
-    call out_io(s_error$, r_name, 'ERROR IN WALL3D INIT.')
+    call out_io(io_err_level, r_name, 'ERROR IN WALL3D INIT.')
     close (d_unit)
     return
   endif
@@ -807,113 +834,113 @@ return
 !--------------------------------------------------------------
 
 9100  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
                                  'ERROR READING ELEMENT # \i0\ ', &
                                   i_array = [ix_ele_in])
 close (d_unit)
 return
 
 9110  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
                                  'ERROR READING K_MAX OF ELEMENT # \i0\ ', &
                                   i_array = [ix_ele_in])
 close (d_unit)
 return
 
 9120  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
                                  'ERROR READING VALUES OF ELEMENT # \i0\ ', &
                                   i_array = [ix_ele_in])
 close (d_unit)
 return
 
 9130  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
                                  'ERROR READING AC_KICKER VALUES OF ELEMENT # \i0\ ', &
                                   i_array = [ix_ele_in])
 close (d_unit)
 return
 
 9140  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
         'ERROR READING EM_FIELD COMPONENT FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9150  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
         'ERROR READING MODE3 COMPONENT FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9350  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING %R ARRAY SIZE: ' // ele%name)
 close (d_unit)
 return
 
 9360  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING %PHOTON FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9361  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING %PHOTON%GRID BOUNDS FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9362  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING %PHOTON%SURFACE%GRID FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9400  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING R COMPONENT FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9410  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING CUSTOM COMPONENT FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9500  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING DESCRIP COMPONENT FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9600  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING AN,BN COMPONENTS FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9650  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING %TAYLOR(:)%REF FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9700  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING TAYLOR COMPONENTS FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9800  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING WAKE FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 
 9900  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING IDUM1 FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
@@ -949,7 +976,7 @@ do i = 1, n_wall
   endif
 
   if (ios /= 0) then
-     call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', &
+     call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
                                      'ERROR READING WALL3D N_WALL_SECTION NUMBER')
     close (d_unit)
     return
@@ -982,7 +1009,7 @@ read (d_unit, iostat = ios) sec%name, sec%material, sec%type, sec%n_vertex_input
                    sec%thickness, sec%s, sec%r0, sec%dx0_ds, sec%dy0_ds, &
                    sec%x0_coef, sec%y0_coef, sec%dr_ds, sec%p1_coef, sec%p2_coef, nv
 if (ios /= 0) then
-  call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', 'ERROR READING WALL3D SECTION')
+  call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', 'ERROR READING WALL3D SECTION')
   close (d_unit)
   return
 endif
@@ -991,7 +1018,7 @@ allocate(sec%v(nv))
 do k = 1, nv
   read (d_unit, iostat = ios) sec%v(k)
   if (ios /= 0) then
-    call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE.', 'ERROR READING WALL3D VERTEX')
+    call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', 'ERROR READING WALL3D VERTEX')
     close (d_unit)
     return
   endif
@@ -1032,7 +1059,7 @@ return
 !--------------------------------------------------------------
 
 9040  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE CONTROL.')
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE CONTROL.')
 error = .true.
 close (d_unit)
 return
@@ -1040,7 +1067,7 @@ return
 !--------------------------------------------------------------
 
 9045  continue
-call out_io(s_error$, r_name, 'ERROR READING DIGESTED FILE CONTROL STACK.')
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE CONTROL STACK.')
 error = .true.
 close (d_unit)
 return

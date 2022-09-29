@@ -94,7 +94,7 @@ character(1) delim, delim1, delim2
 character(80) str, err_str
 character(200) line
 
-logical delim_found, err_flag, logic, set_done, end_of_file, do_evaluate, hetero_list
+logical, target :: delim_found, err_flag, logic, set_done, end_of_file, do_evaluate, hetero_list
 logical is_attrib, err_flag2, old_style_input, ok, err
 logical, optional :: check_free, heterogeneous_ele_list, set_field_master
 
@@ -299,6 +299,7 @@ if (ele%key == wiggler$ .or. ele%key == undulator$) then
 endif
 
 ! Other old-style conversions
+
 if (ele%key == beambeam$) then
   select case (word)
   case ('BETA_A');    word = 'BETA_A_STRONG'
@@ -313,7 +314,6 @@ endif
 key = ele%key
 if (ele%key == def_parameter$ .and. word == 'APERTURE_LIMIT_ON') key = def_bmad_com$
 if (ele%key == def_parameter$ .and. word == 'ELECTRIC_DIPOLE_MOMENT') key = def_bmad_com$
-if (ele%key == def_parameter$ .and. word == 'PTC_CUT_FACTOR') key = def_bmad_com$
 
 if (word == 'SPINOR_POLARIZATION' .or. word == 'SPINOR_PHI' .or. word == 'SPINOR_THETA' .or. word == 'SPINOR_XI') then
   call parser_error ('DUE TO BOOKKEEPING COMPLICATIONS, THE OLD SPINOR ATTRIBUTES NO LONGER EXIST: ' // word, &
@@ -353,9 +353,14 @@ if (key == rfcavity$ .and. word == 'LAG') word = 'PHI0'   ! For MAD compatibilit
 ! particle_start and bmad_com element can have attributes that are not part of the element so
 ! Need to use pointers_to_attribute.
 
-if (key == def_particle_start$ .or. key == def_bmad_com$) then
+if (key == def_particle_start$ .or. key == def_bmad_com$ .or. &
+                            key == def_space_charge_com$ .or. key == def_ptc_com$) then
   name = ele%name
-  if (ele%name == 'PARAMETER') name = 'BMAD_COM'
+  if (word(1:4) == 'PTC_') then    ! For backwards compatibility
+    name = 'PTC_COM'
+  elseif (ele%name == 'PARAMETER') then
+    name = 'BMAD_COM'
+  endif
 
   if (delim == '(') then
     ix = index(bp_com%parse_line, '=')
@@ -374,6 +379,36 @@ if (key == def_particle_start$ .or. key == def_bmad_com$) then
     return
   endif
 
+  if (ele%key == def_parameter$ .and. word == 'APERTURE_LIMIT_ON') then
+    call parser_error ('SYNTAX HAS CHANGED: PARAMETER[APERTURE_LIMIT_ON] = ... NEEDS TO BE REPLACED BY BMAD_COM[APERTURE_LIMIT_ON] = ...', &
+                       'THIS IS A WARNING ONLY. THE PROGRAM WILL RUN NORMALLY.', level = s_warn$)
+  endif
+
+  if (word == 'D_ORB') then
+    if (.not. parse_real_list (lat, trim(ele%name) // ' ' // word, bmad_com%d_orb, .true., delim, delim_found)) return
+    bp_com%extra%d_orb_set = .true.
+    return
+  endif
+
+  if (word == 'SPACE_CHARGE_MESH_SIZE') then
+    if (.not. parse_integer_list (trim(ele%name) // ' ' // word, lat, space_charge_com%space_charge_mesh_size, .true., delim, delim_found)) return
+    bp_com%extra%space_charge_mesh_size_set = .true.
+    return
+  endif
+
+  if (word == 'CSR3D_MESH_SIZE') then
+    if (.not. parse_integer_list (trim(ele%name) // ' ' // word, lat, space_charge_com%csr3d_mesh_size, .true., delim, delim_found)) return
+    bp_com%extra%csr3d_mesh_size_set = .true.
+    return
+  endif
+
+  if (word == 'DIAGNOSTIC_OUTPUT_FILE') then
+    call get_next_word (space_charge_com%diagnostic_output_file, ix_word, ',', delim, delim_found)
+    bp_com%extra%diagnostic_output_file_set = .true.
+    return
+  endif
+
+  !
 
   call pointers_to_attribute (lat, name, word, .false., a_ptrs, err_flag, .false.)
   if (err_flag .or. size(a_ptrs) == 0) then
@@ -381,38 +416,48 @@ if (key == def_particle_start$ .or. key == def_bmad_com$) then
     return
   endif
 
-  if (ele%key == def_parameter$ .and. word == 'APERTURE_LIMIT_ON') then
-    call parser_error ('SYNTAX HAS CHANGED: PARAMETER[APERTURE_LIMIT_ON] = ... NEEDS TO BE REPLACED BY BMAD_COM[APERTURE_LIMIT_ON] = ...', &
-                       'THIS IS A WARNING ONLY. THE PROGRAM WILL RUN NORMALLY.', level = s_warn$)
-  endif
-
-  if (name == 'D_ORB') then
-    if (.not. parse_real_list (lat, trim(ele%name) // ' ' // word, bmad_com%d_orb, .true., delim, delim_found)) return
-    bp_com%extra%d_orb_set = .true.
-    return
-  endif
-
   if (associated(a_ptrs(1)%r)) then
     call parse_evaluate_value (trim(ele%name) // ' ' // word, value, lat, delim, delim_found, err_flag, ele = ele) 
     if (err_flag) return
     a_ptrs(1)%r = value
-    if (associated(a_ptrs(1)%r, bmad_com%max_aperture_limit))             bp_com%extra%max_aperture_limit_set              = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%default_ds_step))                bp_com%extra%default_ds_step_set                 = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%significant_length))             bp_com%extra%significant_length_set              = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%rel_tol_tracking))               bp_com%extra%rel_tol_tracking_set                = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%abs_tol_tracking))               bp_com%extra%abs_tol_tracking_set                = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%rel_tol_adaptive_tracking))      bp_com%extra%rel_tol_adaptive_tracking_set       = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%abs_tol_adaptive_tracking))      bp_com%extra%abs_tol_adaptive_tracking_set       = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%init_ds_adaptive_tracking))      bp_com%extra%init_ds_adaptive_tracking_set       = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%min_ds_adaptive_tracking))       bp_com%extra%min_ds_adaptive_tracking_set        = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%fatal_ds_adaptive_tracking))     bp_com%extra%fatal_ds_adaptive_tracking_set      = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%autoscale_amp_abs_tol))          bp_com%extra%autoscale_amp_abs_tol_set           = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%autoscale_amp_rel_tol))          bp_com%extra%autoscale_amp_rel_tol_set           = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%autoscale_phase_tol))            bp_com%extra%autoscale_phase_tol_set             = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%electric_dipole_moment))         bp_com%extra%electric_dipole_moment_set          = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%ptc_cut_factor))                 bp_com%extra%ptc_cut_factor_set                  = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%sad_eps_scale))                  bp_com%extra%sad_eps_scale_set                   = .true.
-    if (associated(a_ptrs(1)%r, bmad_com%sad_amp_max))                    bp_com%extra%sad_amp_max_set                     = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%max_aperture_limit))              bp_com%extra%max_aperture_limit_set          = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%default_ds_step))                 bp_com%extra%default_ds_step_set             = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%significant_length))              bp_com%extra%significant_length_set          = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%rel_tol_tracking))                bp_com%extra%rel_tol_tracking_set            = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%abs_tol_tracking))                bp_com%extra%abs_tol_tracking_set            = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%rel_tol_adaptive_tracking))       bp_com%extra%rel_tol_adaptive_tracking_set   = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%abs_tol_adaptive_tracking))       bp_com%extra%abs_tol_adaptive_tracking_set   = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%init_ds_adaptive_tracking))       bp_com%extra%init_ds_adaptive_tracking_set   = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%min_ds_adaptive_tracking))        bp_com%extra%min_ds_adaptive_tracking_set    = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%fatal_ds_adaptive_tracking))      bp_com%extra%fatal_ds_adaptive_tracking_set  = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%autoscale_amp_abs_tol))           bp_com%extra%autoscale_amp_abs_tol_set       = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%autoscale_amp_rel_tol))           bp_com%extra%autoscale_amp_rel_tol_set       = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%autoscale_phase_tol))             bp_com%extra%autoscale_phase_tol_set         = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%electric_dipole_moment))          bp_com%extra%electric_dipole_moment_set      = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%sad_eps_scale))                   bp_com%extra%sad_eps_scale_set               = .true.
+    if (associated(a_ptrs(1)%r, bmad_com%sad_amp_max))                     bp_com%extra%sad_amp_max_set                 = .true.
+
+    if (associated(a_ptrs(1)%r, space_charge_com%ds_track_step))           bp_com%extra%ds_track_step_set               = .true.
+    if (associated(a_ptrs(1)%r, space_charge_com%dt_track_step))           bp_com%extra%dt_track_step_set               = .true.
+    if (associated(a_ptrs(1)%r, space_charge_com%cathode_strength_cutoff)) bp_com%extra%cathode_strength_cutoff_set     = .true.
+    if (associated(a_ptrs(1)%r, space_charge_com%rel_tol_tracking))        bp_com%extra%sc_rel_tol_tracking_set         = .true.
+    if (associated(a_ptrs(1)%r, space_charge_com%abs_tol_tracking))        bp_com%extra%sc_abs_tol_tracking_set         = .true.
+    if (associated(a_ptrs(1)%r, space_charge_com%beam_chamber_height))     bp_com%extra%beam_chamber_height_set         = .true.
+    if (associated(a_ptrs(1)%r, space_charge_com%sigma_cutoff))            bp_com%extra%sigma_cutoff_set                = .true.
+    if (associated(a_ptrs(1)%i, space_charge_com%n_bin))                   bp_com%extra%n_bin_set                       = .true.
+    if (associated(a_ptrs(1)%i, space_charge_com%particle_bin_span))       bp_com%extra%particle_bin_span_set           = .true.
+    if (associated(a_ptrs(1)%i, space_charge_com%n_shield_images))         bp_com%extra%n_shield_images_set             = .true.
+    if (associated(a_ptrs(1)%i, space_charge_com%sc_min_in_bin))           bp_com%extra%sc_min_in_bin_set               = .true.
+    if (associated(a_ptrs(1)%l, space_charge_com%lsc_kick_transverse_dependence)) bp_com%extra%lsc_kick_transverse_dependence_set = .true.
+
+    if (associated(a_ptrs(1)%i, ptc_com%max_fringe_order))                 bp_com%extra%max_fringe_order_set            = .true.
+    if (associated(a_ptrs(1)%i, ptc_com%old_integrator))                   bp_com%extra%old_integrator_set              = .true.
+    if (associated(a_ptrs(1)%l, ptc_com%use_orientation_patches))          bp_com%extra%use_orientation_patches_set     = .true.
+    if (associated(a_ptrs(1)%l, ptc_com%print_info_messages))              bp_com%extra%print_info_messages_set         = .true.
+    if (associated(a_ptrs(1)%l, ptc_com%exact_model))                      bp_com%extra%exact_model_set                 = .true.
+    if (associated(a_ptrs(1)%l, ptc_com%exact_misalign))                   bp_com%extra%exact_misalign_set              = .true.
+    if (associated(a_ptrs(1)%r, ptc_com%vertical_kick))                    bp_com%extra%vertical_kick_set               = .true.
+    if (associated(a_ptrs(1)%r, ptc_com%cut_factor))                       bp_com%extra%cut_factor_set                  = .true.
 
   elseif (associated(a_ptrs(1)%i)) then
     call parse_evaluate_value (trim(ele%name) // ' ' // word, value, lat, delim, delim_found, err_flag, ele = ele) 
@@ -429,13 +474,14 @@ if (key == def_particle_start$ .or. key == def_bmad_com$) then
     if (associated(a_ptrs(1)%i, bmad_com%max_num_runge_kutta_step))       bp_com%extra%max_num_runge_kutta_step_set        = .true.
 
   elseif (associated(a_ptrs(1)%l)) then
+    if (associated(a_ptrs(1)%l, bmad_com%auto_bookkeeper)) a_ptrs(1)%l => logic  ! Auto_bookkeeper must not be set.
     call parser_get_logical (word, a_ptrs(1)%l, ele%name, delim, delim_found, err_flag)
     if (err_flag) return
+    if (associated(a_ptrs(1)%l, bmad_com%absolute_time_ref_shift))        bp_com%extra%absolute_time_ref_shift_set         = .true.
     if (associated(a_ptrs(1)%l, bmad_com%rf_phase_below_transition_ref))  bp_com%extra%rf_phase_below_transition_ref_set   = .true.
     if (associated(a_ptrs(1)%l, bmad_com%sr_wakes_on))                    bp_com%extra%sr_wakes_on_set                     = .true.
     if (associated(a_ptrs(1)%l, bmad_com%lr_wakes_on))                    bp_com%extra%lr_wakes_on_set                     = .true.
-    if (associated(a_ptrs(1)%l, bmad_com%ptc_use_orientation_patches))    bp_com%extra%ptc_use_orientation_patches_set     = .true.
-    if (associated(a_ptrs(1)%l, bmad_com%auto_bookkeeper))                bp_com%extra%auto_bookkeeper_set                 = .true.
+    if (associated(a_ptrs(1)%l, bmad_com%high_energy_space_charge_on))    bp_com%extra%high_energy_space_charge_on_set     = .true.
     if (associated(a_ptrs(1)%l, bmad_com%csr_and_space_charge_on))        bp_com%extra%csr_and_space_charge_on_set         = .true.
     if (associated(a_ptrs(1)%l, bmad_com%spin_tracking_on))               bp_com%extra%spin_tracking_on_set                = .true.
     if (associated(a_ptrs(1)%l, bmad_com%backwards_time_tracking_on))     bp_com%extra%backwards_time_tracking_on_set      = .true.
@@ -443,10 +489,9 @@ if (key == def_particle_start$ .or. key == def_bmad_com$) then
     if (associated(a_ptrs(1)%l, bmad_com%radiation_zero_average))         bp_com%extra%radiation_zero_average_set          = .true.
     if (associated(a_ptrs(1)%l, bmad_com%radiation_fluctuations_on))      bp_com%extra%radiation_fluctuations_on_set       = .true.
     if (associated(a_ptrs(1)%l, bmad_com%conserve_taylor_maps))           bp_com%extra%conserve_taylor_maps_set            = .true.
-    if (associated(a_ptrs(1)%l, bmad_com%absolute_time_tracking_default)) bp_com%extra%absolute_time_tracking_default_set  = .true.
+    if (associated(a_ptrs(1)%l, bmad_com%absolute_time_tracking))         bp_com%extra%absolute_time_tracking_set          = .true.
     if (associated(a_ptrs(1)%l, bmad_com%convert_to_kinetic_momentum))    bp_com%extra%convert_to_kinetic_momentum_set     = .true.
     if (associated(a_ptrs(1)%l, bmad_com%aperture_limit_on))              bp_com%extra%aperture_limit_on_set               = .true.
-    if (associated(a_ptrs(1)%l, bmad_com%ptc_print_info_messages))        bp_com%extra%ptc_print_info_messages_set         = .true.
     if (associated(a_ptrs(1)%l, bmad_com%debug))                          bp_com%extra%debug_set                           = .true.
 
   else
@@ -709,11 +754,11 @@ if (attrib_word == 'FREQUENCIES') then
   if (.not. parse_real_lists (lat, ele, trim(ele%name) // ' FREQUENCIES', table, 3, delim, delim_found)) return
   if (.not. expect_one_of (', ', .false., ele%name, delim, delim_found)) return
   n = size(table, 1)
-  allocate (ac%frequencies(n))
+  allocate (ac%frequency(n))
   do i = 1, n
-    ac%frequencies(i)%f    = table(i,1)
-    ac%frequencies(i)%amp  = table(i,2)
-    ac%frequencies(i)%phi  = table(i,3)
+    ac%frequency(i)%f    = table(i,1)
+    ac%frequency(i)%amp  = table(i,2)
+    ac%frequency(i)%phi  = table(i,3)
   enddo
   err_flag = .false.
   return
@@ -1555,13 +1600,13 @@ if (delim /= '=')  then
   if (attrib_word == 'TILT') then
     select case (ele%key)
     case (quadrupole$, sol_quad$) 
-      ele%value(tilt$) = pi / 4
+      ele%value(tilt$) = pi / 4.0_rp
       return
     case (sextupole$) 
-      ele%value(tilt$) = pi / 6
+      ele%value(tilt$) = pi / 6.0_rp
       return
     case (octupole$) 
-      ele%value(tilt$) = pi / 8
+      ele%value(tilt$) = pi / 8.0_rp
       return
     case default
       call parser_error ('SORRY I''M NOT PROGRAMMED TO USE A "TILT" DEFAULT' // &
@@ -1574,10 +1619,10 @@ if (delim /= '=')  then
   if (ele%key == sbend$ .or. ele%key == rbend$) then
     select case (ix_attrib)
     case (fint$)
-      ele%value(fint$) = 0.5
+      ele%value(fint$) = 0.5_rp
       return
     case (fintx$)
-      ele%value(fintx$) = 0.5
+      ele%value(fintx$) = 0.5_rp
       return
     end select
   endif
@@ -1649,7 +1694,7 @@ case ('TAYLOR_ORDER')
     call parser_error ('TAYLOR_ORDER IS LESS THAN 1')
     return
   endif
-  ptc_com%taylor_order_saved = ix
+  ptc_private%taylor_order_saved = ix
   lat%input_taylor_order = ix
 
 case ('RUNGE_KUTTA_ORDER')
@@ -1687,7 +1732,7 @@ case ('APERTURE_TYPE')
   call get_switch (attrib_word, aperture_type_name(1:), ele%aperture_type, err_flag, ele, delim, delim_found); if (err_flag) return
 
 case ('ABSOLUTE_TIME_TRACKING')
-  call parser_get_logical (attrib_word, lat%absolute_time_tracking, ele%name, delim, delim_found, err_flag); if (err_flag) return
+  call parser_get_logical (attrib_word, bmad_com%absolute_time_tracking, ele%name, delim, delim_found, err_flag); if (err_flag) return
 
 case ('CAVITY_TYPE')
   call get_switch (attrib_word, cavity_type_name(1:), ix, err_flag, ele, delim, delim_found); if (err_flag) return
@@ -1756,8 +1801,6 @@ case ('GEOMETRY')
 
 case ('HIGH_ENERGY_SPACE_CHARGE_ON')
   call get_logical_real (attrib_word, ele%value(high_energy_space_charge_on$), err_flag); if (err_flag) return
-  j = nint(ele%value(ix_branch$)) 
-  if (j >= 0) lat%branch(j)%param%high_energy_space_charge_on = is_true(ele%value(high_energy_space_charge_on$))
 
 case ('HIGHER_ORDER_FRINGE_TYPE')
   call get_switch (attrib_word, higher_order_fringe_type_name(1:), ix, err_flag, ele, delim, delim_found); if (err_flag) return
@@ -1840,7 +1883,12 @@ case ('REF_ORIGIN')
 
 case ('REF_COORDS')
   call get_switch (attrib_word, ref_coords_name(1:), ix, err_flag, ele, delim, delim_found); if (err_flag) return
-  ele%value(ref_coords$) = ix
+  if (ix == no_end$) then
+    call parser_error ('"REF_COORDS = NO_END" NOW SHOULD BE "USER_SETS_LENGTH = T". PLEASE CHANGE.', level = s_warn$)
+    ele%value(user_sets_length$) = 1
+  else
+    ele%value(ref_coords$) = ix
+  endif
 
 case ('REF_ORBIT_FOLLOWS')
   call get_switch (attrib_word, ref_orbit_follows_name(1:), ix, err_flag, ele, delim, delim_found); if (err_flag) return
@@ -1861,6 +1909,15 @@ case ('SPECIES_OUT')
     return
   endif
   ele%converter%species_out = ix
+
+case ('SPECIES_STRONG')
+  call get_next_word (word, ix_word, ':,=(){}', delim, delim_found, .false.)
+  ix = species_id(word)
+  if (ix == invalid$ .or. ix == ref_particle$ .or. ix == anti_ref_particle$) then
+    call parser_error ('INVALID SPECIES_STRONG: ' // word)
+    return
+  endif
+  ele%value(species_strong$) = ix
 
 case ('SPIN_TRACKING_METHOD')
   if (attrib_word == 'BMAD_STANDARD') then
@@ -2024,7 +2081,7 @@ case default   ! normal attribute
           ele%value(p0c$) = -1
         endif
 
-        branch => pointer_to_branch(ele%name, lat, .true.)
+        branch => pointer_to_branch(ele%name, lat, parameter_is_branch0 = .true.)
         if (associated(branch)) then
           branch%ele(0)%value(e_tot$) = value
           call set_flags_for_changed_attribute (branch%ele(0), branch%ele(0)%value(e_tot$), &
@@ -2049,7 +2106,7 @@ case default   ! normal attribute
           ele%value(e_tot$) = -1
         endif
 
-        branch => pointer_to_branch(ele%name, lat, .true.)
+        branch => pointer_to_branch(ele%name, lat, parameter_is_branch0 = .true.)
         if (associated(branch)) then
           branch%ele(0)%value(p0c$) = value
           call set_flags_for_changed_attribute (branch%ele(0), branch%ele(0)%value(p0c$), &
@@ -2065,7 +2122,7 @@ case default   ! normal attribute
         if (set_done) call bp_set_ran_status
 
       case ('N_PART')
-        branch => pointer_to_branch(ele%name, lat, .true.)
+        branch => pointer_to_branch(ele%name, lat, parameter_is_branch0 = .true.)
         if (associated(branch)) branch%param%n_part = value
 
       case ('RF_FREQUENCY')
@@ -2502,7 +2559,6 @@ case ('push', 'push_inline')
     bp_com%error_flag = .false.  ! set to true on an error
     bp_com%current_file%full_name = ' '
     bp_com%input_line_meaningful = .false.
-    call init_bmad_parser_common
   endif
 
   call fullfilename (file_name_in, file_name2, valid)
@@ -2566,15 +2622,6 @@ case ('push', 'push_inline')
   ! Note: The same file may be validly called multiple times if it is an inline file.
   ! EG: A wall file called inline.
   ! Therefore the warning is disabled.
-
-!  if (how == 'push') then
-!    do i = 1, n_file - 1
-!      if (bp_com%lat_file_names(i) /= bp_com%lat_file_names(n_file)) cycle
-!      call parser_error ('Same lattice file called multiple times: ' // trim(bp_com%lat_file_names(n_file)), &
-!                         level = s_warn$)
-!      exit
-!    enddo
-!  endif
 
 ! "pop" means close the current file and pop its name off the stack
 
@@ -3312,10 +3359,10 @@ if (i /= 0) then
     if (bp_com2%const(i)%value == old_val) then
       call parser_error ('CONSTANTS ARE NOT ALLOWED TO BE REDEFINED: ' // word, &
                          'BUT SINCE OLD_VALUE = NEW_VALUE THIS IS ONLY A WARNING...', &
-                         'USE "REDEF:" CONSTRUCT TO GET AROUND THIS (BUT NOT RECOMMENDED IF NOT NECESSARY).', level = s_warn$)
+                         'USE "REDEF:" CONSTRUCT TO GET AROUND THIS (BUT NOT RECOMMENDED).', level = s_warn$)
     else
       call parser_error ('CONSTANTS ARE NOT ALLOWED TO BE REDEFINED: ' // word, &
-                         'USE "REDEF:" CONSTRUCT TO GET AROUND THIS (BUT NOT RECOMMENDED IF NOT NECESSARY).')
+                         'USE "REDEF:" CONSTRUCT TO GET AROUND THIS (BUT NOT RECOMMENDED).')
     endif
   endif
 
@@ -3338,6 +3385,13 @@ else
   if (allocated(temp_const)) lat%constant(1:n) = temp_const
   lat%constant(n+1)%name = bp_com2%const(i_const)%name
   lat%constant(n+1)%value = bp_com2%const(i_const)%value
+endif
+
+!
+
+if (.not. verify_valid_name(word, len_trim(word), .true.)) then
+  call parser_error ('MALFORMED CONSTANT NAME: ' // word)
+  return
 endif
 
 if (delim_found .and. .not. err_flag) call parser_error  &
@@ -4403,24 +4457,40 @@ end subroutine get_overlay_group_names
 !-------------------------------------------------------------------------
 !-------------------------------------------------------------------------
 !+
+! Function verify_valid_name (name, ix_name, pure_name) result (is_valid)
+!
+! Routine to check if a name is well formed. Examples:
+!   "0>>Q0"                           -- Invalid
+!   "Q1##1"                           -- Invalid (double hash not accepted).
+!   "Q2A_C.\7#"                       -- Pure name (no "[", "]", "(", ")", "%" characters present).
+!   "Q3[GRID_FIELD(1)%FIELD_SCALE]"   -- Valid but not a pure name.
+!
 ! This subroutine is used by bmad_parser and bmad_parser2.
 ! This subroutine is not intended for general use.
 !
-! Note: Lattice element names like "0>>1" are not not considered valid by this routine.
+!
+! Input:
+!   name        -- character(*): Name(1:ix_name) is the string to check.
+!   ix_name     -- integer: Number of characters in the name.
+!   pure_name   -- logical, optional: If tu
+!
+! Output:
+!   is_valid    -- logical: True if name is well formed. False otherwise.   
 !-
 
-
-function verify_valid_name (name, ix_name) result (is_valid)
+function verify_valid_name (name, ix_name, pure_name) result (is_valid)
 
 implicit none
 
 integer i, ix_name, ix1, ix2
 
 character(*) name
-character(27), parameter :: letters = '\ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
-character(45), parameter :: valid_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ\0123456789_[]().#%'
+character(*), parameter :: letters = '\ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
+character(*), parameter :: valid_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ\0123456789_[]().#%'
+character(*), parameter :: pure_chars  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ\0123456789_.#'
 character(1), parameter :: tab = achar(9)
 
+logical, optional :: pure_name
 logical OK, is_valid
 
 ! Check for blank spaces
@@ -4455,9 +4525,15 @@ endif
 OK = .true.
 if (index(letters, name(1:1)) == 0) OK = .false.
 
-do i = 1, ix_name
-  if (index(valid_chars, name(i:i)) == 0) OK = .false.
-enddo
+if (logic_option(.false., pure_name)) then
+  do i = 1, ix_name
+    if (index(pure_chars, name(i:i)) == 0) OK = .false.
+  enddo
+else
+  do i = 1, ix_name
+    if (index(valid_chars, name(i:i)) == 0) OK = .false.
+  enddo
+endif
 
 if (.not. OK) then
   call parser_error ('INVALID NAME: UNRECOGNIZED CHARACTERS IN: ' // name)
@@ -4954,7 +5030,7 @@ type (branch_struct), pointer :: ref_branch
 type (lat_struct), pointer :: lat
 
 integer ix, i, j, k, it, nn, i_ele, ib, il
-integer n_con, ix_branch, n_loc, ix_insert, ix_pass
+integer n_con, ix_branch, n_loc, n_loc0, ix_insert, ix_pass
 
 character(40) name, ref_name
 character(80) line
@@ -4988,9 +5064,18 @@ if (err) then
   return
 endif
 
+if (n_loc > 0) then
+  if (eles(1)%ele%key == drift$ .and. index(pele%ref_name, '##') /= 0) then
+    call parser_error ('SUPERPOSITION WITH THE REFERENCE ELEMENT BEING THE N^TH DRIFT OF A CERTAIN NAME: ' // trim(pele%ref_name), &
+                       'NOT ALLOWED SINCE THIS CAN LEAD TO UNEXPECTED BEHAVIOR.')
+    return
+  endif
+endif
+
 ! Throw out super_slave elements.
 ! Throw out elements that are the same physical element.
 
+n_loc0 = n_loc
 i = 1
 do
   if (i > n_loc) exit
@@ -5009,6 +5094,12 @@ do
 
   i = i + 1
 enddo
+
+if (n_loc == 0 .and. n_loc0 > 0) then
+  call parser_error ('SUPERPOSITION WITH THE REFERENCE ELEMENT BEING A SUPER SLAVE NOT ALLOWED: ' // trim(pele%ref_name))
+  return
+endif
+
 
 ! Group and overlay elements may have not yet been transfered from in_lat to lat.
 ! So search in_lat for a match if there has not been a match using lat. 
@@ -5061,8 +5152,10 @@ if (n_loc == 1) then
   if (ref_ele%iyy == 0 .and. ref_branch%ix_branch == branch%ix_branch) then
     call compute_super_lord_s (eles(1)%ele, super_ele, pele, ix_insert)
     ele_at_s => pointer_to_element_at_s (branch, super_ele%s_start, .true., err_flag)
-    if (ele_at_s%slave_status == super_slave$) ele_at_s => pointer_to_lord(ele_at_s, 1)
-    if (.not. err_flag) then
+    if (err_flag) then
+      call parser_error ('PROBLEM SUPERIMPOSING: ' // super_ele%name)
+    else
+      if (ele_at_s%slave_status == super_slave$) ele_at_s => pointer_to_lord(ele_at_s, 1)
       if (ele_at_s%iyy /= 0) then  ! If in multipass region...
         pele%ref_name = ele_at_s%name
         pele%ref_pt = anchor_end$
@@ -5154,7 +5247,10 @@ call string_trim(super_ele_saved%name, super_ele_saved%name, ix)
 super_ele%name = super_ele_saved%name(:ix)            
 call add_superimpose (lat, super_ele, branch%ix_branch, err_flag, super_ele_out, save_null_drift = .true., &
       create_jumbo_slave = pele%create_jumbo_slave, ix_insert = ix_insert, mangle_slave_names = .false., wrap = pele%wrap_superimpose)
-if (err_flag) bp_com%error_flag = .true.
+if (err_flag) then
+  bp_com%error_flag = .true.
+  return
+endif
 call control_bookkeeper (lat, super_ele_out)
 
 call s_calc (lat)
@@ -6026,7 +6122,7 @@ end subroutine allocate_plat
 !   lat         -- lat_struct: Lattice to add lord elements to.
 !   check_lat   -- lat_struct, optional: If slave elements of a lord are not in lat but
 !                   are in check_lat, do not issue error message about slave elements
-!                   no found. 
+!                   not found. 
 !-
 
 subroutine parser_add_lord (lord_lat, n_ele_max, plat, lat, check_lat)
@@ -6434,20 +6530,23 @@ type (lat_struct) lat
 type (control_struct), allocatable, target :: cs(:)
 type (parser_ele_struct), target :: pele
 type (multi_ele_pointer_struct), allocatable :: m_eles(:)
+type (parser_controller_struct), pointer :: pc
 type (all_pointer_struct) a_ptr
 
 integer n_slave
-integer k, ix, ip, ix_pick, ix_lord
+integer k, n, ix, ip, iv, ix_pick, ix_lord
 logical err_flag, err
+character(40) attrib_name
 
 !
 
 err_flag = .true.
 
+n = n_slave * size(lord%control%var)
 if (allocated(cs)) then
-  if (size(cs) < n_slave) deallocate(cs)
+  if (size(cs) < n) deallocate(cs)
 endif
-if (.not. allocated(cs)) allocate (cs(n_slave))
+if (.not. allocated(cs)) allocate (cs(n))
 
 ! Slave setup
 
@@ -6456,41 +6555,49 @@ do ip = 1, size(pele%control)
 
   pc => pele%control(ip)
 
-  ! There might be more than 1 element with same name. 
-  ! Loop over all elements whose name matches name.
-  ! Put the info into the cs structure.
+  do iv = 1, size(lord%control%var)
+    ! Only when attrib_name == '*' is the loop executed multiple times.
+    if (pc%attrib_name /= '*' .and. iv > 1) exit
 
-  do k = 1, m_eles(ip)%n_loc
-    if (ix_pick /= 0 .and. k /= ix_pick) cycle
-    slave => pointer_to_ele (lat, m_eles(ip)%eles(k)%loc)
-    n_slave = n_slave + 1
-    if (allocated(pc%y_knot)) then
-      cs(n_slave)%y_knot = pc%y_knot
-    else
-      call reallocate_expression_stack (cs(n_slave)%stack, pc%n_stk)
-      cs(n_slave)%stack = pc%stack(1:pc%n_stk)
-    endif
-    cs(n_slave)%slave = lat_ele_loc_struct(slave%ix_ele, slave%ix_branch)
-    cs(n_slave)%lord%ix_ele = -1             ! dummy value
-    attrib_name = pc%attrib_name
-    if (attrib_name == blank_name$) attrib_name = pele%default_attrib
-    call pointer_to_attribute (slave, attrib_name, .true., a_ptr, err, .false., ix_attrib = ix)
-    
-    ! If attribute not found it may be a special attribute like accordion_edge$.
-    ! A special attribute will have ix > num_ele_attrib$
-    if (.not. associated(a_ptr%r) .and. lord%key == group$) then
-      ix = attribute_index(lord, attrib_name)
-      if (ix <= num_ele_attrib$) ix = 0  ! Mark as not valid
-    endif
-    cs(n_slave)%ix_attrib = ix
-    cs(n_slave)%attribute = attrib_name
-    if (ix < 1 .and. .not. associated(a_ptr%r)) then
-      call parser_error ('IN OVERLAY OR GROUP ELEMENT: ' // lord%name, &
-                    'ATTRIBUTE: ' // attrib_name, &
-                    'IS NOT A VALID ATTRIBUTE OF: ' // slave%name, &
-                    pele = pele)
-      return
-    endif
+    select case (pc%attrib_name)
+    case (blank_name$);   attrib_name = pele%default_attrib
+    case ('*');           attrib_name = lord%control%var(iv)%name
+    case default;         attrib_name = pc%attrib_name
+    end select
+
+    ! There might be more than 1 element with same name. 
+    ! Loop over all elements whose name matches name.
+    ! Put the info into the cs structure.
+
+    do k = 1, m_eles(ip)%n_loc
+      if (ix_pick /= 0 .and. k /= ix_pick) cycle
+      slave => pointer_to_ele (lat, m_eles(ip)%eles(k)%loc)
+      n_slave = n_slave + 1
+      if (allocated(pc%y_knot)) then
+        cs(n_slave)%y_knot = pc%y_knot
+      else
+        call reallocate_expression_stack (cs(n_slave)%stack, pc%n_stk)
+        cs(n_slave)%stack = pc%stack(1:pc%n_stk)
+      endif
+      cs(n_slave)%slave = lat_ele_loc_struct(slave%ix_ele, slave%ix_branch)
+      cs(n_slave)%lord%ix_ele = -1             ! dummy value
+      call pointer_to_attribute (slave, attrib_name, .true., a_ptr, err, .false., ix_attrib = ix)
+      
+      ! If attribute not found it may be a special attribute like accordion_edge$.
+      ! A special attribute will have ix > num_ele_attrib$
+      if (.not. associated(a_ptr%r) .and. lord%key == group$) then
+        ix = attribute_index(lord, attrib_name)
+        if (ix <= num_ele_attrib$) ix = 0  ! Mark as not valid
+      endif
+      cs(n_slave)%ix_attrib = ix
+      cs(n_slave)%attribute = attrib_name
+      if (ix < 1 .and. .not. associated(a_ptr%r)) then
+        call parser_error ('IN OVERLAY OR GROUP ELEMENT: ' // lord%name, 'ATTRIBUTE: ' // attrib_name, &
+                      'IS NOT A VALID ATTRIBUTE OF: ' // slave%name, pele = pele)
+        return
+      endif
+      if (iv > 1) call parser_transfer_control_struct(cs(n_slave), cs(n_slave), lord, iv)
+    enddo
   enddo
 
 enddo
@@ -6686,20 +6793,14 @@ kick_set = (ele%value(hkick$) /= 0) .or. (ele%value(vkick$) /= 0)
 
 select case (ele%key)
 
-! Taylor map gets unit spin quaternion
+! Taylor map gets unit spin quaternion if nothing has been set for spin.
 
 case (taylor$)
 
-  if (size(ele%spin_taylor(0)%term) == 0 .and. (size(ele%spin_taylor(1)%term) > 0 .or. &
-                  size(ele%spin_taylor(2)%term) > 0 .or. size(ele%spin_taylor(3)%term) > 0)) then
-    call parser_error ('NO SPIN S1 TERMS BUT THERE ARE SX, SY, OR SZ TERMS PRESENT FOR TAYLOR ELEMENT:' // ele%name)
-    return
+  if (size(ele%spin_taylor(0)%term) == 0 .and. size(ele%spin_taylor(1)%term) == 0 .and. &
+                size(ele%spin_taylor(2)%term) == 0 .and. size(ele%spin_taylor(3)%term) == 0) then
+    call add_taylor_term(ele%spin_taylor(0), 1.0_rp, [0, 0, 0, 0, 0, 0])
   endif
-
-  if (size(ele%spin_taylor(0)%term) == 0) call add_taylor_term(ele%spin_taylor(0), 1.0_rp, [0, 0, 0, 0, 0, 0])
-!  if (size(ele%spin_taylor(1)%term) == 0) call add_taylor_term(ele%spin_taylor(1), 0.0_rp, [0, 0, 0, 0, 0, 0])
-!  if (size(ele%spin_taylor(2)%term) == 0) call add_taylor_term(ele%spin_taylor(2), 0.0_rp, [0, 0, 0, 0, 0, 0])
-!  if (size(ele%spin_taylor(3)%term) == 0) call add_taylor_term(ele%spin_taylor(3), 0.0_rp, [0, 0, 0, 0, 0, 0])
 
 !------------------
 case (beginning_ele$)
@@ -7068,6 +7169,7 @@ fork_ele%component_name = plat%ele(fork_ele%ixx)%ele_name  ! Substitute element 
 
 if (created_new_branch) then
   call parser_expand_line (1, branch_name, sequence, seq_name, seq_indexx, no_end_marker, n_ele_use, lat, in_lat)
+  if (bp_com%error_flag) return
   nb = nb + 1
   fork_ele%value(ix_to_branch$) = nb
   branch => lat%branch(nb)
@@ -7668,7 +7770,7 @@ if (index(debug_line, 'SLAVE') /= 0) then
   do i = 1, lat%n_ele_track
     print *, '-------------'
     print *, 'Ele #', i
-    call type_ele (lat%ele(i), .false., 0, .false., 0, .true., .true., .false., .true., .true.)
+    call type_ele (lat%ele(i), .false., 0, .false., 0, .true., .true., .false., all$, .true.)
   enddo
   found = .true.
 endif
@@ -7680,7 +7782,7 @@ if (index(debug_line, 'LORD') /= 0) then
   do i = lat%n_ele_track+1, lat%n_ele_max
     print *, '-------------'
     print *, 'Ele #', i
-    call type_ele (lat%ele(i), .false., 0, .false., 0, .true., .true., .false., .true., .true.)
+    call type_ele (lat%ele(i), .false., 0, .false., 0, .true., .true., .false., all$, .true.)
   enddo
   found = .true.
 endif
@@ -7714,7 +7816,7 @@ if (ix /= 0) then
     print *
     print *, '----------------------------------------'
     print *, 'Element #', i
-    call type_ele (lat%ele(i), .false., 0, .true., 0, .true., .true., .true., .true., .true.)
+    call type_ele (lat%ele(i), .false., 0, .true., 0, .true., .true., .true., all$, .true.)
     call string_trim (debug_line(ix+1:), debug_line, ix)
   enddo
   found = .true.
@@ -8258,8 +8360,9 @@ do
     else
       ix = attribute_index(ele, word)
       if (ix < 1 .or. ix > num_ele_attrib$) then
-        call parser_error ('BAD NAME FOR GRID_FIELD MASTER_PARAMETER', 'FOUND IN ELEMENT: ' // ele%name)
-        return
+        call parser_error ('UNKNOWN ELEMENT PARAMETER NAME FOR GRID_FIELD MASTER_PARAMETER: ' // word, &
+                           'THIS IS NOT A PARAMETER DEFINED FOR THIS TYPE OF ELEMENT: ' // key_name(ele%key), &
+                           'FOUND IN ELEMENT: ' // ele%name)
       endif
     endif
     g_field%master_parameter = ix
@@ -9707,5 +9810,115 @@ else
 endif
 
 end subroutine init_surface_segment 
+
+!-----------------------------------------------------------------------------------------------
+!-----------------------------------------------------------------------------------------------
+!-----------------------------------------------------------------------------------------------
+!+
+! Subroutine parser_transfer_control_struct (con_in, con_out, lord, ix_var)
+!
+! Routine to transfer the information from an input control_struct (which stores
+! the user input parameters) to a control_struct that will be stored in the lat%control
+! or lord%control%ramp for a ramper.
+!
+! Input:
+!   con_in    -- control_struct: Input control structure.
+!   lord      -- ele_struct: Lord element associated with the control_struct.
+!   ix_var    -- integer:  If an expression stack evaluates to a constant, this routine will 
+!                 modify the expression stack to evaluate to the value of: 
+!                     lord%control%var(ix_var) * constant
+!
+! Output:
+!   con_out   -- control_struct: Output control structure.
+!-
+
+subroutine parser_transfer_control_struct (con_in, con_out, lord, ix_var)
+
+type (control_struct) con_in, con_out, con0
+type (ele_struct) lord
+integer ix_var, is, n, iv
+logical err, var_found
+
+!
+
+con0 = con_in  ! In case con_in and con_out actual arguments are the same.
+
+if (lord%control%type == expression$) then
+  do is = 1, size(con0%stack)
+    if (con0%stack(is)%type == end_stack$) exit
+  enddo
+  call reallocate_expression_stack(con_out%stack, is-1)
+
+  con_out%stack = con0%stack(1:is-1)
+
+  ! Convert variable$ type to ramper variable index if name matches an ramper variable name.
+
+  do is = 1, size(con_out%stack)
+    if (con_out%stack(is)%type == end_stack$) exit
+    if (con_out%stack(is)%type /= variable$) cycle
+    do iv = 1, size(lord%control%var)
+      if (upcase(con_out%stack(is)%name) /= lord%control%var(iv)%name) cycle
+      con_out%stack(is)%type = iv + var_offset$
+      exit
+    enddo
+  enddo
+
+  ! Convert a stack of a single constant "const" to "const * control_var(1)"
+  var_found = .false.
+  do is = 1, size(con_out%stack)
+    if (.not. is_attribute (con_out%stack(is)%type, all_control_var$)) cycle
+    if (con_out%stack(is)%type == end_stack$) exit
+    var_found = .true.
+    exit
+  enddo
+
+  if (.not. var_found) then
+    if (size(con_out%stack) == 1 .and. con_out%stack(1)%name == '1' .or. con_out%stack(1)%name == '1.0') then
+      con_out%stack(1) = expression_atom_struct(lord%control%var(ix_var)%name, ix_var+var_offset$, 0.0_rp)
+    else
+      n = size(con_out%stack)
+      call reallocate_expression_stack(con_out%stack, n+2)
+      con_out%stack(n+1) = expression_atom_struct(lord%control%var(ix_var)%name, ix_var+var_offset$, 0.0_rp)
+      con_out%stack(n+2) = expression_atom_struct('', times$, 0.0_rp)
+    endif
+  endif
+
+  ! Evaluate any variable values.
+
+  do is = 1, size(con_out%stack)
+    select case (con_out%stack(is)%type)
+    case (ran$, ran_gauss$)
+      call parser_error ('RANDOM NUMBER FUNCITON MAY NOT BE USED WITH A GROUP, OVERLAY, OR RAMPER', &
+                         'FOR ELEMENT: ' // lord%name)
+      if (global_com%exit_on_error) call err_exit
+      return
+    case (variable$)
+      call word_to_value (con_out%stack(is)%name, lord%branch%lat, con_out%stack(is)%value, err)
+      if (err) then
+        call parser_error ('ERROR CONVERTING WORD TO VALUE: ' // con_out%stack(is)%name, &
+                           'FOR ELEMENT: ' // lord%name)
+        return
+      endif
+      ! Variables in the arithmetic expression are immediately evaluated and never reevaluated.
+      ! If the variable is an element attribute (looks like: "ele_name[attrib_name]") then this may
+      ! be confusing if the attribute value changes later. To avoid some (but not all) confusion, 
+      ! turn the variable into a numeric$ so the output from the type_ele routine looks "sane".
+      if (index(con_out%stack(is)%name, '[') /= 0) then
+        con_out%stack(is)%type = numeric$
+        con_out%stack(is)%name = ''
+      endif
+    end select
+  enddo
+
+else
+  con_out%y_knot = con0%y_knot
+  if (size(con_out%y_knot) /= size(lord%control%x_knot)) then
+    call parser_error ('NUMBER OF Y_SPLINE POINTS CONTROLLING PARAMETER: ' // con_out%attribute, &
+                       'IS NOT THE SAME AS THE NUMBER OF X_SPLINE POINTS FOR ELEMENT: ' // lord%name)
+    return
+  endif
+endif
+
+end subroutine parser_transfer_control_struct 
 
 end module

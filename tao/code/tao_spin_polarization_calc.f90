@@ -1,5 +1,5 @@
 !+
-! Subroutine tao_spin_polarization_calc (branch, tao_branch)
+! Subroutine tao_spin_polarization_calc (branch, tao_branch, excite_zero)
 !
 ! Routine to calculate the spin equalibrium polarization in a ring along with the polarization rate and
 ! the depolarization rate due to emission of synchrotron radiation photons.
@@ -7,8 +7,9 @@
 ! From the Handbook of Accelerator Physics
 !
 ! Input:
-!   branch        -- branch_struct: Lattice branch to analyze.
-!   tao_branch    -- tao_lattice_branch_struct: Contains %orbit
+!   branch            -- branch_struct: Lattice branch to analyze.
+!   tao_branch        -- tao_lattice_branch_struct: Contains %orbit
+!   excite_zero(3)    -- character(*): See documentation on spin_concat_linear_maps.
 !
 ! Output:
 !   tao_branch    -- tao_lattice_branch_struct: Calculated is:
@@ -16,7 +17,7 @@
 !     %spin
 !-
 
-subroutine tao_spin_polarization_calc (branch, tao_branch)
+subroutine tao_spin_polarization_calc (branch, tao_branch, excite_zero)
 
 use tao_data_and_eval_mod, dummy => tao_spin_polarization_calc
 use radiation_mod
@@ -32,10 +33,11 @@ type (spin_orbit_map1_struct), pointer :: q1
 type (spin_orbit_map1_struct), target :: q_ele(branch%n_ele_track)
 type (ele_struct), pointer :: ele
 
-real(rp) n0(3), dn_dpz(3), integral_bdn_partial(3), partial(3,3)
-real(rp) integral_bn, integral_bdn, integral_1ns, integral_dn2, integral_dn2_partial(3)
-real(rp) int_gx, int_gy, int_g, int_g2, int_g3, b_vec(3), s_vec(3), del_p, cm_ratio, gamma, f
-real(rp) old_int_g3, old_b_vec(3), old_dn_dpz(3), old_s_vec(3), old_n0(3), old_partial(3,3)
+real(rp) n0(3), dn_dpz(3), integral_bdn_partial(3), integral_bdn_partial2(3), partial(3,3), partial2(3,3)
+real(rp) integral_bn, integral_bdn, integral_1ns, integral_dn2, integral_dn2_partial(3), integral_dn2_partial2(3)
+real(rp) int_g(2), g, int_g2, int_g3, b_vec(3), s_vec(3), del_p, cm_ratio, gamma, f
+real(rp) old_int_g3, old_b_vec(3), old_dn_dpz(3), old_s_vec(3), old_n0(3), old_partial(3,3), old_partial2(3,3)
+real(rp) g_tol, g2_tol, g3_tol
 real(rp), parameter :: f_limit = 8 / (5 * sqrt(3.0_rp))
 real(rp), parameter :: f_rate = 5 * sqrt(3.0_rp) * classical_radius_factor * h_bar_planck * c_light**2 / 8
 
@@ -43,6 +45,22 @@ integer ix1, ix2
 integer i, j, k, kk, n, p, ie
 
 logical valid_value, err
+character(*), optional :: excite_zero(3)
+
+!
+
+g_tol  = 1e-4_rp * branch%param%g1_integral / branch%param%total_length
+g2_tol = 1e-4_rp * branch%param%g2_integral / branch%param%total_length
+g3_tol = 1e-4_rp * branch%param%g3_integral / branch%param%total_length
+
+integral_bn           = 0
+integral_bdn          = 0
+integral_1ns          = 0
+integral_dn2          = 0
+integral_bdn_partial  = 0
+integral_dn2_partial  = 0
+integral_bdn_partial2 = 0
+integral_dn2_partial2 = 0
 
 !
 
@@ -52,28 +70,23 @@ orbit => tao_branch%orbit
 if (.not. allocated(tao_branch%dn_dpz)) allocate (tao_branch%dn_dpz(0:branch%n_ele_track))
 tao_branch%spin_valid = .true.
 
-call spin_concat_linear_maps (q_1turn, branch, 0, branch%n_ele_track, q_ele, orbit)
+call spin_concat_linear_maps (err, q_1turn, branch, 0, branch%n_ele_track, q_ele, orbit, excite_zero)
+if (err) return
 
 tao_branch%spin%tune = 2.0_rp * atan2(norm2(q_1turn%spin_q(1:3,0)), q_1turn%spin_q(0,0))
 
 ! Loop over all elements.
 ! Assume that dn_dpz varies linearly within an element so dn_dpz varies quadratically.
 
-integral_bn          = 0
-integral_bdn         = 0
-integral_1ns         = 0
-integral_dn2         = 0
-integral_bdn_partial = 0
-integral_dn2_partial = 0
-
-do ie = 0, branch%n_ele_track
+do ie = 1, branch%n_ele_track
   if (ie /= 0) q_1turn = q_ele(ie) * q_1turn * map1_inverse(q_ele(ie))
   
-  dn_dpz = spin_dn_dpz_from_qmap(q_1turn%orb_mat, q_1turn%spin_q, partial, err)
+  dn_dpz = spin_dn_dpz_from_qmap(q_1turn%orb_mat, q_1turn%spin_q, partial, partial2, err)
   if (err) exit
 
-  tao_branch%dn_dpz(ie)%vec = dn_dpz
-  tao_branch%dn_dpz(ie)%partial = partial
+  tao_branch%dn_dpz(ie)%vec      = dn_dpz
+  tao_branch%dn_dpz(ie)%partial  = partial
+  tao_branch%dn_dpz(ie)%partial2 = partial2
   n0 = q_1turn%spin_q(1:3, 0)
   n0 = n0 / norm2(n0)
 
@@ -82,12 +95,12 @@ do ie = 0, branch%n_ele_track
   s_vec(3) = sqrt(1.0_rp - s_vec(1)**2 - s_vec(2)**2)
 
   ele => branch%ele(ie)
-  call calc_radiation_tracking_integrals (ele, orbit(ie), start_edge$, .true., int_gx, int_gy, int_g2, old_int_g3)
-  old_b_vec = [int_gy, -int_gx, 0.0_rp]
+  call rad_g_integrals (ele, upstream$, orbit(ie-1), orbit(ie), int_g, int_g2, old_int_g3, g_tol, g2_tol, g3_tol)
+  old_b_vec = [int_g(2), -int_g(1), 0.0_rp]
   if (any(old_b_vec /= 0)) old_b_vec = old_b_vec / norm2(old_b_vec)
 
-  call calc_radiation_tracking_integrals (ele, orbit(ie), end_edge$, .true., int_gx, int_gy, int_g2, int_g3)
-  b_vec = [int_gy, -int_gx, 0.0_rp]
+  call rad_g_integrals (ele, downstream$, orbit(ie-1), orbit(ie), int_g, int_g2, int_g3, g_tol, g2_tol, g3_tol)
+  b_vec = [int_g(2), -int_g(1), 0.0_rp]
   if (any(b_vec /= 0)) b_vec = b_vec / norm2(b_vec)
 
   if (int_g2 /= 0) then
@@ -98,16 +111,21 @@ do ie = 0, branch%n_ele_track
     integral_dn2  = integral_dn2 + (11.0_rp/18.0_rp) * integ_dn2(old_int_g3, old_dn_dpz, int_g3, dn_dpz)
 
     do kk = 1, 3
-      integral_bdn_partial(kk) = integral_bdn_partial(kk) + old_int_g3 * dot_product(old_b_vec, old_partial(kk,:)) + &
+      integral_bdn_partial(kk)  = integral_bdn_partial(kk) + old_int_g3 * dot_product(old_b_vec, old_partial(kk,:)) + &
                                                             int_g3 * dot_product(b_vec, partial(kk,:))
-      integral_dn2_partial(kk) = integral_dn2_partial(kk) + (11.0_rp/18.0_rp) * &
+      integral_dn2_partial(kk)  = integral_dn2_partial(kk) + (11.0_rp/18.0_rp) * &
                                                       integ_dn2 (old_int_g3, old_partial(kk,:), int_g3, partial(kk,:))
+      integral_bdn_partial2(kk) = integral_bdn_partial2(kk) + old_int_g3 * dot_product(old_b_vec, old_partial2(kk,:)) + &
+                                                            int_g3 * dot_product(b_vec, partial2(kk,:))
+      integral_dn2_partial2(kk) = integral_dn2_partial2(kk) + (11.0_rp/18.0_rp) * &
+                                                      integ_dn2 (old_int_g3, old_partial2(kk,:), int_g3, partial2(kk,:))
     enddo
   endif
 
-  old_dn_dpz = dn_dpz
-  old_n0 = n0
-  old_partial = partial
+  old_dn_dpz   = dn_dpz
+  old_n0       = n0
+  old_partial  = partial
+  old_partial2 = partial2
 enddo
 
 ! Some toy lattices may not have any bends (EG: spin single resonance model lattice) or have lattice length zero.
@@ -115,21 +133,29 @@ enddo
 
 if (integral_1ns == 0 .or. err) then
   tao_branch%spin%pol_limit_st          = 0
-  tao_branch%spin%pol_limit_dkm         = 0
-  tao_branch%spin%pol_limit_dkm_partial = 0
+  tao_branch%spin%pol_limit_dk          = 0
+  tao_branch%spin%pol_limit_dk_partial  = 0
+  tao_branch%spin%pol_limit_dk_partial2 = 0
   tao_branch%spin%pol_rate_bks          = 0
   tao_branch%spin%depol_rate            = 0
   tao_branch%spin%depol_rate_partial    = 0
+  tao_branch%spin%depol_rate_partial2   = 0
 else
   cm_ratio = charge_to_mass_of(branch%param%particle)
   call convert_pc_to ((1 + orbit(0)%vec(6)) * orbit(0)%p0c, branch%param%particle, gamma = gamma)
   f = f_rate * gamma**5 * cm_ratio**2 / branch%param%total_length
-  tao_branch%spin%pol_limit_st          = f_limit * integral_bn / integral_1ns
-  tao_branch%spin%pol_limit_dkm         = f_limit * (integral_bn - integral_bdn) / (integral_1ns + integral_dn2)
-  tao_branch%spin%pol_limit_dkm_partial = f_limit * (integral_bn - integral_bdn_partial) / (integral_1ns + integral_dn2_partial)
+  tao_branch%spin%pol_limit_st          = abs(f_limit * integral_bn / integral_1ns)
+  tao_branch%spin%pol_limit_dk          = abs(f_limit * (integral_bn - integral_bdn) / (integral_1ns + integral_dn2))
+  tao_branch%spin%pol_limit_dk_partial  = abs(f_limit * (integral_bn - integral_bdn_partial) / (integral_1ns + integral_dn2_partial))
+  tao_branch%spin%pol_limit_dk_partial2 = abs(f_limit * (integral_bn - integral_bdn_partial2) / (integral_1ns + integral_dn2_partial2))
   tao_branch%spin%pol_rate_bks          = f * integral_1ns
   tao_branch%spin%depol_rate            = f * integral_dn2
   tao_branch%spin%depol_rate_partial    = f * integral_dn2_partial
+  tao_branch%spin%depol_rate_partial2    = f * integral_dn2_partial2
+  tao_branch%spin%integral_bn           = integral_bn
+  tao_branch%spin%integral_bdn          = integral_bdn
+  tao_branch%spin%integral_1ns          = integral_1ns
+  tao_branch%spin%integral_dn2          = integral_dn2
 endif
 
 !--------------------------------------

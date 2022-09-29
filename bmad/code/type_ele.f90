@@ -1,48 +1,51 @@
 !+
-! Subroutine type_ele (ele, type_zero_attrib, type_mat6, type_taylor, twiss_out, 
-!        type_control, type_wake, type_floor_coords, type_field, type_wall, lines, n_lines)
+! Subroutine type_ele (ele, type_zero_attrib, type_mat6, type_taylor, twiss_out, type_control, 
+!              type_wake, type_floor_coords, type_field, type_wall, type_rad_kick, lines, n_lines)
 !
 ! Subroutine to print or put in a string array information on a lattice element.
 ! If the lines(:) argument is not present, the element information is printed to the terminal.
 !
 ! Input:
-!   ele               -- Ele_struct: Element
-!   type_zero_attrib  -- Logical, optional: If False then surpress printing of
+!   ele               -- ele_struct: Element
+!   type_zero_attrib  -- logical, optional: If False then surpress printing of
 !                           real attributes whose value is 0 or switch attributes that have
 !                           their default value. Default is False.
-!   type_mat6         -- Integer, optional:
+!   type_mat6         -- integer, optional:
 !                            = 0   => Do not type ele%mat6
 !                            = 4   => Type 4X4 xy submatrix
 !                            = 6   => Type full 6x6 matrix (Default)
-!   type_taylor       -- Logical, optional: Print out taylor map terms?
+!   type_taylor       -- logical, optional: Print out taylor map terms?
 !                          If ele%taylor is not allocated then this is ignored.
 !                          Default is False.
-!   twiss_out         -- Integer, optional: Print the Twiss parameters at the element end?
+!   twiss_out         -- integer, optional: Print the Twiss parameters at the element end?
 !                          = 0         => Do not print the Twiss parameters
 !                          = radians$  => Print Twiss, phi in radians (Default).
 !                          = degrees$  => Print Twiss, phi in degrees.
 !                          = cycles$   => Print Twiss, phi in radians/2pi.
-!   type_control       -- Logical, optional: Print control status? Default is True.
+!   type_control      -- logical, optional: Print control status? Default is True.
 !                           If ele%branch%lat is not associated cannot print status info.
-!   type_wake         -- Logical, optional: If True then print the long-range and 
+!   type_wake         -- logical, optional: If True then print the long-range and 
 !                          short-range wakes information. If False then just print
 !                          how many terms the wake has. Default is True.
 !                          If ele%wake is not allocated then this is ignored.
-!   type_floor_coords -- Logical, optional: If True then print the global ("floor")
+!   type_floor_coords -- logical, optional: Default is False. If True then print the global ("floor")
 !                          coordinates at the exit end of the element.
-!                          Default is False.
-!   type_field        -- Logical, optional: If True then print field maps, converter info, etc. Default is False.
-!   type_wall         -- Logical, optional: If True then print wall info. Default is False.
+!   type_field        -- integer, optional: Print field maps?
+!                           = no$      => One line of info.
+!                           = short$   => Header info. No tables.
+!                           = all$     => Everything.
+!   type_wall         -- logical, optional: Default is False. If True, print wall info. 
+!   type_rad_kick     -- logical, optional: Default is False. If True, print synch rad kick info.
 !
 ! Output       
-!   lines(:)     -- Character(200), allocatable, optional: Character array to hold the output. 
+!   lines(:)     -- character(200), allocatable, optional: Character array to hold the output. 
 !                     If not present, the information is printed to the terminal.
-!   n_lines      -- Integer, optional: Number of lines in lines(:) that hold valid output.
+!   n_lines      -- integer, optional: Number of lines in lines(:) that hold valid output.
 !                     n_lines must be present if lines(:) is. 
 !-
 
-subroutine type_ele (ele, type_zero_attrib, type_mat6, type_taylor, twiss_out, &
-             type_control, type_wake, type_floor_coords, type_field, type_wall, lines, n_lines)
+subroutine type_ele (ele, type_zero_attrib, type_mat6, type_taylor, twiss_out, type_control, &
+             type_wake, type_floor_coords, type_field, type_wall, type_rad_kick, lines, n_lines)
 
 use bmad_interface, except_dummy => type_ele
 use expression_mod
@@ -74,11 +77,13 @@ type (control_struct), pointer :: ctl
 type (all_pointer_struct) a_ptr
 type (ac_kicker_struct), pointer :: ac
 type (str_index_struct) str_index
+type (rad_map_struct), pointer :: rm0, rm1
 
-integer, optional, intent(in) :: type_mat6, twiss_out
+integer, optional, intent(in) :: type_mat6, twiss_out, type_field
 integer, optional, intent(out) :: n_lines
-integer ia, im, i1, j, n, is, ix, iw, ix2_attrib, iv, ic, nl2, l_status, a_type, default_val
+integer ia, im, i1, i, j, n, is, ix, iw, ix2_attrib, iv, ic, nl2, l_status, a_type, default_val
 integer nl, nt, n_term, n_att, attrib_type, n_char, iy, particle, ix_pole_max, lb(2), ub(2)
+integer id1, id2, id3
 
 real(rp) coef, val, L_mis(3), S_mis(3,3) 
 real(rp) a(0:n_pole_maxx), b(0:n_pole_maxx)
@@ -99,7 +104,7 @@ character(*), parameter :: r_name = 'type_ele'
 
 logical, optional, intent(in) :: type_taylor, type_wake
 logical, optional, intent(in) :: type_control, type_zero_attrib
-logical, optional, intent(in) :: type_floor_coords, type_field, type_wall
+logical, optional, intent(in) :: type_floor_coords, type_wall, type_rad_kick
 logical type_zero, err_flag, print_it, is_default, has_it, has_been_added, z1, z2
 
 ! init
@@ -395,7 +400,10 @@ endif
 ! Cartesian map
 
 if (associated(ele%cartesian_map)) then
-  if (logic_option(.false., type_field)) then
+  if (integer_option(no$, type_field) == no$) then
+    nl=nl+1; write (li(nl), '(a, i5)') 'Number of Cartesian_map modes:', size(ele%cartesian_map)
+  else
+    nl2 = 10; if (type_field == all$) nl2 = 999
     nl=nl+1; li(nl) = ''
     if (ele%field_calc == bmad_standard$) then
       nl=nl+1; li(nl) = 'Cartesian_map: [NOT USED SINCE FIELD_CALC = BMAD_STANDARD]'
@@ -410,7 +418,7 @@ if (associated(ele%cartesian_map)) then
         name = attribute_name(ele, ct_map%master_parameter)
       endif
 
-      nl=nl+1; write (li(nl), '(a, i0)')      '  Mode #:', im
+      nl=nl+1; write (li(nl), '(a, i0)')      '  Cartesian_map mode #: ', im
       nl=nl+1; write (li(nl), '(2a)')         '    From file:        ', trim(ct_map%ptr%file)
       nl=nl+1; write (li(nl), '(2a)')         '    field_type        ', trim(em_field_type_name(ct_map%field_type))
       nl=nl+1; write (li(nl), '(2a)')         '    master_parameter: ', trim(name)
@@ -420,25 +428,26 @@ if (associated(ele%cartesian_map)) then
       nl=nl+1; write (li(nl), '(a, i0)')      '    n_link:           ', ct_map%ptr%n_link
       nl=nl+1; write (li(nl), '(5x, a, 6x, a, 3(9x, a), 2(12x, a), 9x, a8, a)') 'Term#', &
                                     'Coef', 'K_x', 'K_y', 'K_z', 'x0', 'y0', 'phi_z', 'Family Form'
-      do j = 1, min(10, size(ct_map%ptr%term))
+      do j = 1, min(nl2, size(ct_map%ptr%term))
         if (nl+1 > size(li)) call re_allocate(li, 2 * nl, .false.)
         ct_term => ct_map%ptr%term(j)
         nl=nl+1; write (li(nl), '(i8, 4f12.6, 3f14.6, 3x, a, 2x, a)') j, ct_term%coef, ct_term%kx, ct_term%ky, ct_term%kz, ct_term%x0, &
                          ct_term%y0, ct_term%phi_z, cartesian_map_family_name(ct_term%family), trim(cartesian_map_form_name(ct_term%form))
       enddo
-      if (size(ct_map%ptr%term) > 10) then
+      if (size(ct_map%ptr%term) > nl2) then
         nl=nl+1; write (li(nl), '(a, i0, a)') '     .... etc ... (#Terms = ', size(ct_map%ptr%term), ')' 
       endif
     enddo
-  else
-    nl=nl+1; write (li(nl), '(a, i5)') 'Number of Cartesian_map modes:', size(ele%cartesian_map)
   endif
 endif
 
 ! Cylindrical_map
 
 if (associated(ele%cylindrical_map)) then
-  if (logic_option(.false., type_field)) then
+  if (integer_option(no$, type_field) == no$) then
+    nl=nl+1; write (li(nl), '(a, i5)') 'Number of Cylindrical_map modes:', size(ele%cylindrical_map)
+  else
+    nl2 = 10; if (type_field == all$) nl2 = 999
     nl=nl+1; li(nl) = ''
     if (ele%field_calc == bmad_standard$) then
       nl=nl+1; li(nl) = 'Cylindrical_map: [NOT USED SINCE FIELD_CALC = BMAD_STANDARD]'
@@ -453,7 +462,7 @@ if (associated(ele%cylindrical_map)) then
         name = attribute_name(ele, cl_map%master_parameter)
       endif
 
-      nl=nl+1; write (li(nl), '(a, i0)')      '  Mode #:', im
+      nl=nl+1; write (li(nl), '(a, i0)')      '  Cylindrical_map mode #:', im
       nl=nl+1; write (li(nl), '(2a)')         '    From file:        ', trim(cl_map%ptr%file)
       nl=nl+1; write (li(nl), '(2a)')         '    master_parameter: ', trim(name)
       nl=nl+1; write (li(nl), '(a, i0)')      '    harmonic:         ', cl_map%harmonic
@@ -466,24 +475,25 @@ if (associated(ele%cylindrical_map)) then
       nl=nl+1; write (li(nl), '(2a)')         '    ele_anchor_pt:    ', anchor_pt_name(cl_map%ele_anchor_pt)
       nl=nl+1; write (li(nl), '(a, i0)')      '    n_link:           ', cl_map%ptr%n_link
       nl=nl+1; write (li(nl), '(a)')          '    Term                E                           B'
-      do j = 1, min(10, size(cl_map%ptr%term))
+      do j = 1, min(nl2, size(cl_map%ptr%term))
         if (nl+1 > size(li)) call re_allocate(li, 2 * nl, .false.)
         cl_term => cl_map%ptr%term(j)
         nl=nl+1; write (li(nl), '(i5, 3x, 2(a, 2es12.4), a)') j, '(', cl_term%e_coef, ')  (', cl_term%b_coef, ')'
       enddo
-      if (size(cl_map%ptr%term) > 10) then
+      if (size(cl_map%ptr%term) > nl2) then
         nl=nl+1; write (li(nl), '(a, i0, a)') '     .... etc ... (#Terms = ', size(cl_map%ptr%term), ')' 
       endif
     enddo
-  else
-    nl=nl+1; write (li(nl), '(a, i5)') 'Number of Cylindrical_map modes:', size(ele%cylindrical_map)
   endif
 endif
 
 ! Grid_field
 
 if (associated(ele%grid_field)) then
-  if (logic_option(.false., type_field)) then
+  if (integer_option(no$, type_field) == no$) then
+    nl=nl+1; write (li(nl), '(a, i5)') 'Number of Grid_field modes:', size(ele%grid_field)
+  else
+    nl2 = 10; if (type_field == all$) nl2 = 999
     nl=nl+1; li(nl) = ''
     if (ele%field_calc == bmad_standard$) then
       nl=nl+1; li(nl) = 'Grid_field: [NOT USED SINCE FIELD_CALC = BMAD_STANDARD]'
@@ -498,7 +508,7 @@ if (associated(ele%grid_field)) then
         name = attribute_name(ele, g_field%master_parameter)
       endif
 
-      nl=nl+1; write (li(nl), '(a, i0)')      '  Mode #:', im
+      nl=nl+1; write (li(nl), '(a, i0)')      '  Grid_field mode #:', im
       nl=nl+1; write (li(nl), '(2a)')         '    From file:          ', trim(g_field%ptr%file)
       nl=nl+1; write (li(nl), '(2a)')         '    field_type:         ', em_field_type_name(g_field%field_type)
       nl=nl+1; write (li(nl), '(2a)')         '    geometry:           ', grid_field_geometry_name(g_field%geometry)
@@ -527,15 +537,62 @@ if (associated(ele%grid_field)) then
         nl=nl+1; write (li(nl), '(a, 3f14.6)')  '    r_min:              ', lbound(g_field%ptr%pt)*g_field%dr + g_field%r0
       endif
     enddo
-  else
-    nl=nl+1; write (li(nl), '(a, i5)') 'Number of Grid_field modes:', size(ele%grid_field)
+
+    j = 0
+    do id1 = lbound(g_field%ptr%pt, 1), ubound(g_field%ptr%pt, 1)          
+    do id2 = lbound(g_field%ptr%pt, 2), ubound(g_field%ptr%pt, 2)
+    do id3 = lbound(g_field%ptr%pt, 3), ubound(g_field%ptr%pt, 3)
+      j = j + 1
+      if (j > nl2) exit
+      if (nl+1 > size(li)) call re_allocate(li, 2 * nl, .false.)
+      nl = nl + 1
+
+      select case (grid_field_dimension(g_field%geometry))
+      case (1)
+        write (line, '(2x, a, i0, 13a)') 'pt(', id1, ') = ('
+      case (2)
+        write (line, '(2x, 2(a, i0), 13a)') 'pt(', id1, ',', id2, ') = ('
+      case (3)
+        write (line, '(2x, 3(a, i0), 13a)') 'pt(', id1, ',', id2, ',', id3, ') = ('
+      end select
+
+      select case (g_field%field_type)
+      case (mixed$)
+        write (li(nl), '(2x, a, 13a)') trim(line), &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%E(1))), ',', &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%E(2))), ',', &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%E(3))), ',', &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%B(1))), ',', &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%B(2))), ',', &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%B(3))), ')'
+      case (electric$)
+        write (li(nl), '(2x, a, 13a)') trim(line), &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%E(1))), ',', &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%E(2))), ',', &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%E(3))), ')'
+      case (magnetic$)
+        write (li(nl), '(2x, a, 13a)') trim(line), &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%B(1))), ',', &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%B(2))), ',', &
+                                           trim(cmplx_re_str(g_field%ptr%pt(id1,id2,id3)%B(3))), ')'
+      end select
+    enddo
+    enddo
+    enddo
+
+    if (size(g_field%ptr%pt) > nl2) then
+      nl=nl+1; write (li(nl), '(a, i0, a)') '     .... etc ... (#Terms = ', size(g_field%ptr%pt), ')' 
+    endif
   endif
 endif
 
 ! Taylor_field
 
 if (associated(ele%taylor_field)) then
-  if (logic_option(.false., type_field)) then
+  if (integer_option(no$, type_field) == no$) then
+    nl=nl+1; write (li(nl), '(a, i5)') 'Number of Taylor_field modes:', size(ele%taylor_field)
+  else
+    nl2 = 10; if (type_field == all$) nl2 = 999
     nl=nl+1; li(nl) = ''
     if (ele%field_calc == bmad_standard$) then
       nl=nl+1; li(nl) = 'Taylor_field: [NOT USED SINCE FIELD_CALC = BMAD_STANDARD]'
@@ -550,7 +607,7 @@ if (associated(ele%taylor_field)) then
         name = attribute_name(ele, t_field%master_parameter)
       endif
 
-      nl=nl+1; write (li(nl), '(a, i0)')      '  Mode #:', im
+      nl=nl+1; write (li(nl), '(a, i0)')      '  Taylor_field mode #:', im
       nl=nl+1; write (li(nl), '(2a)')         '    From file:         ', trim(t_field%ptr%file)
       nl=nl+1; write (li(nl), '(2a)')         '    field_type:        ', em_field_type_name(t_field%field_type)
       nl=nl+1; write (li(nl), '(a, es16.8)')  '    field_scale:       ', t_field%field_scale
@@ -563,31 +620,55 @@ if (associated(ele%taylor_field)) then
       nl=nl+1; write (li(nl), '(a, i0)')      '    n_link:            ', t_field%ptr%n_link
       nl=nl+1; write (li(nl), '(a, i0)')      '    n_plane:           ', size(t_field%ptr%plane)
     enddo
-  else
-    nl=nl+1; write (li(nl), '(a, i5)') 'Number of Taylor_field modes:', size(ele%taylor_field)
   endif
 endif
 
 ! ac_kick
 
-if (associated(ele%ac_kick) .and. logic_option(.false., type_field)) then
+if (associated(ele%ac_kick)) then
   ac => ele%ac_kick
   nl=nl+1; li(nl) = ''
 
   if (allocated(ac%amp_vs_time)) then
+    nl=nl+1; li(nl) = 'AC_kicker (time, amplitude) knot points'
     nl=nl+1; li(nl) = '     Indx      Time       Amplitude'    
     do im = 1, size(ac%amp_vs_time)
       nl=nl+1; write (li(nl), '(i9, 2es14.6)') im, ac%amp_vs_time(im)%time, ac%amp_vs_time(im)%amp
     enddo
   endif
 
-  if (allocated(ac%frequencies)) then
-    nl=nl+1; li(nl) = '     Indx          Freq     Amplitude           Phi'    
-    do im = 1, size(ac%frequencies)
-      nl=nl+1; write (li(nl), '(i9, 3es14.6)') im, &
-                                ac%frequencies(im)%f, ac%frequencies(im)%amp, ac%frequencies(im)%phi
+  if (allocated(ac%frequency)) then
+    nl=nl+1; li(nl) = 'AC_kicker frequency components'
+    nl=nl+1; li(nl) = '     Indx          Freq     Amplitude           Phi    Harmonic_Num'    
+    do im = 1, size(ac%frequency)
+      n = branch%n_ele_track
+      nl=nl+1; write (li(nl), '(i9, 3es14.6, a16)') im, ac%frequency(im)%f, ac%frequency(im)%amp, &
+            ac%frequency(im)%phi, real_to_string(ac%frequency(im)%f * branch%ele(n)%ref_time, 16, 6, 6)
     enddo
   endif
+endif
+
+! Radiation kick values
+
+if (logic_option(.false., type_rad_kick) .and. associated(ele%rad_int_cache)) then
+  rm0 => ele%rad_int_cache%rm0
+  rm1 => ele%rad_int_cache%rm1
+
+  nl=nl+1; li(nl) = ''
+  nl=nl+1; li(nl) = 'Matrices used for radiation stochastic and damping kicks:'
+  nl=nl+1; write (li(nl), '(23x, a, 41x, a)') '1st half of element', '2nd half of element'
+  nl=nl+1; li(nl) = 'Damping mat:'
+  do i = 1, 6
+    nl=nl+1; write (li(nl), '(2x, 6es10.2, 5x, 6es10.2)') rm0%damp_mat(i,:), rm1%damp_mat(i,:)
+  enddo
+  nl=nl+1; li(nl) = 'Damping vec:'
+  nl=nl+1; write (li(nl), '(2x, 6es10.2, 5x, 6es10.2)') rm0%damp_vec(:), rm1%damp_vec(:)
+  nl=nl+1; li(nl) = 'Damping ref_orb:'
+  nl=nl+1; write (li(nl), '(2x, 6es10.2, 5x, 6es10.2)') rm0%ref_orb(:), rm1%ref_orb(:)
+  nl=nl+1; li(nl) = 'Stochastic mat:'
+  do i = 1, 6
+    nl=nl+1; write (li(nl), '(2x, 6es10.2, 5x, 6es10.2)') rm0%stoc_mat(i,:), rm1%stoc_mat(i,:)
+  enddo
 endif
 
 ! wall3d cross-sections.
@@ -596,7 +677,7 @@ endif
 if (associated(ele%wall3d)) then
   do iw = 1, size(ele%wall3d)
     wall3d => ele%wall3d(iw)
-    nl=nl+1; write (li(nl), '(a, i5)') ''
+    nl=nl+1; li(nl) = ''
     nl=nl+1; write (li(nl), '(2a)') 'Wall name: ', trim(wall3d%name)
     nl=nl+1; write (li(nl), '(a, i5)') 'Number of Wall Sections:', size(wall3d%section)
     nl=nl+1; write (li(nl), '(a, 2f11.5)') 'Wall region:',  wall3d%section(1)%s, wall3d%section(size(wall3d%section))%s
@@ -1299,31 +1380,33 @@ character(*) attrib_name
 character(40) a_name, a2_name
 logical is_2nd_col_attrib
 
-character(40), parameter :: att_name(76) = [character(40):: 'X_PITCH', 'Y_PITCH', 'X_OFFSET', &
+character(41), parameter :: att_name(80) = [character(40):: 'X_PITCH', 'Y_PITCH', 'X_OFFSET', &
                 'Y_OFFSET', 'Z_OFFSET', 'REF_TILT', 'TILT', 'ROLL', 'X1_LIMIT', 'Y1_LIMIT', &
                 'FB1', 'FQ1', 'LORD_PAD1', 'HKICK', 'VKICK', 'FRINGE_TYPE', 'DS_STEP', 'R0_MAG', &
                 'KS', 'K1', 'K2', 'G', 'DG', 'H1', 'E1', 'FINT', 'HGAP', &
                 'L_CHORD', 'PTC_FIELD_GEOMETRY', 'AUTOSCALE_AMPLITUDE', 'FIELD_AUTOSCALE', 'COUPLER_AT', &
                 'VOLTAGE', 'PHI0', 'N_CELL', 'X_GAIN_ERR', 'X_GAIN_CALIB', 'X_OFFSET_CALIB', &
-                'BETA_A', 'ALPHA_A', 'CRAB_X1', 'CRAB_X3', 'PX_APERTURE_WIDTH2', 'PY_APERTURE_WIDTH2', &
+                'BETA_A', 'ALPHA_A', 'CRAB_X1', 'CRAB_X2', 'CRAB_TILT', 'PX_APERTURE_WIDTH2', 'PY_APERTURE_WIDTH2', &
                 'PZ_APERTURE_WIDTH2', 'Z_APERTURE_WIDTH2', 'CMAT_11', 'CMAT_21', 'X_DISPERSION_ERR', &
                 'X_DISPERSION_CALIB', 'K1X', 'RF_FREQUENCY', 'UPSTREAM_ELE_DIR', 'SIG_X', &
                 'BETA_A0', 'BETA_B0', 'ALPHA_A0', 'ALPHA_B0', 'DPHI_A', 'ETA_X0', 'ETAP_X0', &
                 'ETA_Y0', 'ETAP_Y0', 'MATCH_END_INPUT', 'X0', 'PX0', 'Y0', 'PY0', 'Z0', 'PZ0', &
-                'MATCH_END_ORBIT_INPUT', 'C11_MAT0', 'C12_MAT0', 'C21_MAT0', 'C22_MAT0', 'PHASE_TROMBONE_INPUT']
+                'MATCH_END_ORBIT_INPUT', 'C11_MAT0', 'C12_MAT0', 'C21_MAT0', 'C22_MAT0', 'PHASE_TROMBONE_INPUT', &
+                'MODE_FLIP0', 'BETA_A_STRONG', 'BETA_B_STRONG']
 
-character(40), parameter :: att2_name(76) = [character(40):: 'X_PITCH_TOT', 'Y_PITCH_TOT', 'X_OFFSET_TOT', &
+character(41), parameter :: att2_name(80) = [character(40):: 'X_PITCH_TOT', 'Y_PITCH_TOT', 'X_OFFSET_TOT', &
                 'Y_OFFSET_TOT', 'Z_OFFSET_TOT', 'REF_TILT_TOT', 'TILT_TOT', 'ROLL_TOT', 'X2_LIMIT', 'Y2_LIMIT', &
                 'FB2', 'FQ2', 'LORD_PAD2', 'BL_HKICK', 'BL_VKICK', 'FRINGE_AT', 'NUM_STEPS', 'R0_ELEC', &
                 'BS_FIELD', 'B1_GRADIENT', 'B2_GRADIENT', 'B_FIELD', 'DB_FIELD', 'H2', 'E2', 'FINTX', 'HGAPX', &
                 'L_SAGITTA', 'PTC_FRINGE_GEOMETRY', 'AUTOSCALE_PHASE', 'PHI0_AUTOSCALE', 'COUPLER_STRENGTH', &
                 'GRADIENT', 'PHI0_MULTIPASS', 'CAVITY_TYPE', 'Y_GAIN_ERR', 'Y_GAIN_CALIB', 'Y_OFFSET_CALIB', &
-                'BETA_B', 'ALPHA_B', 'CRAB_X2', 'CRAB_TILT', 'PX_APERTURE_CENTER', 'PY_APERTURE_CENTER', &
+                'BETA_B', 'ALPHA_B', 'CRAB_X3', 'CRAB_X4', 'CRAB_X5', 'PX_APERTURE_CENTER', 'PY_APERTURE_CENTER', &
                 'PZ_APERTURE_CENTER', 'Z_APERTURE_CENTER', 'CMAT_12', 'CMAT_22', 'Y_DISPERSION_ERR', &
                 'Y_DISPERSION_CALIB', 'K1Y', 'RF_WAVELENGTH', 'DOWNSTREAM_ELE_DIR', 'SIG_Y', &
                 'BETA_A1', 'BETA_B1', 'ALPHA_A1', 'ALPHA_B1', 'DPHI_B', 'ETA_X1', 'ETAP_X1', &
                 'ETA_Y1', 'ETAP_Y1', 'MATCH_END', 'X1', 'PX1', 'Y1', 'PY1', 'Z1', 'PZ1', &
-                'MATCH_END_ORBIT', 'C11_MAT1', 'C12_MAT1', 'C21_MAT1', 'C22_MAT1', 'PHASE_TROMBONE']
+                'MATCH_END_ORBIT', 'C11_MAT1', 'C12_MAT1', 'C21_MAT1', 'C22_MAT1', 'PHASE_TROMBONE', &
+                'MODE_FLIP1', 'ALPHA_A_STRONG', 'ALPHA_B_STRONG']
 
 ! Exceptional cases
 
@@ -1393,7 +1476,11 @@ case (is_integer$)
 case (is_real$)
   write (line, '(a, 2x, 2a, es15.7, 1x, a8)')  str_ix, attrib%name(1:n_name_width), '=', attrib%value, attrib%units
 case (is_switch$)
-  name = switch_attrib_value_name (attrib%name, attrib%value, ele, is_default)
+  if (attrib%name == 'SPECIES_STRONG' .and. attrib%value == real_garbage$) then
+    name = 'Not_Set'
+  else
+    name = switch_attrib_value_name (attrib%name, attrib%value, ele, is_default)
+  endif
   write (line, '(a, 2x, 4a, i0, a)')  str_ix, attrib%name(1:n_name_width), '=  ', trim(name), ' (', nint(attrib%value), ')'
 end select
 
@@ -1420,5 +1507,23 @@ enddo
 str = str(3:)
 
 end function knots_to_string
+
+!--------------------------------------------------------------------------
+! contains
+
+function cmplx_re_str(cmp) result (str_out)
+
+complex(rp) cmp
+character(40) str_out
+
+!
+
+if (imag(cmp) == 0) then
+  str_out = real_str(real(cmp), 8)
+else
+  str_out = '(' // real_str(real(cmp), 8) // ', ' // real_str(imag(cmp), 8) // ')'
+endif
+
+end function cmplx_re_str
 
 end subroutine type_ele

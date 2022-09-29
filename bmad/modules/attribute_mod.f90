@@ -545,12 +545,13 @@ attribute_array_init_needed = .false.
 
 do i = 1, n_key$
 
-  if (i == def_bmad_com$)       cycle
-  if (i == def_mad_beam$)       cycle
-  if (i == def_particle_start$) cycle
-  if (i == def_line$)           cycle
-  if (i == def_parameter$)      cycle
-  if (i == def_ptc_com$)        cycle
+  if (i == def_bmad_com$)         cycle
+  if (i == def_space_charge_com$) cycle
+  if (i == def_mad_beam$)         cycle
+  if (i == def_particle_start$)   cycle
+  if (i == def_line$)             cycle
+  if (i == def_parameter$)        cycle
+  if (i == def_ptc_com$)          cycle
 
   call init_attribute_name1 (i, check_sum$, 'check_sum', private$)
 
@@ -668,12 +669,10 @@ do i = 1, n_key$
   call init_attribute_name1 (i, symplectify$,          'SYMPLECTIFY')
   call init_attribute_name1 (i, taylor_map_includes_offsets$,    'TAYLOR_MAP_INCLUDES_OFFSETS')
 
-  if (i == sad_mult$)      cycle
-
   call init_attribute_name1 (i, lord_pad1$,            'LORD_PAD1', quasi_free$)
   call init_attribute_name1 (i, lord_pad2$,            'LORD_PAD2', quasi_free$)
 
-  if (i == taylor$)       cycle
+  if (i == taylor$)            cycle
 
   call init_attribute_name1 (i, integrator_order$,     'INTEGRATOR_ORDER')
   call init_attribute_name1 (i, num_steps$,            'NUM_STEPS', quasi_free$)
@@ -683,8 +682,10 @@ do i = 1, n_key$
   call init_attribute_name1 (i, csr_ds_step$,          'CSR_DS_STEP')
   call init_attribute_name1 (i, space_charge_method$,  'SPACE_CHARGE_METHOD')
   call init_attribute_name1 (i, multipass_ref_energy$, 'MULTIPASS_REF_ENERGY', dependent$)
+  call init_attribute_name1 (i, static_linear_map$,          'STATIC_LINEAR_MAP')
 
-  if (i == drift$)        cycle
+  if (i == sad_mult$)          cycle
+  if (i == drift$)             cycle
 
   call init_attribute_name1 (i, field_overlaps$,       'FIELD_OVERLAPS')
 
@@ -821,11 +822,14 @@ call init_attribute_name1 (photon_fork$, ref_species$,              'REF_SPECIES
 attrib_array(fork$, :) = attrib_array(photon_fork$, :)
 
 call init_attribute_name1 (beambeam$, l$,                           'L', dependent$)
+call init_attribute_name1 (beambeam$, ks$,                          'KS', quasi_free$)
+call init_attribute_name1 (beambeam$, bs_field$,                    'BS_FIELD', quasi_free$)
 call init_attribute_name1 (beambeam$, sig_x$,                       'SIG_X')
 call init_attribute_name1 (beambeam$, sig_y$,                       'SIG_Y')
 call init_attribute_name1 (beambeam$, sig_z$,                       'SIG_Z')
 call init_attribute_name1 (beambeam$, bbi_const$,                   'BBI_CONSTANT', dependent$)
 call init_attribute_name1 (beambeam$, charge$,                      'CHARGE')
+call init_attribute_name1 (beambeam$, n_particle$,                  'N_PARTICLE')
 call init_attribute_name1 (beambeam$, n_slice$,                     'N_SLICE')
 call init_attribute_name1 (beambeam$, symplectify$,                 'SYMPLECTIFY')
 call init_attribute_name1 (beambeam$, field_calc$,                  'FIELD_CALC')
@@ -840,7 +844,14 @@ call init_attribute_name1 (beambeam$, cmat_22$,                     'CMAT_22')
 call init_attribute_name1 (beambeam$, crab_x1$,                     'CRAB_X1')
 call init_attribute_name1 (beambeam$, crab_x2$,                     'CRAB_X2')
 call init_attribute_name1 (beambeam$, crab_x3$,                     'CRAB_X3')
+call init_attribute_name1 (beambeam$, crab_x4$,                     'CRAB_X4')
+call init_attribute_name1 (beambeam$, crab_x5$,                     'CRAB_X5')
 call init_attribute_name1 (beambeam$, crab_tilt$,                   'CRAB_TILT')
+call init_attribute_name1 (beambeam$, z_crossing$,                  'Z_CROSSING')
+call init_attribute_name1 (beambeam$, repetition_frequency$,        'REPETITION_FREQUENCY')
+call init_attribute_name1 (beambeam$, rf_clock_harmonic$,           'rf_clock_harminic', private$)
+call init_attribute_name1 (beambeam$, species_strong$,              'SPECIES_STRONG')
+call init_attribute_name1 (beambeam$, e_tot_strong$,                'E_TOT_STRONG')
 
 call init_attribute_name1 (beginning_ele$, l$,                           'l', private$)
 call init_attribute_name1 (beginning_ele$, delta_ref_time$,              'delta_ref_time', private$)
@@ -870,6 +881,7 @@ call init_attribute_name1 (beginning_ele$, cmat_11$,                     'CMAT_1
 call init_attribute_name1 (beginning_ele$, cmat_12$,                     'CMAT_12')
 call init_attribute_name1 (beginning_ele$, cmat_21$,                     'CMAT_21')
 call init_attribute_name1 (beginning_ele$, cmat_22$,                     'CMAT_22')
+call init_attribute_name1 (beginning_ele$, mode_flip$,                   'MODE_FLIP')
 call init_attribute_name1 (beginning_ele$, s_long$,                      'S')
 call init_attribute_name1 (beginning_ele$, ref_time$,                    'REF_TIME')
 call init_attribute_name1 (beginning_ele$, inherit_from_fork$,           'INHERIT_FROM_FORK')
@@ -929,19 +941,6 @@ call init_attribute_name1 (crystal$, mosaic_diffraction_num$,       'MOSAIC_DIFF
 call init_attribute_name1 (crystal$, p88$,                          'H_MISALIGN')
 call init_attribute_name1 (crystal$, curvature$,                    'CURVATURE')
 
-call init_attribute_name1 (def_bmad_com$, max_aperture_limit$,          'MAX_APERTURE_LIMIT')
-call init_attribute_name1 (def_bmad_com$, default_ds_step$,             'DEFAULT_DS_STEP')
-call init_attribute_name1 (def_bmad_com$, significant_length$,          'SIGNIFICANT_LENGTH')
-call init_attribute_name1 (def_bmad_com$, rel_tol_tracking$,            'REL_TOL_TRACKING')
-call init_attribute_name1 (def_bmad_com$, abs_tol_tracking$,            'ABS_TOL_TRACKING')
-call init_attribute_name1 (def_bmad_com$, rel_tol_adaptive_tracking$,   'REL_TOL_ADAPTIVE_TRACKING')
-call init_attribute_name1 (def_bmad_com$, abs_tol_adaptive_tracking$,   'ABS_TOL_ADAPTIVE_TRACKING')
-call init_attribute_name1 (def_bmad_com$, init_ds_adaptive_tracking$,   'INIT_DS_ADAPTIVE_TRACKING')
-call init_attribute_name1 (def_bmad_com$, min_ds_adaptive_tracking$,    'MIN_DS_ADAPTIVE_TRACKING')
-call init_attribute_name1 (def_bmad_com$, fatal_ds_adaptive_tracking$,  'FATAL_DS_ADAPTIVE_TRACKING')
-call init_attribute_name1 (def_bmad_com$, aperture_limit_on$,           'APERTURE_LIMIT_ON')
-call init_attribute_name1 (def_bmad_com$, max_num_runge_kutta_step$,    'MAX_NUM_RUNGE_KUTTA_STEP')
-
 call init_attribute_name1 (def_mad_beam$, particle$,                      'PARTICLE')
 call init_attribute_name1 (def_mad_beam$, e_tot$,                         'ENERGY')
 call init_attribute_name1 (def_mad_beam$, p0c$,                           'PC')
@@ -983,7 +982,7 @@ call init_attribute_name1 (def_parameter$, n_part$,                       'N_PAR
 call init_attribute_name1 (def_parameter$, particle$,                     'PARTICLE')
 call init_attribute_name1 (def_parameter$, photon_type$,                  'PHOTON_TYPE')
 call init_attribute_name1 (def_parameter$, no_end_marker$,                'NO_END_MARKER')
-call init_attribute_name1 (def_parameter$, absolute_time_tracking$,       'ABSOLUTE_TIME_TRACKING')
+call init_attribute_name1 (def_parameter$, absolute_time_tracking$,       'ABSOLUTE_TIME_TRACKING')   ! Deprecated
 call init_attribute_name1 (def_parameter$, exact_model$,                  'PTC_EXACT_MODEL')    ! Deprecated
 call init_attribute_name1 (def_parameter$, exact_misalign$,               'PTC_EXACT_MISALIGN') ! Deprecated
 call init_attribute_name1 (def_parameter$, default_tracking_species$,     'DEFAULT_TRACKING_SPECIES')
@@ -994,6 +993,7 @@ call init_attribute_name1 (def_ptc_com$, exact_model$,                    'EXACT
 call init_attribute_name1 (def_ptc_com$, exact_misalign$,                 'EXACT_MISALIGN')
 call init_attribute_name1 (def_ptc_com$, old_integrator$,                 'OLD_INTEGRATOR')
 call init_attribute_name1 (def_ptc_com$, max_fringe_order$,               'MAX_FRINGE_ORDER')
+call init_attribute_name1 (def_ptc_com$, vertical_kick$,                  'VERTICAL_KICK')
 
 call init_attribute_name1 (detector$, l$,                               'L', dependent$)
 call init_attribute_name1 (detector$, pixel$,                           'PIXEL')
@@ -1017,7 +1017,6 @@ call init_attribute_name1 (drift$, drift_id$,                       'drift_id', 
 
 call init_attribute_name1 (e_gun$, dt_max$,                         'DT_MAX')
 call init_attribute_name1 (e_gun$, emit_fraction$,                  'EMIT_FRACTION')
-call init_attribute_name1 (e_gun$, l_cathode_region$,               'L_CATHODE_REGION')
 call init_attribute_name1 (e_gun$, e_tot_ref_init$,                 'e_tot_ref_init', private$)
 call init_attribute_name1 (e_gun$, p0c_ref_init$,                   'p0c_ref_init', private$)
 call init_attribute_name1 (e_gun$, field_autoscale$,                'FIELD_AUTOSCALE', quasi_free$)
@@ -1032,6 +1031,7 @@ call init_attribute_name1 (e_gun$, cylindrical_map$,                'CYLINDRICAL
 call init_attribute_name1 (e_gun$, grid_field$,                     'GRID_FIELD')
 call init_attribute_name1 (e_gun$, taylor_field$,                   'TAYLOR_FIELD')
 call init_attribute_name1 (e_gun$, rf_frequency$,                   'RF_FREQUENCY')
+call init_attribute_name1 (e_gun$, rf_clock_harmonic$,              'rf_clock_harminic', private$)
 call init_attribute_name1 (e_gun$, phi0$,                           'PHI0')
 call init_attribute_name1 (e_gun$, phi0_err$,                       'PHI0_ERR')
 ! e_gun attribute phi0_multipass should always be 0 and is used to make lcavity and e_gun equations similar
@@ -1075,6 +1075,7 @@ call init_attribute_name1 (em_field$, grid_field$,                  'GRID_FIELD'
 call init_attribute_name1 (em_field$, taylor_field$,                'TAYLOR_FIELD')
 call init_attribute_name1 (em_field$, ptc_canonical_coords$,        'PTC_CANONICAL_COORDS')
 call init_attribute_name1 (em_field$, rf_frequency$,                'RF_FREQUENCY')
+call init_attribute_name1 (em_field$, rf_clock_harmonic$,           'rf_clock_harminic', private$)
 call init_attribute_name1 (em_field$, field_autoscale$,             'FIELD_AUTOSCALE', quasi_free$)
 call init_attribute_name1 (em_field$, phi0_autoscale$,              'PHI0_AUTOSCALE', quasi_free$)
 call init_attribute_name1 (em_field$, autoscale_amplitude$,         'AUTOSCALE_AMPLITUDE')
@@ -1144,6 +1145,7 @@ call init_attribute_name1 (lcavity$, phi0$,                         'PHI0')
 call init_attribute_name1 (lcavity$, gradient$,                     'GRADIENT')
 call init_attribute_name1 (lcavity$, rf_frequency$,                 'RF_FREQUENCY')
 call init_attribute_name1 (lcavity$, rf_wavelength$,                'RF_WAVELENGTH', dependent$)
+call init_attribute_name1 (lcavity$, rf_clock_harmonic$,            'rf_clock_harminic', private$)
 call init_attribute_name1 (lcavity$, e_loss$,                       'E_LOSS')
 call init_attribute_name1 (lcavity$, voltage$,                      'VOLTAGE', quasi_free$)
 call init_attribute_name1 (lcavity$, field_master$,                 'FIELD_MASTER')
@@ -1216,10 +1218,12 @@ call init_attribute_name1 (match$, c11_mat0$,                       'C11_MAT0')
 call init_attribute_name1 (match$, c12_mat0$,                       'C12_MAT0')
 call init_attribute_name1 (match$, c21_mat0$,                       'C21_MAT0')
 call init_attribute_name1 (match$, c22_mat0$,                       'C22_MAT0')
+call init_attribute_name1 (match$, mode_flip0$,                     'MODE_FLIP0')
 call init_attribute_name1 (match$, c11_mat1$,                       'C11_MAT1')
 call init_attribute_name1 (match$, c12_mat1$,                       'C12_MAT1')
 call init_attribute_name1 (match$, c21_mat1$,                       'C21_MAT1')
 call init_attribute_name1 (match$, c22_mat1$,                       'C22_MAT1')
+call init_attribute_name1 (match$, mode_flip1$,                     'MODE_FLIP1')
 
 attrib_array(instrument$, :)                         = attrib_array(monitor$, :)
 attrib_array(pipe$, :)                               = attrib_array(monitor$, :)
@@ -1247,7 +1251,6 @@ call init_attribute_name1 (kicker$, taylor_field$,                  'TAYLOR_FIEL
 call init_attribute_name1 (kicker$, ptc_canonical_coords$,          'PTC_CANONICAL_COORDS')
 
 call init_attribute_name1 (ac_kicker$, interpolation$,                 'INTERPOLATION')
-call init_attribute_name1 (ac_kicker$, ref_time_offset$,               'REF_TIME_OFFSET')
 call init_attribute_name1 (ac_kicker$, r0_mag$,                        'R0_MAG')
 call init_attribute_name1 (ac_kicker$, r0_elec$,                       'R0_ELEC')
 call init_attribute_name1 (ac_kicker$, field_master$,                  'FIELD_MASTER')
@@ -1258,6 +1261,7 @@ call init_attribute_name1 (ac_kicker$, taylor_field$,                  'TAYLOR_F
 call init_attribute_name1 (ac_kicker$, amp_vs_time$,                   'AMP_VS_TIME')
 call init_attribute_name1 (ac_kicker$, frequencies$,                   'FREQUENCIES')
 call init_attribute_name1 (ac_kicker$, t_offset$,                      'T_OFFSET')
+call init_attribute_name1 (ac_kicker$, phi0_multipass$,                'PHI0_MULTIPASS')
 
 call init_attribute_name1 (custom$, val1$,                          'VAL1')
 call init_attribute_name1 (custom$, val2$,                          'VAL2')
@@ -1327,16 +1331,20 @@ call init_attribute_name1 (octupole$, grid_field$,                  'GRID_FIELD'
 call init_attribute_name1 (octupole$, taylor_field$,                'TAYLOR_FIELD')
 call init_attribute_name1 (octupole$, ptc_canonical_coords$,        'PTC_CANONICAL_COORDS')
 
-call init_attribute_name1 (patch$, l$,                              'L', dependent$)
+call init_attribute_name1 (patch$, l$,                              'L', quasi_free$)
+call init_attribute_name1 (patch$, user_sets_length$,               'USER_SETS_LENGTH')
 call init_attribute_name1 (patch$, t_offset$,                       'T_OFFSET')
 call init_attribute_name1 (patch$, e_tot_set$,                      'E_TOT_SET')
 call init_attribute_name1 (patch$, p0c_set$,                        'P0C_SET')
 call init_attribute_name1 (patch$, e_tot_offset$,                   'E_TOT_OFFSET')
 call init_attribute_name1 (patch$, flexible$,                       'FLEXIBLE')
-call init_attribute_name1 (patch$, field_calc$,                     'FIELD_CALC')
 call init_attribute_name1 (patch$, upstream_coord_dir$,             'UPSTREAM_ELE_DIR', dependent$)
 call init_attribute_name1 (patch$, downstream_coord_dir$,           'DOWNSTREAM_ELE_DIR', dependent$)
 call init_attribute_name1 (patch$, ref_coords$,                     'REF_COORDS')
+call init_attribute_name1 (patch$, field_calc$,                     'FIELD_CALC')
+call init_attribute_name1 (patch$, csr_method$,                     'CSR_METHOD')
+call init_attribute_name1 (patch$, csr_ds_step$,                    'CSR_DS_STEP')
+call init_attribute_name1 (patch$, space_charge_method$,            'SPACE_CHARGE_METHOD')
 
 call init_attribute_name1 (crab_cavity$, voltage$,                  'VOLTAGE')
 call init_attribute_name1 (crab_cavity$, phi0$,                     'PHI0')
@@ -1349,6 +1357,7 @@ call init_attribute_name1 (crab_cavity$, taylor_field$,             'TAYLOR_FIEL
 call init_attribute_name1 (crab_cavity$, gradient$,                 'GRADIENT', dependent$)
 call init_attribute_name1 (crab_cavity$, rf_frequency$,             'RF_FREQUENCY')
 call init_attribute_name1 (crab_cavity$, rf_wavelength$,            'RF_WAVELENGTH', dependent$)
+call init_attribute_name1 (crab_cavity$, rf_clock_harmonic$,        'rf_clock_harminic', private$)
 call init_attribute_name1 (crab_cavity$, field_autoscale$,          'FIELD_AUTOSCALE', private$)  ! Not yet used
 call init_attribute_name1 (crab_cavity$, phi0_autoscale$,           'PHI0_AUTOSCALE', private$)  ! Not yet used
 call init_attribute_name1 (crab_cavity$, autoscale_amplitude$,      'AUTOSCALE_AMPLITUDE', private$)  ! Not yet used
@@ -1364,6 +1373,7 @@ call init_attribute_name1 (rfcavity$, cavity_type$,                 'CAVITY_TYPE
 call init_attribute_name1 (rfcavity$, voltage$,                     'VOLTAGE')
 call init_attribute_name1 (rfcavity$, rf_frequency$,                'RF_FREQUENCY', quasi_free$)
 call init_attribute_name1 (rfcavity$, rf_wavelength$,               'RF_WAVELENGTH', dependent$)
+call init_attribute_name1 (rfcavity$, rf_clock_harmonic$,           'rf_clock_harminic', private$)
 call init_attribute_name1 (rfcavity$, phi0_multipass$,              'PHI0_MULTIPASS')
 call init_attribute_name1 (rfcavity$, phi0$,                        'PHI0')
 call init_attribute_name1 (rfcavity$, harmon$,                      'HARMON', quasi_free$)
@@ -1418,7 +1428,6 @@ call init_attribute_name1 (sbend$, grid_field$,                     'GRID_FIELD'
 call init_attribute_name1 (sbend$, taylor_field$,                   'TAYLOR_FIELD')
 call init_attribute_name1 (sbend$, ptc_canonical_coords$,           'PTC_CANONICAL_COORDS')
 call init_attribute_name1 (sbend$, exact_multipoles$,               'EXACT_MULTIPOLES')
-call init_attribute_name1 (sbend$, dpz_rad_damp_ave$,               'dpz_rad_damp_ave', private$)
 call init_attribute_name1 (sbend$, ptc_field_geometry$,             'PTC_FIELD_GEOMETRY')
 
 attrib_array(rbend$, :) = attrib_array(sbend$, :)
@@ -1478,8 +1487,6 @@ call init_attribute_name1 (ab_multipole$, y_pitch$,       null_name$, does_not_e
 call init_attribute_name1 (ab_multipole$, x_pitch_tot$,   null_name$, does_not_exist$, .true.)
 call init_attribute_name1 (ab_multipole$, y_pitch_tot$,   null_name$, does_not_exist$, .true.)
 
-call init_attribute_name1 (sad_mult$, num_steps$,              'NUM_STEPS', dependent$)
-call init_attribute_name1 (sad_mult$, ds_step$,                'DS_STEP', dependent$)
 call init_attribute_name1 (sad_mult$, eps_step_scale$,         'EPS_STEP_SCALE')
 call init_attribute_name1 (sad_mult$, fringe_at$,              'FRINGE_AT')    ! SAD: fringe
 call init_attribute_name1 (sad_mult$, fringe_type$,            'FRINGE_TYPE')  ! SAD: disfrin
@@ -1563,7 +1570,6 @@ call init_attribute_name1 (wiggler$, grid_field$,                   'GRID_FIELD'
 call init_attribute_name1 (wiggler$, taylor_field$,                 'TAYLOR_FIELD')
 call init_attribute_name1 (wiggler$, ptc_canonical_coords$,         'PTC_CANONICAL_COORDS')
 call init_attribute_name1 (wiggler$, osc_amplitude$,                'OSC_AMPLITUDE')
-call init_attribute_name1 (wiggler$, dpz_rad_damp_ave$,             'dpz_rad_damp_ave', private$)
 
 attrib_array(undulator$, :) = attrib_array(wiggler$, :)
 
@@ -1803,8 +1809,9 @@ case ('MATCH_END', 'MATCH_END_ORBIT', 'NO_END_MARKER', 'SYMPLECTIFY', 'IS_ON', '
       'BRANCHES_ARE_COHERENT', 'E_CENTER_RELATIVE_TO_REF', 'SCALE_FIELD_TO_ONE', &
       'MULTIPOLES_ON', 'LR_SELF_WAKE_ON', 'MATCH_END_INPUT', 'MATCH_END_ORBIT_INPUT', 'GEO', &
       'CONSTANT_REF_ENERGY', 'CREATE_JUMBO_SLAVE', 'PTC_CANONICAL_COORDS', 'LR_WAKE%SELF_WAKE_ON', &
-      'SR_WAKE%SCALE_WITH_LENGTH', 'IS_MOSAIC', 'INHERIT_FROM_FORK', &
-      'EXACT_MODEL', 'EXACT_MISALIGN', 'OLD_INTEGRATOR', 'PHASE_TROMBONE', 'PHASE_TROMBONE_INPUT')
+      'SR_WAKE%SCALE_WITH_LENGTH', 'IS_MOSAIC', 'INHERIT_FROM_FORK', 'MODE_FLIP', &
+      'EXACT_MODEL', 'EXACT_MISALIGN', 'OLD_INTEGRATOR', 'PHASE_TROMBONE', 'PHASE_TROMBONE_INPUT', &
+      'MODE_FLIP0', 'MODE_FLIP1', 'STATIC_LINEAR_MAP', 'USER_SETS_LENGTH')
   attrib_type = is_logical$
 
 case ('TAYLOR_ORDER', 'N_SLICE', 'DIRECTION', 'N_CELL', 'SAD_N_DIV_MAX', &
@@ -1820,7 +1827,7 @@ case ('APERTURE_AT', 'APERTURE_TYPE', 'COUPLER_AT', 'FIELD_CALC', 'EXACT_MULTIPO
       'TRACKING_METHOD', 'REF_ORBIT_FOLLOWS', 'REF_COORDS', 'MODE', 'CAVITY_TYPE', 'FIELD_TYPE', &
       'SPATIAL_DISTRIBUTION', 'ENERGY_DISTRIBUTION', 'VELOCITY_DISTRIBUTION', 'KEY', 'SLAVE_STATUS', &
       'LORD_STATUS', 'PHOTON_TYPE', 'ELE_ORIGIN', 'REF_ORIGIN', 'CSR_METHOD', 'SPACE_CHARGE_METHOD', &
-      'MULTIPASS_REF_ENERGY', 'REF_SPECIES', 'SPECIES_OUT', 'DISTRIBUTION', 'LATTICE_TYPE')
+      'MULTIPASS_REF_ENERGY', 'REF_SPECIES', 'SPECIES_OUT', 'DISTRIBUTION', 'LATTICE_TYPE', 'SPECIES_STRONG')
   attrib_type = is_switch$
 
 case ('TYPE', 'ALIAS', 'DESCRIP', 'SR_WAKE_FILE', 'LR_WAKE_FILE', 'LATTICE', 'PHYSICAL_SOURCE', &
@@ -1906,7 +1913,7 @@ case ('ABS_TOL_ADAPTIVE_TRACKING', 'ABS_TOL_TRACKING', 'ACCORDION_EDGE', 'APERTU
       'X_OFFSET_TOT', 'Y_OFFSET_TOT', 'X_POSITION', 'Y_POSITION', 'X_QUAD', 'Y_QUAD', &
       'X_REF', 'Y_REF', 'Z', 'Z0', 'Z1', 'Z_OFFSET', 'Z_OFFSET_TOT', 'Z_POSITION', 'Z_REF', 'MOSAIC_THICKNESS', &
       'C12_MAT0', 'C12_MAT1', 'X_GAIN_CALIB', 'Y_GAIN_CALIB', 'X_GAIN_ERR', 'Y_GAIN_ERR', 'RADIUS', &
-      'Z_APERTURE_WIDTH2', 'Z_APERTURE_CENTER', 'L_CATHODE_REGION', 'RF_WAVELENGTH', &
+      'Z_APERTURE_WIDTH2', 'Z_APERTURE_CENTER', 'RF_WAVELENGTH', &
       'X_DISPERSION_ERR', 'Y_DISPERSION_ERR', 'X_DISPERSION_CALIB', 'Y_DISPERSION_CALIB')
   attrib_units = 'm'
 
@@ -1942,13 +1949,15 @@ case ('C21_MAT0', 'C21_MAT1', 'CURVATURE_X0_Y2', 'CURVATURE_X1_Y1', 'CURVATURE_X
 case ('CURVATURE_X0_Y3', 'CURVATURE_X1_Y2', 'CURVATURE_X2_Y1', 'CURVATURE_X3_Y0', 'DKS_DS', 'CRAB_X3')
   attrib_units = '1/m^2'
 
-case ('CURVATURE_X0_Y4', 'CURVATURE_X1_Y3', 'CURVATURE_X2_Y2', 'CURVATURE_X3_Y1', 'CURVATURE_X4_Y0')
+case ('CURVATURE_X0_Y4', 'CURVATURE_X1_Y3', 'CURVATURE_X2_Y2', 'CURVATURE_X3_Y1', 'CURVATURE_X4_Y0', 'CRAB_X4')
   attrib_units = '1/m^3'
 
-case ('CURVATURE_X0_Y5', 'CURVATURE_X1_Y4', 'CURVATURE_X2_Y3', 'CURVATURE_X3_Y2', 'CURVATURE_X4_Y1', 'CURVATURE_X5_Y0')
+case ('CURVATURE_X0_Y5', 'CURVATURE_X1_Y4', 'CURVATURE_X2_Y3', 'CURVATURE_X3_Y2', 'CURVATURE_X4_Y1', &
+      'CURVATURE_X5_Y0', 'CRAB_X5')
   attrib_units = '1/m^4'
 
-case ('CURVATURE_X0_Y6', 'CURVATURE_X1_Y5', 'CURVATURE_X2_Y4', 'CURVATURE_X3_Y3', 'CURVATURE_X4_Y2', 'CURVATURE_X5_Y1', 'CURVATURE_X6_Y0')
+case ('CURVATURE_X0_Y6', 'CURVATURE_X1_Y5', 'CURVATURE_X2_Y4', 'CURVATURE_X3_Y3', 'CURVATURE_X4_Y2', &
+      'CURVATURE_X5_Y1', 'CURVATURE_X6_Y0')
   attrib_units = '1/m^5'
 
 case ('DBRAGG_ANGLE_DE')
@@ -1956,7 +1965,7 @@ case ('DBRAGG_ANGLE_DE')
 
 case ('DELTA_E', 'ENERGY', 'E_CENTER', 'E2_CENTER', 'E_LOSS', 'E_PHOTON', 'E_TOT', 'E_TOT_OFFSET', 'E_TOT_START', &
       'P0C', 'P0C_START', 'PC', 'P0C_SET', 'E_TOT_SET', 'AUTOSCALE_AMP_ABS_TOL', 'DELTA_E_REF', 'SIG_E', 'SIG_E2', &
-      'PC_OUT_MIN', 'PC_OUT_MAX')
+      'PC_OUT_MIN', 'PC_OUT_MAX', 'E_TOT_STRONG')
   attrib_units = 'eV'
 
 case ('DELTA_REF_TIME', 'REF_TIME', 'T', 'T_OFFSET', 'DELTA_TIME', 'DT_MAX')
@@ -1971,11 +1980,10 @@ case ('E_FIELD', 'E_FIELD_X', 'E_FIELD_Y')
 case ('VOLTAGE', 'VOLTAGE_ERR')
   attrib_units = 'Volt'
 
-
 case ('GRADIENT', 'GRADIENT_ERR')
   attrib_units = 'eV/m'
 
-case ('LR_FREQ_SPREAD', 'RF_FREQUENCY')
+case ('LR_FREQ_SPREAD', 'RF_FREQUENCY', 'REPETITION_FREQUENCY')
   attrib_units = 'Hz'
 
 case ('BS_FIELD', 'B_FIELD', 'DB_FIELD', 'B_MAX')
@@ -2072,6 +2080,8 @@ integer ib, ie
 attrib_value = ''
 
 select case (attrib_name)
+case ('NAME')
+  attrib_value = ele%name
 case ('TYPE')
   attrib_value = ele%type
 case ('ALIAS')
@@ -2101,8 +2111,6 @@ case ('TO_ELEMENT')
   endif
 case ('ORIGIN_ELE')
   if (attribute_index(ele, attrib_name) /= 0) attrib_value = ele%component_name
-case ('NAME')
-  attrib_value = ele%name
 end select
 
 
@@ -2315,7 +2323,7 @@ case ('PHOTON_TYPE')
   call get_this_attrib_name (attrib_val_name, ix_attrib_val, photon_type_name, lbound(photon_type_name, 1))
   if (present(is_default)) is_default = (ix_attrib_val == incoherent$)
 
-case ('PARTICLE', 'REF_SPECIES')
+case ('PARTICLE', 'REF_SPECIES', 'SPECIES_STRONG')
   attrib_val_name = species_name(ix_attrib_val)
   if (present(is_default)) then
     if (ele%key == photon_fork$) then
@@ -2653,7 +2661,7 @@ if (key == 0) then
 
   do i = 1, n_key$
     select case (i)
-    case (def_parameter$, def_mad_beam$, def_bmad_com$, def_particle_start$, def_line$); cycle
+    case (def_parameter$, def_mad_beam$, def_bmad_com$, def_particle_start$, def_line$, def_space_charge_com$); cycle
     end select
     old_attrib = attribute_name(i, ix_attrib+custom_attribute0$)
     if (old_attrib /= null_name$) cycle
@@ -2741,7 +2749,7 @@ do ic = 1, custom_attribute_num$
 
   do is = 1, n_key$
     select case (is)
-    case (def_mad_beam$, def_bmad_com$, def_particle_start$, def_line$); cycle
+    case (def_mad_beam$, def_bmad_com$, def_space_charge_com$, def_particle_start$, def_line$); cycle
     end select
     if (attribute_name(is, icc) == null_name$) cycle
     if (attribute_name(is, icc) == common_name) cycle

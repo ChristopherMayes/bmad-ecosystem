@@ -34,6 +34,7 @@ module precision_constants
   ! double precision
   integer,parameter::sp=kind(1.e0)
   integer,parameter::dp=selected_real_kind(2*precision(1.e0))
+
   ! quadrupole precision
   !  integer,parameter::sp=selected_real_kind(2*precision(1.e0))
   !  integer,parameter::dp=selected_real_kind(4*precision(1.e0))
@@ -163,6 +164,7 @@ module precision_constants
   ! end of symplectic integrator coefficients
   !Initialized numbers
   real(dp)::eps=1e-38_dp
+  real(dp)::eps_da=1e-40_dp
   real(dp)::EPSdol=1e-37_dp
   LOGICAL(lp),target  :: s_aperture_CHECK=.TRUE.
   LOGICAL(lp),TARGET  :: ROOT_CHECK=.TRUE.
@@ -195,8 +197,8 @@ module precision_constants
   character*255 :: file_block_name="noprint"
   real(dp) :: lmax=1.e38_dp
   logical(lp) :: printdainfo=my_false
-  integer   lielib_print(16)
-  DATA lielib_print /0,0,0,1,0,0,0,0,0,0,0,1,0,1,1,0/
+  integer   lielib_print(17)
+  DATA lielib_print /0,0,0,1,0,0,0,0,0,0,0,1,0,1,1,0,0/
   integer :: SECTOR_NMUL_MAX=22
   INTEGER, target :: SECTOR_NMUL = 11
  
@@ -239,7 +241,7 @@ module precision_constants
   !  lielib_print(14)=1  print info about recutting
   !  lielib_print(15)=1  print info during flat file reading and printing
   !  lielib_print(16)=1  print eigenvalues in c_linear_a 
-
+  !  lielib_print(17)=1  print magnets with excessive cutting
   INTERFACE read
      MODULE PROCEDURE read_d
      MODULE PROCEDURE read_int

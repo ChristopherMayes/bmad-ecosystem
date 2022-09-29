@@ -1,5 +1,0 @@
-# The fortran modules provided by this target.
-provides
- special_collimate_lattice_mod.mod
- touschek_background_mod.mod
- touschek_background_mpi_mod.mod

@@ -26,7 +26,7 @@ module ptc_multiparticle
 private MISALIGN_FIBRE_EQUAL
 
 
- LOGICAL :: no_mis=.TRUE. 
+ LOGICAL :: do_mis=.true.  
   !  LOGICAL :: OLD_MOD=.TRUE.
 
   logical(lp),private, parameter :: dobb=.true.
@@ -150,7 +150,7 @@ CONTAINS
     TYPE(ELEMENT),POINTER :: EL
     TYPE(ELEMENTP),POINTER :: ELp
     REAL(DP) v,dv
-    integer(2) n
+    integer n
 
     EL=>C%PARENT_FIBRE%MAG
     ELP=>C%PARENT_FIBRE%MAGP
@@ -403,15 +403,16 @@ CONTAINS
     TYPE(INTERNAL_STATE) K
     real(dp) xt
     real(dp),pointer :: beta0
-    integer(2) n
+    integer  n
     if(xs%nac==0) return
     do n=1,xs%nac
       if(k%time) then
          beta0=>C%PARENT_FIBRE%beta0
-         xs%ac%t=c%DS_AC/beta0+xs%ac(n)%t
+!         xs%ac%t=c%DS_AC/beta0+xs%ac(n)%t   bug 2020.9.2
          xt = cos(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(1) + sin(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(2)
          XS%AC(n)%X(2) = -sin(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(1) + cos(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(2)
          XS%AC(n)%X(1) = xt
+         xs%ac(n)%t=c%DS_AC/beta0+xs%ac(n)%t 
       else
          xt = cos(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(1) + sin(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(2)
          XS%AC(n)%X(2) = -sin(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(1) + cos(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(2)
@@ -428,22 +429,23 @@ CONTAINS
     TYPE(INTERNAL_STATE) K
     TYPE(REAL_8) xt
     real(dp),pointer :: beta0
-    integer(2) n
+    integer  n
     if(xs%nac==0) return
     CALL ALLOC(XT)
     do n=1,xs%nac
-        if(k%time) then
-           beta0=>C%PARENT_FIBRE%beta0
-           xs%ac(n)%t=c%DS_AC/beta0+xs%ac(n)%t
-           xt = cos(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(1) + sin(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(2)
-           XS%AC(n)%X(2) = -sin(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(1) + cos(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(2)
-           XS%AC(n)%X(1) = xt
-        else
-           xt = cos(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(1) + sin(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(2)
-           XS%AC(n)%X(2) = -sin(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(1) + cos(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(2)
-           XS%AC(n)%X(1) = xt
-           xs%ac(n)%t=c%DS_AC+xs%ac(n)%t
-        endif
+      if(k%time) then
+         beta0=>C%PARENT_FIBRE%beta0
+!         xs%ac%t=c%DS_AC/beta0+xs%ac(n)%t   bug 2020.9.2
+         xt = cos(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(1) + sin(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(2)
+         XS%AC(n)%X(2) = -sin(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(1) + cos(XS%AC(n)%om * c%DS_AC/beta0) *XS%AC(n)%X(2)
+         XS%AC(n)%X(1) = xt
+         xs%ac(n)%t=c%DS_AC/beta0+xs%ac(n)%t 
+      else
+         xt = cos(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(1) + sin(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(2)
+         XS%AC(n)%X(2) = -sin(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(1) + cos(XS%AC(n)%om * c%DS_AC) *XS%AC(n)%X(2)
+         XS%AC(n)%X(1) = xt
+         xs%ac(n)%t=c%DS_AC+xs%ac(n)%t
+      endif
     enddo
     CALL KILL(XT)
 
@@ -1056,7 +1058,7 @@ endif
 
     !dt1=ttime1-ttime0+dt1
 
-    if(k%stochastic) call kick_stochastic_before(t,p)
+!    if(k%stochastic) call kick_stochastic_before(t,p)
 
     SELECT CASE(T%CAS)
     CASE(CASEP1)
@@ -1268,7 +1270,7 @@ endif
     END SELECT
     ! CASE(CASE100)  ! FAKE BEAM BEAM CAKE AT SOME S
 
-     if(k%stochastic) call kick_stochastic_after(t,p)
+ !    if(k%stochastic) call kick_stochastic_after(t,p)
 
     !    T%PARENT_FIBRE%MAG=DEFAULT
     if(wherelost==2.and.(.not.check_stable)) then
@@ -1510,8 +1512,10 @@ endif
           CALL TRACK_SLICE(EL%CAV21,p%x,k,t%POS_IN_FIBRE-2)
          global_e= p%x(5)*el%p%p0c
        case(KINDWIGGLER)
-          CALL TRACK_SLICE(EL%WI,p%x,k,t%POS_IN_FIBRE-2)
-         global_e= p%x(5)*el%p%p0c
+       !   CALL TRACK_SLICE(EL%WI,p%x,k,t%POS_IN_FIBRE-2)
+           CALL TRACK_SLICE_sagan(p,k,t,t%POS_IN_FIBRE-2)
+       global_e= p%x(5)*el%p%p0c
+
        case(KIND22)
           CALL TRACK_SLICE(EL%he22,p%x,k,t%POS_IN_FIBRE-2)
          global_e= p%x(5)*el%p%p0c
@@ -1843,6 +1847,7 @@ endif
 
     SELECT CASE(T%CAS)
     CASE(CASEP1)
+
        CALL TRACK_FIBRE_FRONT(T%PARENT_FIBRE,X,K)
        if(associated(T%PARENT_FIBRE%MAGP%p%aperture)) then
           TA=T%PARENT_FIBRE%MAGP%p%dir*T%PARENT_FIBRE%MAGP%p%aperture%pos==-1 .OR.  &
@@ -2175,7 +2180,7 @@ endif
        L%END%pos=k;k=k+1;
        L%END%PARENT_NODE_LAYOUT=>L
        L%END%PARENT_FIBRE=>P
-
+       if(p%mag%kind==kind4) L%END%DS_AC=p%mag%h1
 doit=p%mag%kind==kind16.and.p%mag%p%b0/=0.0_dp
    if(doit) then
     j0=0
@@ -2232,6 +2237,7 @@ doit=p%mag%kind==kind16.and.p%mag%p%b0/=0.0_dp
        L%END%pos_in_fibre=P%MAG%P%NST+3
        L%END%pos=k;k=k+1;
        L%END%PARENT_FIBRE=>P
+       if(p%mag%kind==kind4) L%END%DS_AC=p%mag%h2   ! 2022.8.24
 
        CALL APPEND_EMPTY_THIN( L )
        L%END%TEAPOT_LIKE=TEAPOT_LIKE
@@ -3105,7 +3111,7 @@ ang=ang/2
 p%mag%p%f%o=0.5_dp*(p%mag%p%f%a+p%mag%p%f%b)
 CALL GEO_ROT(p%mag%p%f%mid,ANG,1,basis=p%mag%p%f%ent)
 
-if(.not.p%mag%mis) then
+if(.not.p%mag%mis.or.(.not.do_mis)) then
 p%magp%p%f%mid=p%mag%p%f%mid
 p%magp%p%f%o=p%mag%p%f%o
 endif
@@ -3172,7 +3178,7 @@ pix1=0.0_dp
 
 
 
-    IF(f%MAG%MIS) THEN
+    IF(f%MAG%MIS.and.do_mis) THEN
  
         call MIS_survey(a0,exi0,f,a0,exi0,ENTERING)
  
@@ -3182,14 +3188,14 @@ pix1=0.0_dp
  if(f%dir==1) then
   f%mag%p%f%ent=exi0
   f%mag%p%f%a=a0
-  if(.not.f%mag%mis) then
+  if(.not.f%mag%mis.or.(.not.do_mis)) then
   f%magp%p%f%ent=exi0
   f%magp%p%f%a=a0
   endif
 else
   f%mag%p%f%exi=exi0
   f%mag%p%f%b=a0
-  if(.not.f%mag%mis) then
+  if(.not.f%mag%mis.or.(.not.do_mis)) then
   f%magp%p%f%exi=exi0
   f%magp%p%f%b=a0
  endif
@@ -3234,23 +3240,24 @@ f=>t%parent_fibre
  if(f%dir==-1) then
   f%mag%p%f%ent=ent0
   f%mag%p%f%a=a0
-  if(.not. f%mag%mis) then
+  if(.not. f%mag%mis.or.(.not.do_mis)) then
   f%magp%p%f%ent=ent0
   f%magp%p%f%a=a0
   endif
 else
   f%mag%p%f%exi=ent0
   f%mag%p%f%b=a0
-  if(.not. f%mag%mis) then
+  if(.not. f%mag%mis.or.(.not.do_mis)) then
   f%magp%p%f%exi=ent0
   f%magp%p%f%b=a0
  endif
 endif
 
- 
-        call MIS_survey(a0,exi0,f,a0,exi0,.not.ENTERING)
- 
+     IF(f%MAG%MIS.and.do_mis) THEN    ! added with do_mis addition
 
+      call MIS_survey(a0,exi0,f,a0,exi0,.not.ENTERING)
+ 
+    endif
 
 pix1=0.0_dp
 !if(f%dir==1) then
@@ -3836,10 +3843,10 @@ SUBROUTINE MOVE_FRAMES(S2,s1,OMEGA,BASIS)
     integer i  !,k
     TYPE (MAGNET_FRAME), pointer :: F0,F,fmag,fbasis
 
-       CALL ALLOC(F)
-       CALL ALLOC(F0)
-       CALL ALLOC(fmag)
-       CALL ALLOC(fbasis)
+       CALL ALLOC_f(F)
+       CALL ALLOC_f(F0)
+       CALL ALLOC_f(fmag)
+       CALL ALLOC_f(fbasis)
  
        DO I=1,3
           D(I)=S1(I);   !D(I)=S1(I);
@@ -3925,10 +3932,10 @@ SUBROUTINE MOVE_FRAMES(S2,s1,OMEGA,BASIS)
        s2%mag%mis=.true.
        s2%magp%mis=.true.
 
-       CALL kill(F)
-       CALL kill(F0)
-       CALL kill(fmag)
-       CALL kill(fbasis)
+       CALL kill_f(F)
+       CALL kill_f(F0)
+       CALL kill_f(fmag)
+       CALL kill_f(fbasis)
 
 
     END SUBROUTINE MOVE_FRAMES
@@ -4179,7 +4186,7 @@ SUBROUTINE MOVE_FRAMES(S2,s1,OMEGA,BASIS)
 
     IF(FOUND) THEN   !!! THE ORIGINAL GIRDER FRAME IS STILL GIRDER_FRAME%ENT AND GIRDER_FRAME%A
        !                    FINAL FRAME AFTER MISALIGNMENTS MUST BE COMPUTED
-       call alloc(f)
+       call alloc_f(f)
        f%a=b
        f%ent=exi
        CALL ROTATE_FRAME(F,OMEGAT,S1(4:6),1,BASIS=BASIST)
@@ -4188,7 +4195,7 @@ SUBROUTINE MOVE_FRAMES(S2,s1,OMEGA,BASIS)
        F%A=F%A+T_GLOBAL
        CAF%GIRDER_FRAME%EXI=F%ent
        CAF%GIRDER_FRAME%B=F%A
-       call kill(f)
+       call kill_f(f)
     ENDIF
 
     if(global_verbose)     write(6,*) k, " magnet misaligned "
@@ -4397,4 +4404,5 @@ endif
 
 
 end subroutine convert_mis_to_patch
+
 end module ptc_multiparticle

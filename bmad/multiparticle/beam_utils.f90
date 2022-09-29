@@ -6,7 +6,7 @@ use coord_mod
 
 private init_random_distribution, init_grid_distribution
 private init_ellipse_distribution, init_kv_distribution
-private combine_bunch_distributions, calc_this_emit, bunch_init_end_calc
+private combine_bunch_distributions, bunch_init_end_calc
 
 contains
 
@@ -14,20 +14,23 @@ contains
 !--------------------------------------------------------------------------
 !--------------------------------------------------------------------------
 !+
-! Subroutine track1_bunch_hom (bunch, ele, direction)
+! Subroutine track1_bunch_hom (bunch, ele, direction, bunch_track)
 !
 ! Subroutine to track a bunch of particles through an element including wakefields.
 !
 ! Input:
-!   bunch       -- bunch_struct: Starting bunch position.
-!   ele         -- Ele_struct: The element to track through.
-!   direction   -- integer, optional: +1 (default) -> Track forward, -1 -> Track backwards.
+!   bunch         -- bunch_struct: Starting bunch position.
+!   ele           -- Ele_struct: The element to track through.
+!   direction     -- integer, optional: +1 (default) -> Track forward, -1 -> Track backwards.
+!   bunch_track   -- bunch_track_struct, optional: Existing tracks. If bunch_track%n_pt = -1 then
+!                        Overwrite any existing track.
 !
 ! Output:
 !   bunch       -- Bunch_struct: Ending bunch position.
+!   bunch_track -- bunch_track_struct, optional: Track information appended to track.
 !-
 
-subroutine track1_bunch_hom (bunch, ele, direction)
+subroutine track1_bunch_hom (bunch, ele, direction, bunch_track)
 
 use ptc_interface_mod, only: ele_to_taylor
 
@@ -35,6 +38,7 @@ implicit none
 
 type (bunch_struct) bunch
 type (ele_struct) ele, half_ele
+type (bunch_track_struct), optional :: bunch_track
 type (ele_struct), pointer :: wake_ele
 
 type (branch_struct), pointer :: branch
@@ -52,7 +56,7 @@ character(*), parameter :: r_name = 'track1_bunch_hom'
 branch => pointer_to_branch(ele)
 bunch%particle%direction = integer_option(1, direction)
 if (ele%tracking_method == taylor$ .and. .not. associated(ele%taylor(1)%term)) call ele_to_taylor(ele, branch%param)
-thread_safe = (ele%tracking_method /= symp_lie_ptc$)
+thread_safe = (ele%tracking_method /= symp_lie_ptc$ .and. global_com%mp_threading_is_safe)
 
 !------------------------------------------------
 ! Without wakefields just track through.
@@ -399,8 +403,21 @@ logical ran_gauss_here, err
 
 if (present(err_flag)) err_flag = .true.
 
-if (beam_init%sig_e /= 0 .and. beam_init%sig_pz == 0) beam_init%sig_pz = beam_init%sig_e
-if (beam_init%sig_e_jitter /= 0 .and. beam_init%sig_pz_jitter == 0) beam_init%sig_pz = beam_init%sig_e_jitter
+if (beam_init%sig_e /= 0) then
+  call out_io (s_error$, r_name, '===========================================================', &
+                                 '==== BEAM_INIT%SIG_E IS DEPRECATED! PLEASE DO NOT USE! ====', &
+                                 '==== USE BEAM_INIT%SIG_PZ INSTEAD!                     ====', &
+                                 '===========================================================')
+  if (beam_init%sig_pz == 0) beam_init%sig_pz = beam_init%sig_e
+endif
+
+if (beam_init%sig_e_jitter /= 0) then
+  call out_io (s_error$, r_name, '==================================================================', &
+                                 '==== BEAM_INIT%SIG_E_JITTER IS DEPRECATED! PLEASE DO NOT USE! ====', &
+                                 '==== USE BEAM_INIT%SIG_PZ_JITTER INSTEAD!                     ====', &
+                                 '==================================================================')
+  if (beam_init%sig_pz_jitter == 0) beam_init%sig_pz_jitter = beam_init%sig_e_jitter
+endif
 
 ! Read from file?
 
@@ -523,7 +540,7 @@ else
   call transfer_ele (ele, twiss_ele, .true.)
 endif
 
-call calc_this_emit (b_init, twiss_ele, species)
+call calc_emit_from_beam_init (b_init, twiss_ele, species)
 
 covar = b_init%dPz_dz * b_init%sig_z**2
 twiss_ele%z%emit = sqrt((b_init%sig_z*b_init%sig_pz)**2 - covar**2)
@@ -608,12 +625,6 @@ do i = 1, size(bunch%particle)
 
 enddo
 
-! particle spin
-
-call init_spin_distribution (b_init, bunch)
-
-bunch%particle%species = species
-
 ! Photons:
 ! For now just give one half e_field_x = 1 and one half e_field_y = 1
 
@@ -625,7 +636,9 @@ endif
 
 ! End stuff
 
+bunch%particle%species = species
 call bunch_init_end_calc(bunch, b_init, ix_bunch, ele)
+call init_spin_distribution (b_init, bunch, ele)
 
 ! Reset the random number generator parameters.
 
@@ -634,68 +647,6 @@ call ran_gauss_converter (old_converter, old_cutoff)
 if (present(err_flag)) err_flag = .false.
   
 end subroutine init_bunch_distribution
-
-!--------------------------------------------------------------------------
-!--------------------------------------------------------------------------
-!--------------------------------------------------------------------------
-!+
-! Subroutine calc_this_emit (beam_init, ele, species)
-!
-! Private routine to calculate the emittances
-!
-! Input:
-!   beam_init -- beam_init_struct: 
-!   ele       -- ele_struct:
-!   param     -- lat_param_struct:
-!
-! Ouput:
-!   ele%a  -- Real(rp): a emittance
-!   ele%b  -- Real(rp): b emittance
-!-
-
-subroutine calc_this_emit (beam_init, ele, species)
-
-implicit none
-
-type (beam_init_struct) beam_init
-type (ele_struct) ele
-
-real(rp) ran_g(2)
-integer species
-
-character(16) :: r_name = 'calc_this_emit'
-
-! Check
-
-if ((beam_init%a_norm_emit /= 0 .and. beam_init%a_emit /= 0) .or. &
-    (beam_init%b_norm_emit /= 0 .and. beam_init%b_emit /= 0)) then
-  call out_io (s_fatal$, r_name, 'SETTING BOTH NORM_EMIT AND EMIT IN BEAM_INIT STRUCTURE IS NOT ALLOWED.')
-  if (global_com%exit_on_error) call err_exit
-endif
-
-!
-
-if (beam_init%a_norm_emit /= 0) then
-  ele%a%emit = beam_init%a_norm_emit * mass_of(species) / ele%value(e_tot$)
-else
-  ele%a%emit = beam_init%a_emit
-endif
-
-if (beam_init%b_norm_emit /= 0) then
-  ele%b%emit = beam_init%b_norm_emit * mass_of(species) / ele%value(e_tot$)
-else
-  ele%b%emit = beam_init%b_emit 
-endif
-
-! Add jitter if needed
-
-if (any(beam_init%emit_jitter /= 0)) then
-  call ran_gauss(ran_g) ! ran(3:4) for z and e jitter used below
-  ele%a%emit = ele%a%emit * (1 + beam_init%emit_jitter(1) * ran_g(1))
-  ele%b%emit = ele%b%emit * (1 + beam_init%emit_jitter(2) * ran_g(2))
-endif
-
-end subroutine calc_this_emit 
 
 !--------------------------------------------------------------------------
 !--------------------------------------------------------------------------
@@ -822,7 +773,7 @@ endif
 
 ! Compute sigmas
 
-call calc_this_emit(beam_init, ele, species)
+call calc_emit_from_beam_init(beam_init, ele, species)
 
 dpz_dz = beam_init%dpz_dz
   
@@ -1288,31 +1239,57 @@ end subroutine combine_bunch_distributions
 !--------------------------------------------------------------------------
 !--------------------------------------------------------------------------
 !+
-! Subroutine init_spin_distribution (beam_init, bunch)
+! Subroutine init_spin_distribution (beam_init, bunch, ele)
 !
 ! Initializes a spin distribution according to beam_init%spin.
 !
 ! Input:
 !   beam_init -- beam_init_struct: Initialization parameters 
 !     %spin(3)  -- (x, y, z) spin coordinates
+!   ele 
 !
 ! Output:
 !  bunch    -- bunch_struct: Bunch of particles.
 !   %particle(:)%spin
 !-
 
-subroutine init_spin_distribution (beam_init, bunch)
+subroutine init_spin_distribution (beam_init, bunch, ele)
 
 implicit none
 
 type (beam_init_struct) beam_init
 type (bunch_struct) bunch
+type (ele_struct) ele
+real(rp) spin(3)
 integer i
+character(*), parameter :: r_name = 'init_spin_distribution'
 
-!
+! Note: %use_particle_start_for_center is old deprecated name for %use_particle_start.
+
+if (beam_init%use_particle_start_for_center) then
+  call out_io (s_error$, r_name, '===================================================================================', &
+                                 '==== BEAM_INIT%USE_PARTICLE_START_FOR_CENTER IS DEPRECATED! PLEASE DO NOT USE! ====', &
+                                 '==== USE BEAM_INIT%USE_PARTICLE_START INSTEAD!                                 ====', &
+                                 '===================================================================================')
+  beam_init%use_particle_start = beam_init%use_particle_start_for_center
+endif
+
+if (beam_init%use_particle_start) then
+  if (.not. associated (ele%branch)) then
+    call out_io (s_error$, r_name, 'NO ASSOCIATED LATTICE WITH BEAM_INIT%USE_PARTICLE_START = T.')
+    return
+  endif
+  if (.not. associated (ele%branch%lat)) then
+    call out_io (s_error$, r_name, 'NO ASSOCIATED LATTICE WITH BEAM_INIT%USE_PARTICLE_START = T.')
+    return
+  endif
+  spin = spin + ele%branch%lat%particle_start%spin
+else
+  spin = beam_init%spin
+endif
 
 do i = 1, size(bunch%particle)
-  bunch%particle(i)%spin = beam_init%spin
+  bunch%particle(i)%spin = spin
 enddo
 
 end subroutine init_spin_distribution
@@ -1407,15 +1384,18 @@ end subroutine calc_bunch_params_slice
 ! Output     
 !   bunch_params -- bunch_params_struct:
 !   error        -- Logical: Set True if there is an error.
+!   n_mat(6,6)      -- real(rp), optional: N matrix defined in Wolski Eq 44 and used to convert 
+!                       from action-angle coords to lab coords (Wolski Eq 51.).
 !-
 
-subroutine calc_bunch_params (bunch, bunch_params, error, print_err)
+subroutine calc_bunch_params (bunch, bunch_params, error, print_err, n_mat)
 
 implicit none
 
-type (bunch_struct), intent(in) :: bunch
+type (bunch_struct) :: bunch
 type (bunch_params_struct) bunch_params
 
+real(rp), optional :: n_mat(6,6)
 real(rp) eta, etap, gamma
 real(rp) :: sigma(6,6) = 0.0
 real(rp) :: charge_live, avg_energy
@@ -1434,11 +1414,6 @@ bunch_params = bunch_params_struct()
 bunch_params%twiss_valid = .false.  ! Assume the worst
 error = .true.
 
-if (bunch%charge_tot == 0) then
-  if (logic_option(.true., print_err)) call out_io (s_error$, r_name, 'CHARGE OF PARTICLES IN BUNCH NOT SET. CALCULATION CANNOT BE DONE.')
-  return
-endif
-
 call re_allocate (charge, size(bunch%particle))
 
 species = bunch%particle(1)%species
@@ -1449,10 +1424,17 @@ bunch_params%n_particle_tot = size(bunch%particle)
 bunch_params%n_particle_live = count(bunch%particle%state == alive$)
 bunch_params%charge_live = sum(bunch%particle%charge, mask = (bunch%particle%state == alive$))
 bunch_params%charge_tot = sum(bunch%particle%charge)
+bunch%charge_tot = bunch_params%charge_tot
+bunch%charge_live = bunch_params%charge_live
 
-bunch_params%centroid          = bunch%particle(1)
+bunch_params%centroid          = bunch%particle(1)  ! Note: centroid%vec gets set by calc_bunch_sigma_matrix
 bunch_params%centroid%field(1) = sum(bunch%particle%field(1), mask = (bunch%particle%state == alive$))
 bunch_params%centroid%field(2) = sum(bunch%particle%field(2), mask = (bunch%particle%state == alive$))
+
+if (bunch%charge_tot == 0) then
+  if (logic_option(.true., print_err)) call out_io (s_error$, r_name, 'CHARGE OF PARTICLES IN BUNCH NOT SET. CALCULATION CANNOT BE DONE.')
+  return
+endif
 
 if (species == photon$) then
   charge = bunch%particle%field(1)**2 + bunch%particle%field(2)**2
@@ -1461,24 +1443,30 @@ else
 endif
 
 charge_live = sum(charge, mask = (bunch%particle%state == alive$))
+bunch_params%centroid%charge     = charge_live
 
 !
 
-if (charge_live == 0) then
+if (bunch_params%n_particle_live == 0) then
   error = .false.
   return
-else
-  ! Get s-position from first live particle
-  do i = 1, size(bunch%particle)
-    if (bunch%particle(i)%state /= alive$) cycle
-    bunch_params%s = bunch%particle(i)%s
-    exit
-  enddo
 endif
 
-bunch_params%centroid%charge     = charge_live
-bunch_params%centroid%s          = sum(bunch%particle%s * charge, mask = (bunch%particle%state == alive$))
-bunch_params%centroid%t          = sum(bunch%particle%t * charge, mask = (bunch%particle%state == alive$))
+if (charge_live == 0) then
+  charge = 1
+  charge_live = bunch_params%n_particle_live
+endif
+
+! Get s-position from first live particle
+do i = 1, size(bunch%particle)
+  if (bunch%particle(i)%state /= alive$) cycle
+  bunch_params%s = bunch%particle(i)%s
+  exit
+enddo
+
+bunch_params%centroid%s = sum(bunch%particle%s * charge, mask = (bunch%particle%state == alive$)) / charge_live
+bunch_params%centroid%t = sum(bunch%particle%t * charge, mask = (bunch%particle%state == alive$)) / charge_live
+
 if (species /= photon$) then
   call convert_pc_to ((1 + bunch_params%centroid%vec(6)) * bunch_params%centroid%p0c, &
                                                                  species, beta = bunch_params%centroid%beta)
@@ -1499,7 +1487,7 @@ if (bunch_params%n_particle_live < 12) return
 ! Sigma matrix calc
 
 call calc_bunch_sigma_matrix (bunch%particle, charge, bunch_params)
-call calc_emittances_and_twiss_from_sigma_matrix (bunch_params%sigma, gamma, bunch_params, error, print_err)
+call calc_emittances_and_twiss_from_sigma_matrix (bunch_params%sigma, gamma, bunch_params, error, print_err, n_mat)
 
 end subroutine calc_bunch_params
 
@@ -1507,29 +1495,33 @@ end subroutine calc_bunch_params
 !----------------------------------------------------------------------
 !----------------------------------------------------------------------
 !+
-! Subroutine calc_emittances_and_twiss_from_sigma_matrix(sigma_mat, gamma, bunch_params, error, print_err)
+! Subroutine calc_emittances_and_twiss_from_sigma_matrix(sigma_mat, gamma, bunch_params, error, print_err, n_mat)
 !
 ! Routine to calc emittances and Twiss function from a beam sigma matrix.
+! See: Andy Wolski "Alternative approach to general coupled linear optics".
 !
 ! Input:
 !   sigma_mat(6,6)  -- real(rp): Sigma matrix.
 !   gamma           -- real(rp): Relativistic gamma factor (Energy/mass). 
 !                        Just used to calculate the normalized emittances.
-!   print_err       -- Logical, optional: If present and False then suppress 
+!   print_err       -- logical, optional: If present and False then suppress 
 !                        "no eigen-system found" messages.
 !
 ! Output:
 !   bunch_params    -- bunch_params_struct: Holds Twiss and emittance info.
-!   error           -- Logical: Set True if there is an error. Can happen if the emittance of a mode is zero.
+!   error           -- logical: Set True if there is an error. Can happen if the emittance of a mode is zero.
+!   n_mat(6,6)      -- real(rp), optional: N matrix defined in Wolski Eq 44 and used to convert 
+!                       from action-angle coords to lab coords (Wolski Eq 51.).
 !-
 
-subroutine calc_emittances_and_twiss_from_sigma_matrix (sigma_mat, gamma, bunch_params, error, print_err)
+subroutine calc_emittances_and_twiss_from_sigma_matrix (sigma_mat, gamma, bunch_params, error, print_err, n_mat)
 
 implicit none
 
 type (bunch_params_struct) bunch_params
 
 real(rp) sigma_mat(6,6), sigma_s(6,6), avg_energy, n_real(6,6), gamma
+real(rp), optional :: n_mat(6,6)
 
 complex(rp) :: eigen_val(6) = 0.0, eigen_vec(6,6)
 complex(rp) :: n_cmplx(6,6), q(6,6)
@@ -1557,7 +1549,6 @@ call projected_twiss_calc ('Y', bunch_params%y, sigma_mat(3,3), sigma_mat(4,4), 
 call projected_twiss_calc ('Z', bunch_params%z, sigma_mat(5,5), sigma_mat(6,6), sigma_mat(5,6), 0.0_rp, 0.0_rp)
      
 ! Normal-Mode Parameters.
-! See: Andy Wolski "Alternative approach to general coupled linear optics".
 ! find eigensystem of sigma.S 
 
 sigma_s(:,1) = -sigma_mat(:,2)
@@ -1567,31 +1558,32 @@ sigma_s(:,4) =  sigma_mat(:,3)
 sigma_s(:,5) = -sigma_mat(:,6)
 sigma_s(:,6) =  sigma_mat(:,5)
 
-call mat_eigen (sigma_s, eigen_val, eigen_vec, err, print_err)
+dim = 6
+if (abs(sigma_mat(6,6)) < 1e-20_rp * maxval(abs(sigma_mat))) dim = 4  ! No energy oscillations.
+
+call mat_eigen (sigma_s(1:dim,1:dim), eigen_val(1:dim), eigen_vec(1:dim,1:dim), err, print_err)
 if (err) return
+
+call normalize_e (eigen_vec(1:dim,1:dim), dim, good, err)
+if (err) then
+  if (logic_option(.true., print_err)) call out_io (s_warn$, r_name, 'Cannot normalize some eigenvectors.', &
+                         'Note: This can happen if the emittance of a normal mode is very small or zero.', &
+                         'This will throw off the emittance and other calculations.')
+endif
 
 ! The eigen-values of Sigma.S are the normal-mode emittances (Wolski Eq. 32)
 
 bunch_params%a%emit = aimag(eigen_val(1))
 bunch_params%b%emit = aimag(eigen_val(3))
-bunch_params%c%emit = aimag(eigen_val(5))
+if (dim == 6) bunch_params%c%emit = aimag(eigen_val(5))
 
 bunch_params%a%norm_emit = bunch_params%a%emit * gamma
 bunch_params%b%norm_emit = bunch_params%b%emit * gamma
-bunch_params%c%norm_emit = bunch_params%c%emit * gamma
+if (dim == 6) bunch_params%c%norm_emit = bunch_params%c%emit * gamma
 
 ! Now find normal-mode sigma matrix and twiss parameters
 ! Wolski: N = E.Q from Eq. 44 and Eq. 14
 ! mat_eigen finds row vectors, so switch to column vectors
-
-dim = 6
-if (sigma_s(6,6) == 0) dim = 4  ! No energy diviations
-
-call normalize_e (eigen_vec(1:dim,1:dim), dim, good, err)
-if (err) then
-  if (logic_option(.true., print_err)) call out_io (s_warn$, r_name, 'Cannot normalize some eigenvectors.', &
-                                                                     '[Can happen if the emittance of a mode beam is zero.]')
-endif
 
 eigen_vec(1:dim,1:dim) = transpose(eigen_vec(1:dim,1:dim))
 
@@ -1609,9 +1601,11 @@ q(4,4) = -i_imag / sqrt(2.0)
 q(5,6) =  i_imag / sqrt(2.0) 
 q(6,6) = -i_imag / sqrt(2.0)
 
-! compute N in Wolski Eq. 44
-n_cmplx(1:dim,1:dim) = matmul(eigen_vec(1:dim,1:dim), q(1:dim,1:dim))
+! Compute N in Wolski Eq. 44
+n_cmplx(1:dim,1:dim) = matmul(eigen_vec(1:dim,1:dim), q(1:dim,1:dim))  ! Imaginary part is zero.
 n_real(1:dim,1:dim) = real(n_cmplx(1:dim,1:dim))
+
+if (present(n_mat)) n_mat = n_real
 
 ! Twiss parameters come from Wolski equations 59, 63 and 64
 
@@ -1810,7 +1804,7 @@ end subroutine calc_spin_params
 !
 ! Output:
 !   bunch_params -- bunch_params_struct: Bunch parameters.
-!     %sigma(21)   
+!     %sigma(6,6)   
 !     %centroid%vec(6)
 !     %rel_max(6)
 !     %rel_min(6)
@@ -1929,17 +1923,19 @@ character(*), parameter :: r_name = 'bunch_init_end_calc'
 logical from_file, h5_file
 
 ! Adjust center
+! Note: %use_particle_start_for_center is old deprecated name for %use_particle_start.
 
 call ran_gauss(ran_vec)
 center = beam_init%center_jitter * ran_vec
 
-if (beam_init%use_particle_start_for_center) then
+if (beam_init%use_particle_start_for_center) beam_init%use_particle_start = beam_init%use_particle_start_for_center
+if (beam_init%use_particle_start) then
   if (.not. associated (ele%branch)) then
-    call out_io (s_error$, r_name, 'NO ASSOCIATED LATTICE WITH BEAM_INIT%USE_PARTICLE_START_FOR_CENTER = T.')
+    call out_io (s_error$, r_name, 'NO ASSOCIATED LATTICE WITH BEAM_INIT%USE_PARTICLE_START = T.')
     return
   endif
   if (.not. associated (ele%branch%lat)) then
-    call out_io (s_error$, r_name, 'NO ASSOCIATED LATTICE WITH BEAM_INIT%USE_PARTICLE_START_FOR_CENTER = T.')
+    call out_io (s_error$, r_name, 'NO ASSOCIATED LATTICE WITH BEAM_INIT%USE_PARTICLE_START = T.')
     return
   endif
   center = center + ele%branch%lat%particle_start%vec
@@ -1953,51 +1949,54 @@ from_file = (beam_init%position_file /= '')
 n = len_trim(beam_init%position_file)
 h5_file = (beam_init%position_file(max(1,n-4):n) == '.hdf5' .or. beam_init%position_file(max(1,n-2):n) == '.h5')
 
-do i = 1, size(bunch%particle)
-  p => bunch%particle(i)
-  p%vec = p%vec + center
-  p%s = ele%s
+if (.not. h5_file) then
+  do i = 1, size(bunch%particle)
+    p => bunch%particle(i)
+    p%vec = p%vec + center
+    p%s = ele%s
 
-  ! Time coordinates. HDF5 files have full particle information so time conversion is ignored.
+    ! Time coordinates. HDF5 files have full particle information so time conversion is ignored.
 
-  if (beam_init%use_t_coords .and. .not. h5_file) then
-    
-    if (beam_init%use_z_as_t) then
-      ! Fixed s, particles distributed in time using vec(5)
-      p%t = p%vec(5)
-      p%location = downstream_end$
-      p%vec(5) = 0 !init_coord will not complain when beta == 0 and vec(5) == 0
+    if (beam_init%use_t_coords) then
       
+      if (beam_init%use_z_as_t) then
+        ! Fixed s, particles distributed in time using vec(5)
+        p%t = p%vec(5)
+        p%location = downstream_end$
+        p%vec(5) = 0 !init_coord will not complain when beta == 0 and vec(5) == 0
+        
+      else
+        ! Fixed time, particles distributed in space using vec(5)
+        p%s = p%vec(5)
+        p%t = ele%ref_time + bunch%t_center
+        p%location = inside$
+      endif
+
+      ! Convert to s coordinates
+      p%p0c = ele%value(p0c$)
+      call convert_pc_to (sqrt(p%vec(2)**2 + p%vec(4)**2 + p%vec(6)**2), p%species, beta = p%beta)
+      p%dt_ref = p%t-ele%ref_time
+      call convert_particle_coordinates_t_to_s (p, ele)
+      if (.not. from_file) p%state = alive$
+      p%ix_ele    = ele%ix_ele
+      p%ix_branch = ele%ix_branch
+
+    ! Usual s-coordinates
     else
-      ! Fixed time, particles distributed in space using vec(5)
-      p%s = p%vec(5)
-      p%t = ele%ref_time + bunch%t_center
-      p%location = inside$
+      call convert_pc_to (ele%value(p0c$) * (1 + p%vec(6)), p%species, beta = p%beta)
+      p%t = ele%ref_time - p%vec(5) / (p%beta * c_light)
+      if (from_file .and. p%state /= alive$) cycle  ! Don't want init_coord to raise the dead.
+      ! If from a file then no vec6 shift needed.
+      call init_coord (p, p, ele, downstream_end$, p%species, shift_vec6 = .not. from_file)
+
+      ! With an e_gun, the particles will have nearly zero momentum (pz ~ -1).
+      ! In this case, we need to take care that (1 + pz)^2 >= px^2 + py^2 otherwise, with
+      ! an unphysical pz, the particle will be considered to be dead.
+      pz_min = 1.000001_rp * sqrt(p%vec(2)**2 + p%vec(4)**2) - 1 ! 1.000001 factor to avoid roundoff problems.
+      p%vec(6) = max(p%vec(6), pz_min)
     endif
-
-    ! Convert to s coordinates
-    p%p0c = ele%value(p0c$)
-    call convert_pc_to (sqrt(p%vec(2)**2 + p%vec(4)**2 + p%vec(6)**2), p%species, beta = p%beta)  
-    call convert_particle_coordinates_t_to_s (p, p%t-ele%ref_time, ele)
-    if (.not. from_file) p%state = alive$
-    p%ix_ele    = ele%ix_ele
-    p%ix_branch = ele%ix_branch
-
-  ! Usual s-coordinates
-  else
-    call convert_pc_to (ele%value(p0c$) * (1 + p%vec(6)), p%species, beta = p%beta)
-    p%t = ele%ref_time - p%vec(5) / (p%beta * c_light)
-    if (from_file .and. p%state /= alive$) cycle  ! Don't want init_coord to raise the dead.
-    ! If from a file then no vec6 shift needed.
-    call init_coord (p, p, ele, downstream_end$, p%species, shift_vec6 = .not. from_file)
-
-    ! With an e_gun, the particles will have nearly zero momentum (pz ~ -1).
-    ! In this case, we need to take care that (1 + pz)^2 >= px^2 + py^2 otherwise, with
-    ! an unphysical pz, the particle will be considered to be dead.
-    pz_min = 1.000001_rp * sqrt(p%vec(2)**2 + p%vec(4)**2) - 1 ! 1.000001 factor to avoid roundoff problems.
-    p%vec(6) = max(p%vec(6), pz_min)
-  endif
-enddo
+  enddo
+endif
 
 !
 

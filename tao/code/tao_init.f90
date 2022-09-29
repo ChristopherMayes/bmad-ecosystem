@@ -34,7 +34,7 @@ type (tao_lattice_struct), pointer :: tao_lat
 type (branch_struct), pointer :: branch
 type (tao_lattice_branch_struct), pointer :: tao_branch
 
-real(rp) value
+real(rp) value, sigma(6,6)
 real(rp), pointer :: ptr_attrib
 
 character(100) line, line2
@@ -48,7 +48,7 @@ integer i, i0, j, i2, j2, n_universes, iu, ix, ib, ip, ios
 integer iu_log, omp_n
 
 logical err_flag
-logical err, calc_ok, valid_value, this_calc_ok, using_default
+logical err, calc_ok, valid_value, this_calc_ok, using_default, do_print
 
 namelist / tao_start / startup_file, building_wall_file, hook_init_file, &
                data_file, var_file, plot_file, n_universes, init_name, beam_file
@@ -99,7 +99,8 @@ if (init_tao_file /= '') then
       init_tao_file = ''
     else
       call output_direct (-1, print_and_capture=s%com%print_to_terminal)
-      call out_io (s_abort$, r_name, 'TAO INITIALIZATION FILE NOT FOUND: ' // init_tao_file)
+      call out_io (s_error$, r_name, 'TAO INITIALIZATION FILE NOT FOUND: ' // init_tao_file)
+      call tao_init_global('')
       return
     endif
   endif
@@ -208,7 +209,7 @@ if (allocated(s%u)) call deallocate_everything ()
 global_com%exit_on_error = .false.
 
 call tao_init_global(init_tao_file) ! The first global read is just to look for %debug and %stop_on_error values.
-call tao_init_lattice (init_tao_file)
+call tao_init_lattice (init_tao_file, err); if (err) return
 call tao_init_global(init_tao_file)
 call tao_init_dynamic_aperture (init_tao_file)
 call tao_init_beams (beam_file)
@@ -251,7 +252,6 @@ do i = 1, s%n_var_used
       if (.not. allocated(s%var(i2)%slave)) cycle
       do j2 = 1, size(s%var(i2)%slave)
         if (i == i2 .and. j == j2) cycle
-        if (s%com%common_lattice .and. s%var(i)%slave(j)%ix_uni /= s%var(i2)%slave(j2)%ix_uni) cycle
         if (associated (s%var(i)%slave(j)%model_value, &
                           s%var(i2)%slave(j2)%model_value)) then
           write (name1, '(2a, i0, a)') trim(s%var(i)%v1%name), '[', s%var(i)%ix_v1, ']'  
@@ -270,11 +270,11 @@ enddo
 ! plotting
 
 call tao_init_plotting (plot_file)
-  
-! Close the log file and route all messages back to the terminal.
+
+
+! Route all messages back to the terminal.
 ! Need to do this before calling tao_lattice_calc since we don't want to supress these messages.
 
-if (iu_log > -1) close (iu_log)
 call output_direct (-1, print_and_capture=s%com%print_to_terminal)
 
 ! Set up model and base lattices.
@@ -285,6 +285,8 @@ if (bmad_com%radiation_fluctuations_on .and. s%global%track_type == 'single') th
 endif
 
 ! Calculate radiation integrals.
+
+if (iu_log > 0) write (iu_log, '(a)') '*Init: Starting radiation and chrom calc.'
 
 do i = lbound(s%u, 1), ubound(s%u, 1)
   u => s%u(i)
@@ -309,29 +311,36 @@ do i = lbound(s%u, 1), ubound(s%u, 1)
 
     if (branch%param%particle /= photon$) then
       call radiation_integrals (tao_lat%lat, tao_branch%orbit, &
-                                  tao_branch%modes_rf_on, tao_branch%ix_rad_int_cache, ib, tao_lat%rad_int)
+                                  tao_branch%modes_ri, tao_branch%ix_rad_int_cache, ib, tao_lat%rad_int)
     endif
 
     if (branch%param%geometry == closed$) then
       call chrom_calc (tao_lat%lat, s%global%delta_e_chrom, tao_branch%a%chrom, tao_branch%b%chrom, err, &
                  tao_branch%orbit(0)%vec(6), low_E_lat=tao_lat%low_E_lat, high_E_lat=tao_lat%high_E_lat, ix_branch = ib)
+      call emit_6d(branch%ele(0), .false., tao_branch%modes_6d, sigma)
+      call emit_6d(branch%ele(0), .true., tao_branch%modes_6d, sigma)
+      tao_branch%modes_6d%momentum_compaction = momentum_compaction(branch)
     endif
 
   enddo
 enddo
 
-! Turn off RF. But first calculate the synchrotron tune.
+! Turn off RF if needed. But first calculate the synchrotron tune.
 
+do_print = .true.
 do i = lbound(s%u, 1), ubound(s%u, 1)
   u => s%u(i)
   if (u%design_same_as_previous) cycle
 
   do ib = 0, ubound(u%model%lat%branch, 1)
     if (u%model%lat%branch(ib)%param%geometry == closed$) then
-      call calc_z_tune(u%model%lat, ib)
-      if (.not. s%global%rf_on) then
-        call out_io (s_info$, r_name, 'Note: Default is for RFCavities to be turned off. Use the "-rf_on" switch on ', &
-                                      '      the command line or set global%rf_on = True to turn on the RF.')
+      call calc_z_tune(u%model%lat%branch(ib))
+      if (s%global%rf_on .and. do_print) then
+        call out_io (s_info$, r_name, 'Note! Default now is for RFcavities is to be left on (used to be off).', &
+                                      'Use the "--rf_on" (notice two dashes) switch on the startup command line', &
+                                      'or "set global%rf_on = False" to turn off the RF.')
+        do_print = .false.   ! Only print message once.
+      else
         call set_on_off (rfcavity$, u%model%lat, off$, ix_branch = ib)
       endif
     endif
@@ -339,6 +348,8 @@ do i = lbound(s%u, 1), ubound(s%u, 1)
 enddo
 
 !
+
+if (iu_log > 0) write (iu_log, '(a)') '*Init: Starting lattice calc.'
 
 s%u%calc%lattice = .true.
 call tao_lattice_calc (calc_ok)
@@ -360,8 +371,9 @@ do i = lbound(s%u, 1), ubound(s%u, 1)
   u%data%base_value   = u%data%model_value
   u%data%good_design  = u%data%good_model
   u%data%good_base    = u%data%good_model
-  u%design%tao_branch%modes = u%design%tao_branch%modes_rf_on
 enddo
+
+if (iu_log > 0) write (iu_log, '(a)') '*Init: End lattice calc.'
 
 call tao_var_repoint()
 
@@ -372,12 +384,17 @@ call tao_hook_init2 ()
 
 ! Draw everything
 
+if (iu_log > 0) write (iu_log, '(a)') '*Init: Draw plots.'
+
 call tao_plot_setup ()     ! transfer data to the plotting structures
 call tao_draw_plots ()     ! Update the plotting window
 
 ! Print bad data
 
+if (iu_log > 0) write (iu_log, '(a)') '*Init: Print bad data.'
+
 do i = lbound(s%u, 1), ubound(s%u, 1)
+  if (.not. s%u(i)%is_on .or. .not. s%global%lattice_calc_on) cycle
   do j = 1, size(s%u(i)%data)
     data => s%u(i)%data(j)
     if (data%exists .and. data%data_type /= 'null' .and. .not. data%good_model) then
@@ -388,6 +405,8 @@ do i = lbound(s%u, 1), ubound(s%u, 1)
 enddo
 
 ! Look for a startup file
+
+if (iu_log > 0) write (iu_log, '(a)') '*Init: Execute startup file.'
 
 if (startup_file /= '' .and. s%init%nostartup_arg == '') then
   using_default = (startup_file == 'tao.startup')
@@ -411,9 +430,14 @@ endif
 
 ! Bookkeeping
 
+if (iu_log > 0) write (iu_log, '(a)') '*Init: End bookkeeping.'
+
 call tao_set_data_useit_opt()
 call tao_set_var_useit_opt()
 err_flag = .false.
+
+if (iu_log > 0) write (iu_log, '(a)') '*Init: And done.'
+if (iu_log > 0) close (iu_log)
 
 !------------------------------------------------------------------------------
 contains
@@ -458,12 +482,14 @@ if (allocated(s%key)) deallocate(s%key, stat=istat)
 
 if (allocated(s%plot_page%region)) deallocate (s%plot_page%region)
 
-do i = 1, size(s%plot_page%template)
-  plot => s%plot_page%template(i)
-  if (.not. allocated (plot%graph)) cycle
-  deallocate(plot%graph, stat=istat)
-enddo
-deallocate (s%plot_page%template)
+if (allocated(s%plot_page%template)) then
+  do i = 1, size(s%plot_page%template)
+    plot => s%plot_page%template(i)
+    if (.not. allocated (plot%graph)) cycle
+    deallocate(plot%graph, stat=istat)
+  enddo
+  deallocate (s%plot_page%template)
+endif
 
 if (allocated(s%plot_page%lat_layout%ele_shape)) deallocate (s%plot_page%lat_layout%ele_shape)
 if (allocated(s%plot_page%floor_plan%ele_shape)) deallocate (s%plot_page%floor_plan%ele_shape)
@@ -477,21 +503,23 @@ if (allocated (s%u)) then
 
     u => s%u(i)
     ! radiation integrals cache
-    do ib = 0, ubound(u%model%lat%branch, 1)
-      if (u%model%tao_branch(ib)%ix_rad_int_cache /= 0) call release_rad_int_cache(u%model%tao_branch(ib)%ix_rad_int_cache)
-      if (u%design%tao_branch(ib)%ix_rad_int_cache /= 0) call release_rad_int_cache(u%design%tao_branch(ib)%ix_rad_int_cache)
-      if (u%base%tao_branch(ib)%ix_rad_int_cache /= 0) call release_rad_int_cache(u%base%tao_branch(ib)%ix_rad_int_cache)
-    enddo
+    if (allocated(u%model%tao_branch)) then
+      do ib = 0, ubound(u%model%tao_branch, 1)
+        if (u%model%tao_branch(ib)%ix_rad_int_cache /= 0) call release_rad_int_cache(u%model%tao_branch(ib)%ix_rad_int_cache)
+        if (u%design%tao_branch(ib)%ix_rad_int_cache /= 0) call release_rad_int_cache(u%design%tao_branch(ib)%ix_rad_int_cache)
+        if (u%base%tao_branch(ib)%ix_rad_int_cache /= 0) call release_rad_int_cache(u%base%tao_branch(ib)%ix_rad_int_cache)
+      enddo
 
-    ! Orbits
+      ! Orbits
 
-    deallocate(u%model%tao_branch, stat=istat)
-    deallocate(u%design%tao_branch, stat=istat)
-    deallocate(u%base%tao_branch, stat=istat)
+      deallocate(u%model%tao_branch, stat=istat)
+      deallocate(u%design%tao_branch, stat=istat)
+      deallocate(u%base%tao_branch, stat=istat)
+    endif
 
-    ! Beams: All s%u(i)%ele point to the same place with common_lattice.
+    ! Beams
 
-    if (i == 0 .or. .not. s%com%common_lattice) then
+    if (associated(u%model_branch)) then
       do ib = 0, ubound(u%model_branch, 1)
         call reallocate_beam(u%model_branch(ib)%ele(0)%beam, 0, 0)
         deallocate (u%model_branch(ib)%ele)

@@ -99,7 +99,7 @@ if (allocated(lat%print_str)) n_print = size(lat%print_str)
 write (d_unit) lat%use_name, lat%machine, lat%lattice, lat%input_file_name, lat%title
 write (d_unit) lat%a, lat%b, lat%z, lat%param, lat%version, lat%n_ele_track
 write (d_unit) lat%n_ele_track, lat%n_ele_max, lat%lord_state, lat%n_control_max, lat%n_ic_max
-write (d_unit) lat%input_taylor_order, lat%absolute_time_tracking, lat%photon_type
+write (d_unit) lat%input_taylor_order, lat%photon_type
 write (d_unit) ubound(lat%branch, 1), lat%pre_tracker, n_custom, n_print
 
 ! Global custom
@@ -162,16 +162,17 @@ enddo
 write (d_unit) lat%particle_start
 write (d_unit) lat%beam_init
 
-! Write PTC info
+! Write common stuff
 
-write (d_unit) ptc_com%old_integrator, ptc_com%exact_model, ptc_com%exact_misalign, ptc_com%max_fringe_order
-
-! Write random state info
 
 if (present(extra)) then
   write (d_unit) .true.
   write (d_unit) extra
   write (d_unit) bmad_com
+  write (d_unit) space_charge_com
+  write (d_unit) ptc_com%max_fringe_order, ptc_com%exact_model, ptc_com%exact_misalign, &
+          ptc_com%vertical_kick, ptc_com%cut_factor, ptc_com%old_integrator, &
+          ptc_com%use_orientation_patches, ptc_com%print_info_messages
 else
   write (d_unit) .false.
 endif
@@ -315,9 +316,9 @@ write (d_unit) &
         ele%ix_ele, ele%mat6_calc_method, ele%tracking_method, &
         ele%spin_tracking_method, ele%symplectify, ele%mode_flip, &
         ele%multipoles_on, ele%taylor_map_includes_offsets, ele%Field_master, &
-        ele%logic, ele%field_calc, ele%aperture_at, &
+        ele%logic, ele%field_calc, ele%aperture_at, ele%spin_taylor_ref_orb_in, &
         ele%aperture_type, ele%csr_method, ele%space_charge_method, ele%orientation, &
-        ele%map_ref_orb_in, ele%map_ref_orb_out, ele%time_ref_orb_in, ele%time_ref_orb_out, ele%spin_taylor_ref_orb_in, &
+        ele%map_ref_orb_in, ele%map_ref_orb_out, ele%time_ref_orb_in, ele%time_ref_orb_out, &
         ele%offset_moves_aperture, ele%ix_branch, ele%ref_time, ele%scale_multipoles, &
         ele%bookkeeping_state, ele%ptc_integration_type, ele%ref_species
 
@@ -356,7 +357,7 @@ if (associated(ele%ac_kick)) then
   ac => ele%ac_kick
   n1 = -1; n2 = -1
   if (allocated(ac%amp_vs_time)) n1 = size(ac%amp_vs_time)
-  if (allocated(ac%frequencies)) n2 = size(ac%frequencies)
+  if (allocated(ac%frequency)) n2 = size(ac%frequency)
   write (d_unit) n1, n2
 
   if (allocated(ac%amp_vs_time)) then
@@ -365,9 +366,9 @@ if (associated(ele%ac_kick)) then
     enddo
   endif
 
-  if (allocated(ac%frequencies)) then
-    do n = lbound(ac%frequencies, 1), ubound(ac%frequencies, 1)
-      write (d_unit) ac%frequencies(n)
+  if (allocated(ac%frequency)) then
+    do n = lbound(ac%frequency, 1), ubound(ac%frequency, 1)
+      write (d_unit) ac%frequency(n)
     enddo
   endif
 endif

@@ -1,4 +1,4 @@
-\chapter{Elements}
+\chapter{Lattice Elements}
 \label{c:elements}
 \index{element|hyperbf}
 
@@ -162,7 +162,6 @@ See \sref{s:list.ac.kicker} for a full list of element attributes along with a t
 Attributes specific to a \vn{ac_kicker} element are:
 \begin{example}
   t_offset        = <Real>              ! Time offset of field waveform.
-  ref_time_offset = <Logic>             ! Relative to the ref time? (Default: True).
   interpolation   = <switch>            ! spline (default) or linear.
   amp_vs_time = \{(<time1>, <Amp1>), (<time2>, <Amp2>), ...\}  ! Field amp vs Time.
   frequencies = \{(<freq1>, <Amp1>, <phi1>), 
@@ -183,11 +182,8 @@ where $B$ and $E$ are the applied magnetic and electric fields, and $B_0$ and $E
 as calculated as if the element where a \vn{kicker} ignoring the time dependence.
 \end{enumerate}
 
-If \vn{ref_time_offset} is set to \vn{True} (the default), $\delta t = t - t_0 - t_\REF$ where $t$
-is the time, $t_0$ is the value of the \vn{t_offset} attribute, and $t_\REF$ is the reference time
-at the entrance end of the element. If \vn{ref_time_offset} is set to \vn{False}, $\delta t = t -
-t_0$. Note: Unlike RF cavity elements, the time $t$ here is always the absolute time
-(\sref{s:rf.time}) and not the relative time.
+$\delta t = t_{eff} - t_0$ where $t_{eff}$ is the effective time as discussed in \sref{s:rf.time}
+and $t_0$ is the value of the \vn{t_offset} attribute.
 
 There are two ways to specify the dimensionless time variation $A(\delta t)$ of the field. One way
 is to specify points $(A, \delta t)$ using the \vn{amp_vs_time} attribute. Example:
@@ -239,6 +235,12 @@ Example:
   mk[amp_vs_time(2)%amp] = 0.03  ! Change 2nd point amplitude.
 \end{example}
 
+When specifying the time dependent using a set of frequencies, it is generally advisible to use
+absolute time tracking (\sref{s:rf.time}). This can be done in the lattice file by setting
+\begin{example}
+  bmad_com[absolute_time_tracking] = T
+\end{example}
+
 Note: The calculated field will only obey Maxwell's equations in the limit that the time variation
 of the field is ``slow'':
 \begin{equation}
@@ -281,53 +283,58 @@ See \sref{s:list.beambeam} for a full list of element attributes along with a th
 \index{beta_a}\index{beta_b}\index{alpha_a}\index{alpha_b}
 Attributes specific to a \vn{beambeam} element are:
 \begin{example}
-  sig_x          = <Real> ! Horizontal strong beam sigma at the center 
-  sig_y          = <Real> ! Vertical strong beam sigma at the center
-  sig_z          = <Real> ! Strong beam length
-  charge         = <Real> ! Strong beam charge. Default = -1
-  n_slice        = <Int>  ! Number of strong beam slices
-  crab_x1        = <Real> ! Crabbing linear coefficient.
-  crab_x2        = <Real> ! Crabbing quadratic coefficient.
-  crab_x3        = <Real> ! Crabbing cubic coefficient.
-  crab_tilt      = <Real> ! Crabbing tilt.
-  beta_a_strong  = <Real> ! Strong beam $a$-mode beta Twiss parameter
-  alpha_a_strong = <Real> ! Strong beam $a$-mode alpha Twiss parameter 
-  beta_b_strong  = <Real> ! Strong beam $b$-mode beta Twiss parameter
-  alpha_b_strong = <Real> ! Strong beam $b$-mode alpha Twiss parameter
-  bbi_constant            ! See below. Dependent attribute (\sref{s:depend}).
+  sig_x          = <Real>    ! Horizontal strong beam sigma at the center 
+  sig_y          = <Real>    ! Vertical strong beam sigma at the center
+  sig_z          = <Real>    ! Strong beam length
+  charge         = <Real>    ! Strong beam charge. Default = -1
+  n_particle     = <Real>    ! Number of particles in strong beam.
+  n_slice        = <Int>     ! Number of strong beam slices
+  crab_x1        = <Real>    ! Crabbing linear coefficient.
+  crab_x2        = <Real>    ! Crabbing quadratic coefficient.
+  crab_x3        = <Real>    ! Crabbing cubic coefficient.
+  crab_x4        = <Real>    ! Crabbing 4th order coefficient.
+  crab_x5        = <Real>    ! Crabbing 5th order coefficient.
+  crab_tilt      = <Real>    ! Crabbing tilt.
+  species_strong = <Species> ! Strong beam species
+  E_tot_strong   = <Real>    ! Strong beam particle energy
+  beta_a_strong  = <Real>    ! Strong beam $a$-mode beta Twiss parameter
+  alpha_a_strong = <Real>    ! Strong beam $a$-mode alpha Twiss parameter 
+  beta_b_strong  = <Real>    ! Strong beam $b$-mode beta Twiss parameter
+  alpha_b_strong = <Real>    ! Strong beam $b$-mode alpha Twiss parameter
+  bbi_constant               ! See below. Dependent attribute (\sref{s:depend}).
+  ks             = <Real>    ! Solenoid strength.
+  bs_field       = <Real>    ! Solenoid field strength.
+  field_master   = <T/F>     ! Is ks or bs_field value the master (\sref{s:field.master})?
+  z_crossing     = <Real>    ! Weak particle phase space z when strong beam center reaches element.
+  repetition_frequency = <Real>  ! Strong beam repetition rate.
 \end{example}
 
 \index{n_part!in BeamBeam element}
-The number of particles in the strong beam is set by
+The strength of the strong beam is set by:
 \begin{example}
-  charge * parameter[n_part]
+  charge * n_particle
 \end{example}
-\vn{parameter[n_part]} is the nominal number of particles of the strong beam. \vn{parameter[n_part]}
-is a global setting (\sref{s:param}) and is used for all \vn{beambeam} elements.  To vary the number
-of particles in an individual \vn{beambeam} element, the \vn{charge} attribute is used.  The default
-is \vn{charge} = -1 which indicates that the strong beam has the opposite charge of the weak beam.
+The default The default value of \vn{charge} is -1 which indicates that the strong beam has the
+opposite charge of the weak beam. The default for \vn{n_particle} is 0.
+
+For historical reasons, the global parameter \vn{parameter[n_part]} (\sref{s:param}) will be used in
+place of \vn{n_particle} if \vn{n_particle} has a value of 0.
 
 \index{sig_z}\index{n_slice}
 \vn{sig_z} are the strong beam's longitudinal sigma.  The strong beam is divided up into
 \vn{n_slice} equal charge (not equal thickness) slices. Propagation through the strong beam involves
-a kick at the charge center of each slice with drifts in between the kicks. The kicks are calculated
-using the standard Bassetti--Erskine complex error function formula\cite{b:talman}. Even though the
-strong beam can have a finite \vn{sig_z}, the length of the \vn{beambeam} element is zero. This is
-achieved by drifting a particle at the beginning and at the end of tracking so that the longitudinal
-starting point and ending points are at the \vn{beambeam} element. For example, with \vn{n_slice} =
-2 the calculation would proceed as follows:
-\begin{example}
-  0. Start with the particle longitudinally at the \vn{beambeam} element.
-  1. Offsets, pitches and tilt are applied to convert from laboratory to element 
-       body coordinates (\sref{s:lab.body.transform}).
-  2. Propagate (drift) backwards to the center of the first slice.
-  3. Apply the beam--beam kick due to the first slice.
-  4. Propagate (drift) forwards to the center of the second slice.
-  5. Apply the beam--beam kick due to the second slice.
-  6. Propagate (drift) backwards to the body coordinate longitudinal center.
-  7. Offsets, pitches and tilt are applied to convert from element body to 
-       laboratory coordinates.
-\end{example}
+a kick at the charge center of each slice with propagation between slice centers. A solenoid field
+can be set for the regions in between the slice centers. The kicks are calculated using the standard
+Bassetti--Erskine complex error function formula\cite{b:talman}. Even though the strong beam can
+have a finite \vn{sig_z}, the length of the \vn{beambeam} element is zero. This is achieved by
+propagating a particle at the beginning and at the end of tracking so that the longitudinal starting
+point and ending points are at the \vn{beambeam} element. Documentation of how a particle is tracked
+through a \vn{beambeam} element is given in \sref{s:beambeam.std}.
+
+The \vn{ks} and \vn{bs_field} parameters are the normalized and unnormalized solenoid strengths
+(\sref{s:field.master}) related through \Eq{kqlbp}. If the beambeam element is superimposed on top
+of a solenoid, the beambeam element will inherit the solenoid field strength from the solenoid
+element instead.
 
 \index{sig_x}\index{sig_y}
 \index{beta_a_strong}\index{beta_b_strong}\index{alpha_a_strong}\index{alpha_b_strong}
@@ -342,23 +349,31 @@ $b$-mode Twiss parameters as calculated from the lattice is used.
 \index{x_offset}\index{y_offset}\index{z_offset}
 \index{x_pitch}\index{y_pitch}\index{tilt}
 The \vn{x_offset}, \vn{y_offset}, and \vn{z_offset} attributes (\sref{s:offset}) are used to offset
-the strong beam. Note that in \mad the attributes used to offset the strong beam are called \vn{xma}
-and \vn{yma}. \vn{x_pitch} and \vn{y_pitch} gives the beam--beam interaction a crossing
-angle. \vn{x_pitch}, \vn{y_pitch} or some combination of the two should be set to the crossing angle
-of the strong beam with respect to the reference orbit of the weak beam. To curve the strong beam
-centroid to simulate crabbing, the following parameters can be used:
+the strong beam. The \vn{x_pitch} and \vn{y_pitch} parameters orient the strong beam with respect to
+the laboratory coordinate system. This will be give the beam--beam interaction a crossing angle. The
+full crossing angle is the angle of the strong beam (set by \vn{x_pitch} and \vn{y_pitch}) with
+respect to the trajectory of the weak beam centroid. The weak beam centroid orbit will be the closed
+orbit if the lattice geometry is closed. If the lattice geometry is open, the weak beam centroid
+orbit is determined by the beginning centroid orbit of the weak beam (which can be program
+dependent) and details of the lattice between the beginning of the lattice and the \vn{beambeam}
+element.
+
+To curve the strong beam centroid to simulate crabbing, the following parameters can be used:
 \begin{example}
-  crab_x1,    crab_x2
-  crab_x3,    crab_tilt
+  crab_x1,    crab_x2,     crab_x3
+  crab_x4,    crab_x5,     crab_tilt
 \end{example}
 If \vn{crab_tilt} is zero (the default), the strong beam centroid $(x_c, y_c)$ will have $y_c$ zero
 and
 \begin{equation}
-  x_c(z) = \text{crab_x1} \cdot z + \text{crab_x2} \cdot z^2 + \text{crab_x3} \cdot z^3
+  x_c(z) = \text{crab_x1} \cdot z + \text{crab_x2} \cdot z^2 + \text{crab_x3} \cdot z^3 + 
+                                    \text{crab_x4} \cdot z^4 + \text{crab_x5} \cdot z^5
 \end{equation}
-where $z$ is the longitudinal position within the strong beam with positive $z$ being towards the
-head of the bunch. With a finite \vn{crab_tilt}, the curvature is rotated around the $z$ axis as
-shown in figure~\ref{f:tilt}.
+where positive $x_c$ and $y_c$ are the same as positive $x$ and positive $y$ for the weak beam and
+$z$ is the longitudinal position with respect to the strong beam center with positive $z$ being
+towards the head of the strong bunch (and remember that since the strong bunch is going in the
+opposite direction, the head of the strong bunch is opposite that of the weak bunch). With a finite
+\vn{crab_tilt}, the curvature is rotated around the $z$ axis as shown in figure~\ref{f:tilt}.
 
 The \vn{bbi_constant} is a measure of the beam--beam interaction strength.  It is a dependent
 variable and is calculated from the equation
@@ -371,20 +386,36 @@ beam--beam kick is approximately
   k_x &= -4\, \pi \, x \, C_{bbi} / \sigma_x \CRNO
   k_y &= -4\, \pi \, y \, C_{bbi} / \sigma_y 
 \end{align}
-
-The beam--beam tune shift is 
+and the linear beam--beam tune shift is 
 \begin{align}
   dQ_x &= C_{bbi} \, \beta_x / \sigma_x \CRNO
   dQ_y &= C_{bbi} \, \beta_y / \sigma_y \CRNO
 \end{align}
 
+The \vn{species_strong} and \vn{E_tot_strong} give the particle species and particle energy of the
+strong beam. This is only relevant if the velocity of the strong beam is not equal to the velocity
+of the weak beam.
+
+The \vn{z_crossing} parameter sets when in time the center of the strong beam is at the plane of the
+beambeam element. For example, if tracking is done with radiation damping on, the closed orbit will
+have a finite phase space $z$ value at the \vn{beambeam} element. To have the weak beam and strong beam
+centers cross the plane of the \vn{beambeam} element at the same time, the value of \vn{z_crossing} should
+be set to the value of the weak beam $z$.
+
+When with absolute time tracking (\sref{s:rf.time}) is in use, the \vn{repetition_frequency}
+parameter (along with the \vn{z_crossing} parameter) is used to calculate the time that the strong
+bunch crosses the plane of the \vn{beambeam} element. Generally, this frequency should be set equal
+to the fundamental RF frequency or some harmonic thereof. If this frequency is zero (the default),
+\bmad will assume that the repetition frequency is a harmonic of the reference particle oscillation
+time so that in this case a particle's phase space $z$ coordinate will be used.
+
 Example:
 \begin{example}
-  parameter[n_part] = 1.34e10     ! Used for all beambeam eles
-  bbi: beambeam, sig_x = 3e-3, sig_y = 3e-4, x_offset = 0.05
+  bbi: beambeam, sig_x = 3e-3, sig_y = 3e-4, x_offset = 0.05, n_particle = 1.3e9
 \end{example}
 
 %-----------------------------------------------------------------
+\vskip 0ex plus 10ex
 \section{Beginning_Ele}
 \label{s:begin.ele}
 \index{beginning_ele|hyperbf}
@@ -470,6 +501,7 @@ Attributes specific to \vn{rbend} and \vn{sbend} elements are:
   ptc_field_geometry = <Switch> ! See below.
   rho                = <Real>   ! Design bend radius. Settable dependent param (\sref{s:depend}).
   roll               = <Real>   ! See \ref{s:offset}.
+  field_master       = <T/F>    ! See \ref{s:field.master}.
 \end{example}
 
 \begin{figure}[tb]
@@ -560,7 +592,7 @@ $\phi_n^i$.
 To use exact multipoles with PTC based tracking (\sref{c:methods}), the PTC exact model
 tracking must be turned on. That is, in the lattice file set:
 \begin{example2}
-  parameter[ptc_exact_model] = T
+  ptc_com[exact_model] = T
 \end{example2}
 With exact model tracking, PTC always assumes that multipole coefficient values correspond to
 \vn{horizontally_pure}. In this case, \bmad will convert \vn{vertically_pure} to
@@ -573,22 +605,24 @@ doing exact modeling.
   %
   \index{fint}\index{fintx}\index{hgapx}\index{hgapx}
   \item[fint, fintx, \Newline hgap, hgapx] \Newline
-The field integrals for the entrance and
-exit pole faces are give by \vn{fint} and \vn{fintx} respectively
+The field integrals for the entrance pole face is given by the product of the \vn{fint} and
+\vn{hgap} parameters with \vn{hgap} being the half gap between poles at the entrance face
 \begin{equation}
-  F_{int} = \int_{pole} \! \! ds \, \frac{B_y(s) \, (B_{y0} - B_y(s))}
-  {2 \, H_{gap} \, B_{y0}^2}
+  F_{int} \, H_{gap} = \int_{pole} \! \! ds \, \frac{B_y(s) \, (B_{y0} - B_y(s))}
+  {2 \, B_{y0}^2}
   \label{fsbbb}
 \end{equation}
-with a similar equation for \vn{fintx}. In the equation $B_{y0}$ is the field in the
-interior of the dipole and $H_{gap}$ is the pole half gap.  The parameters \vn{hgap} and
-\vn{hgapx} are the half gaps at the entrance and exit faces. If \vn{fint} or \vn{fintx} is
-given without a value then a value of 0.5 is used. If \vn{fint} or \vn{fintx} is not
-present, the default value of 0 is used. Note: \mad does not have the \vn{fintx} and
-\vn{hgapx} attributes. \mad just assumes that the values are the same for the entrance and
-exit faces. For compatibility with \mad, if \vn{fint} is given but \vn{fintx} is not, then
-\vn{fintx} is set equal to \vn{fint}. Similarly, \vn{hgapx} will be set to \vn{hgap} if
-\vn{hgapx} is not given.
+For the exit pole face there is a similar equation using \vn{fintx} and \vn{hgapx}. In the above
+equation $B_{y0}$ is the field in the interior of the dipole. If \vn{fint} or \vn{fintx} is given
+without a value then a value of 0.5 is used. If \vn{fint} or \vn{fintx} is not present, the default
+value of 0 is used. Note: \mad does not have the \vn{fintx} and \vn{hgapx} attributes. \mad just
+assumes that the values are the same for the entrance and exit faces. For compatibility with \mad,
+if \vn{fint} is given but \vn{fintx} is not, then \vn{fintx} is set equal to \vn{fint}. Similarly,
+\vn{hgapx} will be set to \vn{hgap} if \vn{hgapx} is not given. Note that this setting of \vn{fintx}
+or \vn{hgapx} using the value of \vn{fint} or \vn{hgap} will only be done before lattice expansion
+(\sref{s:expand}).
+
+Note: To have an effect, both \vn{fint} and \vn{hgap} (or \vn{fintx} and \vn{hgapx}) must be non-zero.
 
 Note: The SAD program uses \vn{fb1+f1} for the entrance fringe and \vn{fb2+f1} for the exit
 fringe. The correspondence between the two is
@@ -636,6 +670,9 @@ Changing \vn{dg} leaves the design orbit and the positions of all downstream lat
 unchanged but will vary a particle's orbit. One common mistake when designing lattices is to vary
 \vn{g} and not \vn{dg} which results in downstream elements moving around. See \Sref{s:ex.chicane}
 for an example.
+
+Note: A positive \vn{g}, which will bend particles and the reference orbit in the $-x$ direction
+represents a field of opposite sign as the field due a positive \vn{hkick}.
   %
   \index{h1}\index{h2}
   \item[h1, h2] \Newline
@@ -645,11 +682,12 @@ calculations.
   %
   \index{k1}\index{b1_gradient}
   \item[k1, b1_gradient] \Newline
-The normalized and unnormalized quadrupole strength.
+The normalized and unnormalized (\sref{s:field.master}) quadrupole strength. See \Eqs{bbb} and \eq{kqlbp}.
+
   %
   \index{k2}\index{b2_gradient}
   \item[k2, b2_gradient] \Newline
-The normalized and unnormalized sextupole strength. 
+The normalized and unnormalized (\sref{s:field.master}) sextupole strength. See \Eqs{bbb} and \eq{kqlbp}.
   %
   \index{l}\index{l_chord}\index{l_arc}\index{l_sagitta}
   \item[l, l_arc, l_chord, l_sagitta]  \Newline
@@ -732,7 +770,7 @@ True (\sref{s:bmad.ptc.com}). Possible values for \vn{ptc_field_geometry} are:
 For \vn{sector} reference coordinates, the field coordinate reference frame is with respect to the
 arc of the reference trajectory. For \vn{straight} coordinates the coordinate reference frame is
 with respect to the chord line. For a bend where there are no other fields besides the basic dipole
-field, tracking is essentially uneffected.\footnote
+field, tracking is essentially unaffected.\footnote
   {
 There will be a small difference due to the fact that with a \vn{straight} geometry tracking uses a
 coordinate system with the $z$-axis along the chord and with a \vn{sector} geometry an integration step
@@ -1069,20 +1107,20 @@ The attributes specific to an \vn{crab_cavity} are
 
 The Hamiltonian  $H_{\text{crab}}$ for a thin crab cavity is\cite{b:crab1}:
 \begin{equation}
-  H_{\text{crab}} = -\frac{q_{rel} \, V\, x}{c \, P_0} \, \sin(k \, z + 2 \, \pi \, \phi_0)
+  H_{\text{crab}} = -q_{rel} \, V\, x \, \sin(k \, t + 2 \, \pi \, \phi_0)
 \end{equation}
 where $x$ and $z$ are particle coordinates, $q_{rel}$ is the charge relative to the reference
-particle, $V$ is the ``effective'' cavity voltage, $P_0$ is the reference energy, $\phi_0$ is a user settable
+particle, $V$ is the ``effective'' cavity voltage, $\phi_0$ is a user settable
 phase, and $k$ is the wave number
 \begin{equation}
   k = \frac{2 \, \pi \, f_{\text{rf}}}{c}
 \end{equation}
-Which give kicks 
+Which give kicks of
 \begin{align} 
-  \Delta p_x &= -\frac{\partial H_{\text{crab}}}{\partial x} = 
-    \frac{q_{rel} \, V}{c \, P_0} \, \sin(k \, z + 2 \, \pi \, \phi_0) \CRNO 
-  \Delta p_z &= -\frac{\partial H_{\text{crab}}}{\partial z} = 
-    \frac{q_{rel} \, V \, \, k \, x}{c \, P_0} \, \cos(k \, z + 2 \, \pi \, \phi_0) 
+  \Delta p_x &= -\frac{1}{c \, P_0} \, \frac{\partial H_{\text{crab}}}{\partial x} = 
+    \frac{q_{rel} \, V}{c \, P_0} \, \sin(k \, t + 2 \, \pi \, \phi_0) \CRNO 
+  \Delta E &= -\frac{\partial H_{\text{crab}}}{\partial t} = 
+    q_{rel} \, V \, \, k \, x \, \cos(k \, t + 2 \, \pi \, \phi_0) 
 \end{align} 
 Note: The sign of $H_{\text{crab}}$ used by Authors in the literature is not standardized. \bmad
 uses the convention such that a particle with the charge of the reference particle and with $z$ and
@@ -1643,8 +1681,8 @@ lattice, the \vn{e_gun} voltage must be non-zero.
 
 Additionally, in order to be able to avoid problems with a zero reference momentum at the
 beginning of the \vn{e_gun}, absolute time tracking (\sref{s:rf.time}) is always used in
-an \vn{e_gun} element independent of the setting of \vn{parameter[absolute_time_tracking]}
-(\sref{s:param}).
+an \vn{e_gun} element independent of the setting of \vn{bmad_com[absolute_time_tracking]}
+(\sref{s:bmad.common}).
 
 Note: The default \vn{tracking_method} (\sref{s:tkm}) setting for an
 \vn{e_gun} is \vn{time_runge_kutta} and the default
@@ -1993,11 +2031,11 @@ A \vn{fork} or \vn{photon_fork} element marks the start of an alternative \vn{br
 Collectively \vn{fork} and \vn{photon_fork} elements are called forking elements. An example
 geometry is shown in \fig{f:x.fork}.  The \vn{branch} containing a forking element is called the
 ``\vn{base} \vn{branch}''. The \vn{branch} that the forking element points to is called the
-``\vn{target} \vn{branch}''.
+``\vn{downstream} \vn{branch}''.
 
 The only difference between \vn{fork} and \vn{photon_fork} is that the default particle type for the
-target branch forked from a \vn{fork} element is the same particle type as the base branch. The
-default particle type for the target branch from a \vn{photon_fork} element is a photon. The actual
+downstream branch forked from a \vn{fork} element is the same particle type as the base branch. The
+default particle type for the downstream branch from a \vn{photon_fork} element is a photon. The actual
 particle associated with a branch can be set by setting the \vn{particle} attribute of the forking
 element.
 
@@ -2032,7 +2070,7 @@ reference orbit as needed. Example:
 \begin{example}
   from_line: line = (... A, PB, B, ...)  ! Defines base branch
   pb: photon_fork, to_line = x_line
-  x_line: line = (X_PATCH, X1, X2, ...)     ! Defines target branch
+  x_line: line = (X_PATCH, X1, X2, ...)     ! Defines downstream branch
   x_line[p0c] = 1e3                         ! Photon reference momentum   
   x_patch: patch, x_offset = 0.01
   use, from_line
@@ -2045,7 +2083,7 @@ Forking elements have zero length and, like \vn{marker} elements, the position o
 through a forking element does not change.
 
 Forking elements do not have orientational attributes like \vn{x_pitch} and \vn{tilt}
-(\ref{s:offset}). If the orientation of the target branch needs to be modified, this can be
+(\ref{s:offset}). If the orientation of the downstream branch needs to be modified, this can be
 accomplished using a \vn{patch} element at the beginning of the line.
 
 \index{is_on}
@@ -2087,7 +2125,7 @@ by \bmad.
 
 \index{beginning_ele}\index{fiducial}\index{fork}\index{photon_fork}
 \index{marker}\index{to_element}
-The \vn{to_element} attribute for a forking element is used to designate the element of the target
+The \vn{to_element} attribute for a forking element is used to designate the element of the downstream
 branch that the forking element connects to. To keep things conceptually simple, the \vn{to_element}
 must be a ``marker-like'' element which has zero length and unit transfer matrix. Possible
 \vn{to_element} types are:
@@ -2097,17 +2135,17 @@ must be a ``marker-like'' element which has zero length and unit transfer matrix
   fork and photon_fork
   marker
 \end{example}
-When the \vn{to_element} is not specified, the default is to connect to the beginning of the target
-branch if \vn{direction} is 1 and to connect to the end of the target branch if \vn{direction} is
--1. In this case, there is never a problem connecting to the beginning of the target branch since
+When the \vn{to_element} is not specified, the default is to connect to the beginning of the downstream
+branch if \vn{direction} is 1 and to connect to the end of the downstream branch if \vn{direction} is
+-1. In this case, there is never a problem connecting to the beginning of the downstream branch since
 all branches have a \vn{beginning_ele} element at the beginning. When connecting to the end of the
-target branch the last element in the target branch must be a marker-like element. Note that, by
+downstream branch the last element in the downstream branch must be a marker-like element. Note that, by
 default, a marker element is placed at the end of all branches (\sref{s:branch.construct})
 
 The default reference particle type of a branch line will be a \vn{photon} is using a
 \vn{photon_fork} or will be the same type of particle as the base branch if a \vn{fork} element is
 used. If the reference particle of a branch line is different from the reference particle in the
-base branch, the reference energy (or reference momentum) of a target branch line needs to be set
+base branch, the reference energy (or reference momentum) of a downstream branch line needs to be set
 using line parameter statements (\sref{s:beginning}). If the reference particle of a branch line is
 the same as the reference particle in the base branch, the reference energy will default to the
 reference energy of the base branch if the reference energy is not set for the branch.
@@ -2132,10 +2170,10 @@ created from the same line already exists. This is useful, for example, when a c
 off from the main line and then branches back to it.
 
 When a lattice is expanded (\sref{s:expand}), the branches defined by the \vn{use} statement
-(\sref{s:use}) are searched for fork elements that branch to new target branches. If found, the
+(\sref{s:use}) are searched for fork elements that branch to new downstream branches. If found, the
 appropriate branches are instantiated and the process repeated until there are no more branches to
 be instantiated. This process does {\em not} go in reverse. That is the lines defined in a lattice
-file are not searched for fork elements that have target instantiated branches. For example, if, in
+file are not searched for fork elements that have downstream instantiated branches. For example, if, in
 the above example, the use statement was:
 \begin{example}
   use, x_line
@@ -2143,15 +2181,15 @@ the above example, the use statement was:
 then only the \vn{x_line} would be instantiated and the lines \vn{inj} and \vn{ring} would be
 ignored.
 
-If the target branch and base branch both have the same reference particle, and if the element
-forked into is the beginning element, the reference energy and momentum of the target branch will be
+If the downstream branch and base branch both have the same reference particle, and if the element
+forked into is the beginning element, the reference energy and momentum of the downstream branch will be
 set to the reference energy and momentum at the fork element. In this case, neither the reference
-energy nor reference momentum of the target branch should be set. If it is desired to have the
-reference energy/momentum of the target branch different from what is inherited from the fork
-element, a patch element (\sref{s:patch}) can be used at the beginning of the target branch. In all
+energy nor reference momentum of the downstream branch should be set. If it is desired to have the
+reference energy/momentum of the downstream branch different from what is inherited from the fork
+element, a patch element (\sref{s:patch}) can be used at the beginning of the downstream branch. In all
 other cases, where either the two branches have different reference particles or the fork connects
 to something other than the beginning element, there is no energy/momentum inheritance and either
-the reference energy or reference momentum of the target branch must be set.
+the reference energy or reference momentum of the downstream branch must be set.
 
 How to analyze a lattice with multiple branches can be somewhat complex and will vary from program
 to program. For example, some programs will simply ignore everything except the root branch. Hopefully
@@ -2359,6 +2397,7 @@ A \vn{girder} that has its \vn{is_on} attribute set to False is considered to be
 respect to it's reference frame.
 
 %-----------------------------------------------------------------------------
+\vskip 0ex plus 10ex
 \section{Group}
 \label{s:group}
 \index{group|hyperbf}
@@ -2733,7 +2772,7 @@ The energy kick felt by a particle, assuming no phase slippage, is
 \begin{example}
   dE = q_{rel} * gradient_tot * L * cos(\(2\,\pi\) * (\(\phi_t\) + \(\phi_\REF\)))
 \end{example}
-where $q_{rel}$ is the charge of the particle relative to the charge of the reference particle.
+where \vn{q_rel} is the charge of the particle relative to the charge of the reference particle.
 \index{multipass}
 where the total gradient is
 \begin{example}
@@ -2741,7 +2780,7 @@ where the total gradient is
 \end{example}
 $\phi_t$ is the part of the phase due to when the particle arrives at the cavity and depends upon
 whether \vn{absolute time tracking} or \vn{relative time tracking} is being used as discussed in
-\sref{s:rf.time}.  The phase $\phi_\REF$ is
+\sref{s:rf.time}. The phase $\phi_\REF$ is
 \begin{example}
   \(\phi_\REF\) = phi0 + phi0_multipass + phi0_err + phi0_autoscale
   \label{lcav.phi}
@@ -2798,7 +2837,7 @@ be modeled.
 When an element's \vn{tracking_method} is set to \vn{runge_kutta}, the fields used with
 \vn{field_calc} set to \vn{bmad_standard} are described in Section~(\sref{s:rf.fields}). With
 \vn{cavity_type} set to \vn{standing_wave}, the longitudinal mode is set by the
-\vn{longitudinal_mode} parameter. The possible values are 0 or 1 and the default setting is 1. 
+\vn{longitudinal_mode} parameter. The possible values are 0 or 1 and the default setting is 0.
 
 If an element's \vn{cavity_type} parameter is set to \vn{standing_wave}, and if the \vn{field_calc}
 parameter is set to \vn{bmad_standard}, and if an element's \vn{tracking_method} is set to
@@ -2992,13 +3031,14 @@ Attributes specific to a \vn{match} element are:
   etap_x1, etap_y1   = <Real>                      ! Ending eta'
   c11_mat0, c12_mat0, c21_mat0, c22_mat0 = <Real>  ! Beginning coupling.
   c11_mat1, c12_mat1, c21_mat1, c22_mat1 = <Real>  ! Ending coupling.
+  mode_flip0, mode_flip1 = <T/F>                   ! Mode flip status (\sref{s:coupling}). Default is False.
   dphi_a, dphi_b     = <Real>                      ! Phase advances
   x0, px0, y0, py0, z0, pz0 = <Real>               ! Beginning coordinates
   x1, px1, y1, py1, z1, pz1 = <Real>               ! Ending coordinates
   delta_time  = <Real>                             ! Change in time.
-  match_end = <Logic>                              ! Twiss matching. Default False.
-  match_end_orbit = <Logic>                        ! Orbit matching. Default False.
-  phase_trombone = <Logic>                         ! Phase shifter. Default False.
+  match_end = <T/F>                                ! Twiss matching. Default False.
+  match_end_orbit = <T/F>                          ! Orbit matching. Default False.
+  phase_trombone = <T/F>                           ! Phase shifter. Default False.
   match_end_input                                  ! Set by Bmad. See below. 
   match_end_orbit_input                            ! Set by Bmad. See below. 
   phase_trombone_input                             ! Set by Bmad. See below. 
@@ -3051,7 +3091,7 @@ discussed above. With a finite \vn{delta_time}, the transfer map will be differe
 The order of operations, is the effect of \vn{delta_time} is applied first and the linear
 transformation above is applied afterwards. Since using \vn{match_end} or \vn{match_end_orbit} with
 a finite \vn{delta_time} can be confusing, such a situation is not allowed. Use two separate
-\vn{patch} elements if needed.
+\vn{match} elements if needed.
 
 \index{l}
 The length attribute \vn{l} is not used in the transfer matrix calculation. The length \vn{l} is
@@ -3333,9 +3373,12 @@ See \sref{s:list.octupole} for a full list of element attributes along with a th
 \index{b3_gradient}
 Attributes specific to an \vn{octupole} element are:
 \begin{example}
-  k3          = <Real>   ! Octupole strength.
-  b3_gradient = <Real>   ! Field strength. (\sref{s:depend}).
+  k3           = <Real>   ! Octupole strength.
+  b3_gradient  = <Real>   ! Field strength. (\sref{s:depend}).
+  field_master = <T/F>    ! See \sref{s:field.master}.
 \end{example}
+The normalized octupole \vn{k3} strength is related to the unnormalized \vn{b3_gradient} field
+strength through \Eq{kqlbp}.
 
 \index{tilt}
 If the \vn{tilt} attribute is present without a value then a value of 
@@ -3471,9 +3514,10 @@ length of the patch will be equal to the \vn{z_offset}.}
 
 %-----------------
 
-A \vn{patch} element shifts the reference orbit and time. Also see
-\vn{floor_shift} (\sref{s:floor.ele}) and \vn{fiducial}
-(\sref{s:fiducial}) elements.
+A \vn{patch} element shifts the reference orbit and time. Also see \vn{floor_shift}
+(\sref{s:floor.ele}) and \vn{fiducial} (\sref{s:fiducial}) elements. A common application of a patch
+is to orient two lines with respect to each other. For example, to orient an injection line with the
+ring it is injecting into (\sref{s:ex.inj}).
 
 General \vn{patch} element attributes are:
 \begin{center}
@@ -3506,22 +3550,17 @@ Attributes specific to a \vn{patch} elements are:
   tilt            = <Real>    ! Exit face orientation from Entrance.
   E_tot_offset    = <Real>    ! Reference energy offset (eV).
   E_tot_set       = <Real>    ! Reference energy at exit end (eV).
-  flexible        = <Logic>   ! Default: False.
+  flexible        = <T/F>     ! Default: False.
   p0c_set         = <Real>    ! Reference momentum at exit end (eV).
   ref_coords      = <Switch>  ! Coordinate system defining the length.
-  l               = <Real>    ! Reference length. Dependent attribute (\sref{s:depend}). 
+  user_sets_length = <T/F>    ! User sets element length? Default is F.
+  l               = <Real>    ! Reference length. 
 \end{example}
 \index{x_offset}
 
 A straight line element like a \vn{drift} or a \vn{quadrupole} has the exit face parallel to the
 entrance face. With a \vn{patch} element, the entrance and exit faces can be arbitrarily oriented
-with respect to one another as shown in \fig{f:patch}A. The length \vn{l} of a \vn{patch} is a
-dependent (\sref{s:depend}) parameter and is the longitudinal ($z$ component) distance from the
-entrance origin to the exit origin using the exit end reference coordinates as shown in
-\fig{f:patch}B. See \sref{s:patch.prob} for a further discussion on the coordinate system of a
-\vn{patch}. Notice that while the length of the patch is defined with respect to the exit
-coordinates, the offsets that define the position of the exit end coordinates are defined with
-respect to the entrance coordinates.
+with respect to one another as shown in \fig{f:patch}A.
 
 \index{rigid patch}\index{inflexible patch}
 \index{flexible patch}
@@ -3530,7 +3569,7 @@ determined by the setting of the \vn{flexible} attribute.  With the \vn{flexible
 \vn{False}, the default, The exit face of the \vn{patch} will be determined from the offset, tilt
 and pitch attributes as described in \sref{s:patch.coords}. This type of \vn{patch} is called
 ``rigid'' or ``inflexible'' since the geometry of the \vn{patch} is solely determined by the
-\vn{patch}'s attributes as set in the lattice file and is independent of everything else.  Example:
+\vn{patch}'s attributes as set in the lattice file and is independent of everything else. Example:
 \begin{example}
   pt: patch, z_offset = 3.2   ! Equivalent to a drift
 \end{example}
@@ -3589,25 +3628,24 @@ transformation. This matters when the speed of the reference particle is less th
 reason, and due to complications involving PTC, it is recommended to use two patches in a row when
 both the orbit and energy are to be patched.
 
-Unfortunately, there is no intuitive way to define the ``\vn{length}'' \vn{L} of a patch. This is
-important since the transit time of the reference particle is the element length divided by the
-reference velocity. And the reference transit time will affect how the phase space $z$ coordinate
-changes through the patch via \Eq{zbctt}. To provide flexibility, a \vn{patch} has a \vn{ref_coords}
-parameter which can be set which will affect how the length is calculated. Possible settings of
+A \vn{patch} element can have an associated electric or magnetic field (\sref{s:fieldmap}. This can
+happen, for example, if a patch is used at the end of an injection line to match the reference
+coordinates of the injection line to the line being injected into (\sref{s:ex.inj}) and the patch
+element is within the field generated by an element in the line being injected into. In such a case,
+it can be convenient to set what the reference coordinates are since the orientation of any fields
+that are defined for a patch element will be oriented with respect to the patch element's reference
+coordinates. For this, the \vn{ref_coords}
+parameter of a patch can be used. Possible settings are:
 \vn{ref_coords} are:
 \begin{example}
-  entrance_end  ! Results in L = z_offset
-  no_end        ! Results in L = 0
+  entrance_end  !
   exit_end      ! Default
 \end{example}
-The default setting of \vn{ref_coords} is \vn{exit_end} and with this, the length is calculated as
-the perpendicular distance between the origin of the patch's entrance coordinate system and the exit
-face of the patch using as shown in \fig{f:patch}. If \vn{ref_coords} is set to \vn{entrance_end},
-the length is calculated as the perpendicular distance between the entrance face and the origin of
-the exit coordinate system. In this case, the length has the same value as \vn{z_offset}. Finally,
-if \vn{ref_coords} is set to \vn{no_end}, the length is taken to be zero. Example:
+The default setting of \vn{ref_coords} is \vn{exit_end} and with this the reference coordinates are
+set by the exit end coordinate system (see \fig{f:patch}). If \vn{ref_coords} is set to
+\vn{entrance_end}, the reference coordinates are set by the entrance end coordinate system. Example:
 \begin{example}
-  p1: patch, x_offset = 1, x_pitch = 0.4   ! L = 0.289418
+  p1: patch, x_offset = 1, x_pitch = 0.4   ! L = 0.289418 see below
   p2: p1, ref_coords = entrance_end        ! L = 0
 \end{example}
 Here \vn{p1} has \vn{ref_coords} set to \vn{exit_end} (the default). \vn{p2} inherits the parameters
@@ -3625,9 +3663,22 @@ The configuration of \vn{pA} followed by \vn{pB} is equivalent geometrically to 
 above but the total length of the \vn{(pA, pB)} line is zero which is different from the length of
 \vn{p1}.
 
-The \vn{t_offset} attribute offsets the reference time so that the reference time at the exit end of
-the patch \vn{t_ref(exit)} is related to the reference time at the beginning of the patch
-\vn{t_ref(entrance)} via
+Unfortunately, there is no intuitive way to define the ``\vn{length}'' \vn{L} of a patch. This is
+important since the transit time of the reference particle is the element length divided by the
+reference velocity. And the reference transit time will affect how the phase space $z$ coordinate
+changes through the patch via \Eq{zbctt}. If the parameter \vn{user_sets_length} is set to True, the
+value of \vn{l} set in the lattice file will be used (default is zero). \vn{user_sets_length} is set
+to False (the default), the length of a patch is calculated depending upon the setting of
+\vn{ref_coords}.  If \vn{ref_coords} is set to \vn{exit_end}, the length of the patch is calculated
+as the perpendicular distance between the origin of the patch's entrance coordinate system and the
+exit face of the patch as shown in \fig{f:patch}B. If \vn{ref_coords} is set to \vn{entrance_end},
+the length is calculated as the perpendicular distance between the entrance face and the origin of
+the exit coordinate system. In this case, the length will be equal to \vn{z_offset}.
+
+To provide flexibility, the \vn{t_offset} attribute can be
+used to offset the reference time. The reference time at the exit end of the patch
+\vn{t_ref(exit)} is related to the reference time at the beginning of the patch \vn{t_ref(entrance)}
+via
 \begin{example}
   t_ref(exit) = t_ref(entrance) + t_offset + dt_travel_ref
 \end{example}
@@ -3670,6 +3721,7 @@ Since the geometry of a \vn{patch} element is complicated, interpolation of the 
 region of a patch follows special rules. See section~\sref{s:wall.vacuum} for more details.
 
 %-----------------------------------------------------------------
+\vskip 0ex plus 10ex
 \section{Photon_Init}
 \label{s:photon.init}
 \index{photon_init|hyperbf}
@@ -3703,7 +3755,7 @@ Attributes specific to an \vn{photon_init} element are:
   E_center                 = <Real>    ! Average init photon energy of 1st mode (eV).
   E2_center                = <Real>    ! Average init photon energy of 2nd mode (eV).
   E2_probability           = <Real>    ! Probability of 2nd mode.
-  E_center_relative_to_ref = <Logic>   ! E_center relative to reference E?
+  E_center_relative_to_ref = <T/F>     ! E_center relative to reference E?
   e_field_x                = <Real>    ! Polarization. x & y = 0 -> random
   e_field_y                = <Real>
   energy_distribution      = <Switch>  ! Gaussian or uniform
@@ -3912,11 +3964,14 @@ See \sref{s:list.quadrupole} for a full list of element attributes along with a 
 \index{k1}\index{b1_gradient}
 Attributes specific to a \vn{quadrupole} element are:
 \begin{example}
-  b1_gradient    = <Real>    ! Field strength. (\sref{s:depend}).
-  k1             = <Real>    ! Quadrupole strength.
-  fq1            = <Real>    ! Soft edge fringe parameter.
-  fq2            = <Real>    ! Soft edge fringe parameter.
+  b1_gradient  = <Real>    ! Field strength. (\sref{s:depend}).
+  k1           = <Real>    ! Quadrupole strength.
+  fq1          = <Real>    ! Soft edge fringe parameter.
+  fq2          = <Real>    ! Soft edge fringe parameter.
+  field_master = <T/F>     ! See \sref{s:field.master}.
  \end{example}
+The normalized quadrupole \vn{k1} strength is related to the unnormalized \vn{b1_gradient} field
+strength through \Eq{kqlbp}.
 
 \index{tilt}
 If the \vn{tilt} attribute is present without a value then a value of $\pi/4$
@@ -3937,6 +3992,7 @@ Example:
 \end{example}
 
 %-----------------------------------------------------------------------------
+\vskip 0ex plus 10ex
 \section{Ramper}
 \label{s:ramper}
 \index{ovlerlay|hyperbf}
@@ -3944,19 +4000,19 @@ Example:
 A \vn{ramper} element is a type of \vn{control} element (\sref{s:lord.slave}). That is, a
 \vn{ramper} element can be used to make variations in the attributes of other elements while a
 program is running. The \vn{ramper} element is similar to an \vn{overlay} element except that
-\vn{ramper} elements are designed to efficiently control large sets of elements. Also \vn{ramper}
-elements can be used to smoothly vary parameters as particle are propagated through a
-lattice. \vn{Ramper} elements where implemented to solve the problem of simulating machine ramping
-where the strength of many elements in a machine are varied continuously as a function of time. The
-drawback of \vn{ramper} elements is that they can be only be used with programs that that are
-designed to handle them.\footnote 
+\vn{ramper} elements are designed to control large sets of elements. Also \vn{ramper} elements can
+be used to smoothly vary parameters as particle are propagated through a lattice. \vn{Ramper}
+elements where implemented to solve the problem of simulating machine ramping where the strength of
+many elements in a machine are varied continuously as a function of time. The drawback of
+\vn{ramper} elements is that they can be only be used with programs that that are designed to handle
+them.\footnote
   {
 In particular, the \vn{long_term_tracking} program that is bundled with the \bmad software
 (\sref{s:tao.intro}) can handle \vn{ramper} elements.
   }
-Ramper elements will be ignored in programs that are not designed to handle them.
-
-Parameters that \vn{ramper} elements control must not be controlled by any \vn{overlay}.
+Ramper elements will be ignored in programs that are not designed to handle them. How a program
+handles ramper elements will be program dependent and the program documentation should be consulted
+for details.
 
 Note: \vn{ac_kicker} elements can also be used for simulating a time dependent element.
 
@@ -3999,6 +4055,7 @@ Examples:
 \begin{example}
   ramp_e: ramper = \{*[e_tot]:\{4e+08, 4.00532e+08, 4.01982e+08, ...\}\},
                 var = \{time\}, x_knot = \{0, 0.001, 0.002, ...\}, interpolation = spline
+
   amp = 1e9;  omega = 0.167;  t0 = 0.053
   ramp_rf: ramper = \{rfcavity::*[voltage]:amp*sin(omega *(t + t0)),
         rfcavity::*[phi0]:0.00158*t^2 + 3*q\}, var = \{t, q\}
@@ -4009,15 +4066,16 @@ will be applied to the \vn{e_tot} attribute (\sref{s:energy}) of all elements (s
 character ``\vn{*}'' (\sref{s:ele.match}) will match to all element names).
 
 The \vn{ramp_rf} ramper in the above example varies the \vn{voltage} and \vn{phase} (\vn{phi0})
-attributes of all elements that match to \vn{rfcavity::*}. That is, all \vn{rfcavity} elements. Here mathematical
-expressions are used instead of knot points.
+attributes of all elements that match to \vn{rfcavity::*}. That is, all \vn{rfcavity} elements. Here
+mathematical expressions are used instead of knot points.
 
 \vn{Ramper} elements can control the variables of other controller element but in this case it is
 not permitted to use wild card characters. That is, in the above example, ``\vn{*}'' will not match
 to any controller elements.
 
 Unlike \vn{group} or \vn{overlay} elements, it is not permitted for different \vn{ramper} elements
-to control the same parameter of a given slave element.
+to control the same parameter of a given slave element. Additionally, parameters that \vn{ramper}
+elements control must not be controlled by any \vn{overlay}.
 
 Note: There is a program to plot controller response curves bundled with the \bmad software
 (\sref{s:tao.intro}) called \vn{controller_function_plot}. Documentation on this can
@@ -4067,6 +4125,7 @@ Attributes specific to an \vn{rfcavity} are:
   phi0_multipass  = <Real>    ! Phase variation with multipass (rad/2pi).
   phi0_autoscale  = <Real>    ! Set by Bmad if autoscaling is turned on (rad/2pi).
   gradient        = <Real>    ! Accelerating gradient (V/m). Dependent attribute (\sref{s:depend}).
+  longitudinal_mode = <Int>   ! Longitudinal mode. Default is 1. May be 0 or 1.
 \end{example}
 
 The integrated energy kick felt by a particle, assuming no phase slippage, is 
@@ -4116,10 +4175,10 @@ be modeled. In addition, if a field map is specified
 \index{runge_kutta!and field maps}
 \index{symp_lie_bmad!and field maps}
 If a field map is specified (\sref{s:fieldmap}), tracking using an integrator is possible. A field
-map is only used for \vn{runge_kutta}, \vn{fixed_step_runge_kutta}, and \vn{symp_lie_bmad}
-tracking (\sref{s:tkm}).  Only the fundamental mode has an analytical formula for the symplectic
-tracking. In the future, the other modes could be used with \vn{symp_lie_bmad} tracking using a
-field expansion about the centerline.
+map is only used for \vn{runge_kutta}, \vn{fixed_step_runge_kutta}, and \vn{symp_lie_bmad} tracking
+(\sref{s:tkm}). Only the fundamental mode has an analytical formula for the symplectic
+tracking. With \vn{cavity_type} set to \vn{standing_wave}, the longitudinal mode is set by the
+\vn{longitudinal_mode} parameter. The possible values are 0 or 1 and the default setting is 0.
 
 The \vn{cavity_type} is the type of cavity being simulated. Possible
 settings are:
@@ -4169,10 +4228,10 @@ See \sref{s:list.sad.mult} for a full list of element attributes along with a th
 Attributes specific to an \vn{sextupole} element are:
 \begin{example}
   bs_field        = <Real>    ! Solenoid field. SAD equivalent: BZ.
+  ks              = <Real>    ! Solenoid strength. 
   e1, e2          = <Real>    ! Bend face angles.
   eps_step_scale  = <Real>    ! Step size scale. Default = 1. SAD equivalent: EPS.
   fq1, fq2        = <Real>    ! Quadrupole fringe integral. SAD equivalents: F1, F2.
-  ks              = <Real>    ! Solenoid strength. 
   x_offset_mult   = <Real>    ! Mult component offset. SAD equivalent: DX.
   y_offset_mult   = <Real>    ! Mult component offset. SAD equivalent: DY.
   x_pitch_mult    = <Real>    ! Mult component pitch. SAD equivalent: DPX or CHI1.
@@ -4336,10 +4395,12 @@ Attributes specific to an \vn{sextupole} element are:
 \begin{example}
   k2          = <Real>   ! Sextupole strength.
   b2_gradient = <Real>   ! Field strength. (\sref{s:depend}).
+  field_master = <T/F>    ! See \sref{s:field.master}.
 \end{example}
+The normalized sextupole \vn{k2} strength is related to the unnormalized \vn{b2_gradient} field
+strength through \Eq{kqlbp}.
 
-The \vn{bmad_standard}
-calculation treats a sextupole using a kick--drift--kick model.
+The \vn{bmad_standard} calculation treats a sextupole using a kick--drift--kick model.
 
 If the \vn{tilt} attribute is present without a value then a value of 
 $\pi/6$ is used.
@@ -4379,11 +4440,15 @@ See \sref{s:list.solenoid} for a full list of element attributes along with a th
 \index{bs_gradient}
 Attributes specific to an \vn{solenoid} element are:
 \begin{example}
-  ks          = <Real>   ! Solenoid strength.
-  bs_field    = <Real>   ! Field strength. (\sref{s:depend}).
-  l_soft_edge = <Real>   ! For modeling a ``soft" fringe.
-  r_solenoid  = <Real>   ! Solenoid radius.
+  ks           = <Real>  ! Solenoid strength.
+  bs_field     = <Real>  ! Solenoid field strength.
+  field_master = <T/F>   ! See \sref{s:field.master}.
+  l_soft_edge  = <Real>  ! For modeling a ``soft" fringe.
+  r_solenoid   = <Real>  ! Solenoid radius.
 \end{example}
+
+The \vn{ks} and \vn{bs_field} parameters are the normalized and unnormalized solenoid strengths related
+through \Eq{kqlbp}.
 
 The \vn{bmad_standard} tracking model (\sref{s:tkm}) uses a ``hard edge'' model where the field
 goes from zero to full strength. 
@@ -4439,11 +4504,14 @@ See \sref{s:list.sol.quad} for a full list of element attributes along with a th
 \index{k1}\index{ks}\index{bs_field}\index{b1_gradient}
 Attributes specific to a \vn{sol_quad} element are:
 \begin{example}
-  k1          = <Real>    ! Quadrupole strength.
-  ks          = <Real>    ! Solenoid strength.
-  bs_field    = <Real>    ! Solenoid Field strength.
-  b1_gradient = <Real>    ! Quadrupole Field strength.
+  k1           = <Real>    ! Quadrupole strength.
+  ks           = <Real>    ! Solenoid strength.
+  bs_field     = <Real>    ! Solenoid Field strength.
+  b1_gradient  = <Real>    ! Quadrupole Field strength.
+  field_master = <T/F>     ! See \sref{s:field.master}.
 \end{example}
+The normalized quadrupole \vn{k1} and solenoid \vn{ks} field strengths are related to the
+unnormalized \vn{b1_gradient} and \vn{bs_field} field strengths through \Eq{kqlbp}.
 
 Example:
 \begin{example}

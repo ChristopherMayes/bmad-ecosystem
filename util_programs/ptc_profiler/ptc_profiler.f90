@@ -1,3 +1,9 @@
+!+
+! Program ptc_profiler
+!
+! Program to profile (show computation times) for PTC.
+!-
+
 program ptc_profiler
 
 use bmad
@@ -21,6 +27,8 @@ type (profile_struct), target :: new(20), old(20)
 real(rp) stop_time, spin_diff_old, spin_diff_new
 integer ie, ii, i, k, n, p, is, ns, n_time_calc
 integer num_steps(20), integrator_order(3)
+
+logical err
 
 character(100) lat_file
 character(2), parameter :: q_name(0:3) = ['q0', 'qx', 'qy', 'qz']
@@ -59,17 +67,17 @@ do ie = 1, lat%n_ele_track
       ele%value(num_steps$) = num_steps(is)
       call set_flags_for_changed_attribute(ele, ele%value(num_steps$))
 
-      ptc_com%old_integrator = .true.
+      ptc_com%old_integrator = 1   ! True
       call kill_taylor (ele%taylor);  call kill_taylor(ele%spin_taylor)
-      call spin_concat_linear_maps(old(is)%map, lat%branch(0), ie-1, ie, orbit = orbit)
+      call spin_concat_linear_maps(err, old(is)%map, lat%branch(0), ie-1, ie, orbit = orbit)
 
       old(is)%t_taylor = taylor_timer(ele, orbit(ie-1), stop_time, n_time_calc)
       old(is)%t_probe  = probe_timer(ele, orbit(ie-1), stop_time, n_time_calc)
       old(is)%t_fibre  = fibre_timer(ele, orbit(ie-1), stop_time, n_time_calc)
 
-      ptc_com%old_integrator = .false.
+      ptc_com%old_integrator = -1  ! False
       call kill_taylor (ele%taylor);  call kill_taylor(ele%spin_taylor)
-      call spin_concat_linear_maps(new(is)%map, lat%branch(0), ie-1, ie, orbit = orbit)
+      call spin_concat_linear_maps(err, new(is)%map, lat%branch(0), ie-1, ie, orbit = orbit)
 
       new(is)%t_taylor = taylor_timer(ele, orbit(ie-1), stop_time, n_time_calc)
       new(is)%t_probe  = probe_timer(ele, orbit(ie-1), stop_time, n_time_calc)
@@ -79,11 +87,11 @@ do ie = 1, lat%n_ele_track
     map0 = new(is-1)%map
 
     print *
-    print '(2a)',    'Element: ', trim(ele%name)
-    print '(a, i3)', 'Taylor_order:     ', ptc_com%taylor_order_ptc
-    print '(a, i3)', 'Integrator_order: ', nint(ele%value(integrator_order$))
-    print '(a, l1)', 'Exact_model:      ', ptc_com%exact_model
-    print '(a)', '                                 old                                                   new'
+    print '(2a)',     'Element: ', trim(ele%name)
+    print '(a, 2i3)', 'Taylor_order:     ', bmad_com%taylor_order, ptc_private%taylor_order_ptc
+    print '(a, i3)',  'Integrator_order: ', nint(ele%value(integrator_order$))
+    print '(a, l1)',  'Exact_model:      ', ptc_com%exact_model
+    print '(a)', '      |                    old spin integrator               |                    new spin integrator'
     print '(a)', 'Steps | %spin_diff    orb_diff   t_probe   t_fibre  t_taylor | %spin_diff    orb_diff   t_probe   t_fibre  t_taylor'
 
     do is = 1, size(num_steps)
@@ -161,7 +169,7 @@ do
   ptc_cdamap = 1
   ptc_probe8 = ptc_cdamap + ptc_probe
 
-  call track_probe (ptc_probe8, ptc_com%base_state+SPIN0, fibre1 = bmadl%start)
+  call track_probe (ptc_probe8, ptc_private%base_state+SPIN0, fibre1 = bmadl%start)
   ic = ic + 1
 
   call kill (ptc_probe8)

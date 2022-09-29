@@ -221,6 +221,11 @@ typedef valarray<CPP_bookkeeping_state>          CPP_bookkeeping_state_ARRAY;
 typedef valarray<CPP_bookkeeping_state_ARRAY>    CPP_bookkeeping_state_MATRIX;
 typedef valarray<CPP_bookkeeping_state_MATRIX>   CPP_bookkeeping_state_TENSOR;
 
+class CPP_rad_map;
+typedef valarray<CPP_rad_map>          CPP_rad_map_ARRAY;
+typedef valarray<CPP_rad_map_ARRAY>    CPP_rad_map_MATRIX;
+typedef valarray<CPP_rad_map_MATRIX>   CPP_rad_map_TENSOR;
+
 class CPP_rad_int_ele_cache;
 typedef valarray<CPP_rad_int_ele_cache>          CPP_rad_int_ele_cache_ARRAY;
 typedef valarray<CPP_rad_int_ele_cache_ARRAY>    CPP_rad_int_ele_cache_MATRIX;
@@ -256,15 +261,15 @@ typedef valarray<CPP_photon_material>          CPP_photon_material_ARRAY;
 typedef valarray<CPP_photon_material_ARRAY>    CPP_photon_material_MATRIX;
 typedef valarray<CPP_photon_material_MATRIX>   CPP_photon_material_TENSOR;
 
-class CPP_pixel_grid_pt;
-typedef valarray<CPP_pixel_grid_pt>          CPP_pixel_grid_pt_ARRAY;
-typedef valarray<CPP_pixel_grid_pt_ARRAY>    CPP_pixel_grid_pt_MATRIX;
-typedef valarray<CPP_pixel_grid_pt_MATRIX>   CPP_pixel_grid_pt_TENSOR;
+class CPP_pixel_pt;
+typedef valarray<CPP_pixel_pt>          CPP_pixel_pt_ARRAY;
+typedef valarray<CPP_pixel_pt_ARRAY>    CPP_pixel_pt_MATRIX;
+typedef valarray<CPP_pixel_pt_MATRIX>   CPP_pixel_pt_TENSOR;
 
-class CPP_pixel_grid;
-typedef valarray<CPP_pixel_grid>          CPP_pixel_grid_ARRAY;
-typedef valarray<CPP_pixel_grid_ARRAY>    CPP_pixel_grid_MATRIX;
-typedef valarray<CPP_pixel_grid_MATRIX>   CPP_pixel_grid_TENSOR;
+class CPP_pixel_detec;
+typedef valarray<CPP_pixel_detec>          CPP_pixel_detec_ARRAY;
+typedef valarray<CPP_pixel_detec_ARRAY>    CPP_pixel_detec_MATRIX;
+typedef valarray<CPP_pixel_detec_MATRIX>   CPP_pixel_detec_TENSOR;
 
 class CPP_photon_element;
 typedef valarray<CPP_photon_element>          CPP_photon_element_ARRAY;
@@ -356,6 +361,11 @@ typedef valarray<CPP_em_field>          CPP_em_field_ARRAY;
 typedef valarray<CPP_em_field_ARRAY>    CPP_em_field_MATRIX;
 typedef valarray<CPP_em_field_MATRIX>   CPP_em_field_TENSOR;
 
+class CPP_strong_beam;
+typedef valarray<CPP_strong_beam>          CPP_strong_beam_ARRAY;
+typedef valarray<CPP_strong_beam_ARRAY>    CPP_strong_beam_MATRIX;
+typedef valarray<CPP_strong_beam_MATRIX>   CPP_strong_beam_TENSOR;
+
 class CPP_track_point;
 typedef valarray<CPP_track_point>          CPP_track_point_ARRAY;
 typedef valarray<CPP_track_point_ARRAY>    CPP_track_point_MATRIX;
@@ -371,10 +381,10 @@ typedef valarray<CPP_synch_rad_common>          CPP_synch_rad_common_ARRAY;
 typedef valarray<CPP_synch_rad_common_ARRAY>    CPP_synch_rad_common_MATRIX;
 typedef valarray<CPP_synch_rad_common_MATRIX>   CPP_synch_rad_common_TENSOR;
 
-class CPP_csr_parameter;
-typedef valarray<CPP_csr_parameter>          CPP_csr_parameter_ARRAY;
-typedef valarray<CPP_csr_parameter_ARRAY>    CPP_csr_parameter_MATRIX;
-typedef valarray<CPP_csr_parameter_MATRIX>   CPP_csr_parameter_TENSOR;
+class CPP_space_charge_common;
+typedef valarray<CPP_space_charge_common>          CPP_space_charge_common_ARRAY;
+typedef valarray<CPP_space_charge_common_ARRAY>    CPP_space_charge_common_MATRIX;
+typedef valarray<CPP_space_charge_common_MATRIX>   CPP_space_charge_common_TENSOR;
 
 class CPP_bmad_common;
 typedef valarray<CPP_bmad_common>          CPP_bmad_common_ARRAY;
@@ -581,11 +591,13 @@ public:
   Real f;
   Real amp;
   Real phi;
+  Int rf_clock_harmonic;
 
   CPP_ac_kicker_freq() :
     f(0.0),
     amp(0.0),
-    phi(0.0)
+    phi(0.0),
+    rf_clock_harmonic(0)
     {}
 
   ~CPP_ac_kicker_freq() {
@@ -607,11 +619,11 @@ class Opaque_ac_kicker_class {};  // Opaque class for pointers to corresponding 
 class CPP_ac_kicker {
 public:
   CPP_ac_kicker_time_ARRAY amp_vs_time;
-  CPP_ac_kicker_freq_ARRAY frequencies;
+  CPP_ac_kicker_freq_ARRAY frequency;
 
   CPP_ac_kicker() :
     amp_vs_time(CPP_ac_kicker_time_ARRAY(CPP_ac_kicker_time(), 0)),
-    frequencies(CPP_ac_kicker_freq_ARRAY(CPP_ac_kicker_freq(), 0))
+    frequency(CPP_ac_kicker_freq_ARRAY(CPP_ac_kicker_freq(), 0))
     {}
 
   ~CPP_ac_kicker() {
@@ -739,7 +751,7 @@ public:
   Real_ARRAY field;
   Real_ARRAY phase;
   Real charge;
-  Real path_len;
+  Real dt_ref;
   Real r;
   Real p0c;
   Real e_potential;
@@ -760,7 +772,7 @@ public:
     field(0.0, 2),
     phase(0.0, 2),
     charge(0.0),
-    path_len(0.0),
+    dt_ref(0.0),
     r(0.0),
     p0c(0.0),
     e_potential(0.0),
@@ -1808,25 +1820,49 @@ bool operator== (const CPP_bookkeeping_state&, const CPP_bookkeeping_state&);
 
 
 //--------------------------------------------------------------------
+// CPP_rad_map
+
+class Opaque_rad_map_class {};  // Opaque class for pointers to corresponding fortran structs.
+
+class CPP_rad_map {
+public:
+  Real_ARRAY ref_orb;
+  Real_ARRAY damp_vec;
+  Real_MATRIX damp_mat;
+  Real_MATRIX stoc_mat;
+
+  CPP_rad_map() :
+    ref_orb(-1, 6),
+    damp_vec(0.0, 6),
+    damp_mat(Real_ARRAY(0.0, 6), 6),
+    stoc_mat(Real_ARRAY(0.0, 6), 6)
+    {}
+
+  ~CPP_rad_map() {
+  }
+
+};   // End Class
+
+extern "C" void rad_map_to_c (const Opaque_rad_map_class*, CPP_rad_map&);
+extern "C" void rad_map_to_f (const CPP_rad_map&, Opaque_rad_map_class*);
+
+bool operator== (const CPP_rad_map&, const CPP_rad_map&);
+
+
+//--------------------------------------------------------------------
 // CPP_rad_int_ele_cache
 
 class Opaque_rad_int_ele_cache_class {};  // Opaque class for pointers to corresponding fortran structs.
 
 class CPP_rad_int_ele_cache {
 public:
-  Real_ARRAY orb0;
-  Real g2_0;
-  Real g3_0;
-  Real_ARRAY dg2_dorb;
-  Real_ARRAY dg3_dorb;
+  CPP_rad_map rm0;
+  CPP_rad_map rm1;
   Bool stale;
 
   CPP_rad_int_ele_cache() :
-    orb0(0.0, 6),
-    g2_0(0.0),
-    g3_0(0.0),
-    dg2_dorb(0.0, 6),
-    dg3_dorb(0.0, 6),
+    rm0(),
+    rm1(),
     stale(true)
     {}
 
@@ -2034,13 +2070,13 @@ bool operator== (const CPP_photon_material&, const CPP_photon_material&);
 
 
 //--------------------------------------------------------------------
-// CPP_pixel_grid_pt
+// CPP_pixel_pt
 
-class Opaque_pixel_grid_pt_class {};  // Opaque class for pointers to corresponding fortran structs.
+class Opaque_pixel_pt_class {};  // Opaque class for pointers to corresponding fortran structs.
 
-class CPP_pixel_grid_pt {
+class CPP_pixel_pt {
 public:
-  Int n_photon;
+  Int8 n_photon;
   Complex e_x;
   Complex e_y;
   Real intensity_x;
@@ -2051,7 +2087,7 @@ public:
   Real_ARRAY init_orbit;
   Real_ARRAY init_orbit_rms;
 
-  CPP_pixel_grid_pt() :
+  CPP_pixel_pt() :
     n_photon(0),
     e_x(0.0),
     e_y(0.0),
@@ -2064,43 +2100,49 @@ public:
     init_orbit_rms(0.0, 6)
     {}
 
-  ~CPP_pixel_grid_pt() {
+  ~CPP_pixel_pt() {
   }
 
 };   // End Class
 
-extern "C" void pixel_grid_pt_to_c (const Opaque_pixel_grid_pt_class*, CPP_pixel_grid_pt&);
-extern "C" void pixel_grid_pt_to_f (const CPP_pixel_grid_pt&, Opaque_pixel_grid_pt_class*);
+extern "C" void pixel_pt_to_c (const Opaque_pixel_pt_class*, CPP_pixel_pt&);
+extern "C" void pixel_pt_to_f (const CPP_pixel_pt&, Opaque_pixel_pt_class*);
 
-bool operator== (const CPP_pixel_grid_pt&, const CPP_pixel_grid_pt&);
+bool operator== (const CPP_pixel_pt&, const CPP_pixel_pt&);
 
 
 //--------------------------------------------------------------------
-// CPP_pixel_grid
+// CPP_pixel_detec
 
-class Opaque_pixel_grid_class {};  // Opaque class for pointers to corresponding fortran structs.
+class Opaque_pixel_detec_class {};  // Opaque class for pointers to corresponding fortran structs.
 
-class CPP_pixel_grid {
+class CPP_pixel_detec {
 public:
   Real_ARRAY dr;
   Real_ARRAY r0;
-  CPP_pixel_grid_pt_MATRIX pt;
+  Int8 n_track_tot;
+  Int8 n_hit_detec;
+  Int8 n_hit_pixel;
+  CPP_pixel_pt_MATRIX pt;
 
-  CPP_pixel_grid() :
+  CPP_pixel_detec() :
     dr(0.0, 2),
     r0(0.0, 2),
-    pt(CPP_pixel_grid_pt_ARRAY(CPP_pixel_grid_pt(), 0), 0)
+    n_track_tot(0),
+    n_hit_detec(0),
+    n_hit_pixel(0),
+    pt(CPP_pixel_pt_ARRAY(CPP_pixel_pt(), 0), 0)
     {}
 
-  ~CPP_pixel_grid() {
+  ~CPP_pixel_detec() {
   }
 
 };   // End Class
 
-extern "C" void pixel_grid_to_c (const Opaque_pixel_grid_class*, CPP_pixel_grid&);
-extern "C" void pixel_grid_to_f (const CPP_pixel_grid&, Opaque_pixel_grid_class*);
+extern "C" void pixel_detec_to_c (const Opaque_pixel_detec_class*, CPP_pixel_detec&);
+extern "C" void pixel_detec_to_f (const CPP_pixel_detec&, Opaque_pixel_detec_class*);
 
-bool operator== (const CPP_pixel_grid&, const CPP_pixel_grid&);
+bool operator== (const CPP_pixel_detec&, const CPP_pixel_detec&);
 
 
 //--------------------------------------------------------------------
@@ -2114,7 +2156,7 @@ public:
   CPP_photon_target target;
   CPP_photon_material material;
   CPP_surface_grid grid;
-  CPP_pixel_grid pixel;
+  CPP_pixel_detec pixel;
 
   CPP_photon_element() :
     curvature(),
@@ -2504,11 +2546,12 @@ public:
   string species;
   Bool init_spin;
   Bool full_6d_coupling_calc;
-  Bool use_particle_start_for_center;
+  Bool use_particle_start;
   Bool use_t_coords;
   Bool use_z_as_t;
   Real sig_e_jitter;
   Real sig_e;
+  Bool use_particle_start_for_center;
 
   CPP_beam_init() :
     position_file(),
@@ -2542,11 +2585,12 @@ public:
     species(),
     init_spin(true),
     full_6d_coupling_calc(false),
-    use_particle_start_for_center(false),
+    use_particle_start(false),
     use_t_coords(false),
     use_z_as_t(false),
     sig_e_jitter(0.0),
-    sig_e(0.0)
+    sig_e(0.0),
+    use_particle_start_for_center(false)
     {}
 
   ~CPP_beam_init() {
@@ -2577,9 +2621,11 @@ public:
   Int default_tracking_species;
   Int geometry;
   Int ixx;
-  Bool high_energy_space_charge_on;
   Bool stable;
   Bool live_branch;
+  Real g1_integral;
+  Real g2_integral;
+  Real g3_integral;
   CPP_bookkeeping_state bookkeeping_state;
   CPP_beam_init beam_init;
 
@@ -2594,9 +2640,11 @@ public:
     default_tracking_species(Bmad::REF_PARTICLE),
     geometry(0),
     ixx(0),
-    high_energy_space_charge_on(false),
     stable(false),
     live_branch(true),
+    g1_integral(-1),
+    g2_integral(-1),
+    g3_integral(-1),
     bookkeeping_state(),
     beam_init()
     {}
@@ -2684,6 +2732,7 @@ class Opaque_anormal_mode_class {};  // Opaque class for pointers to correspondi
 class CPP_anormal_mode {
 public:
   Real emittance;
+  Real emittance_no_vert;
   Real_ARRAY synch_int;
   Real j_damp;
   Real alpha_damp;
@@ -2692,6 +2741,7 @@ public:
 
   CPP_anormal_mode() :
     emittance(0.0),
+    emittance_no_vert(0.0),
     synch_int(0.0, 3),
     j_damp(0.0),
     alpha_damp(0.0),
@@ -2759,6 +2809,9 @@ public:
   Real e_loss;
   Real rf_voltage;
   Real pz_aperture;
+  Real pz_average;
+  Real momentum_compaction;
+  Real dpz_damp;
   CPP_anormal_mode a;
   CPP_anormal_mode b;
   CPP_anormal_mode z;
@@ -2771,6 +2824,9 @@ public:
     e_loss(0.0),
     rf_voltage(0.0),
     pz_aperture(0.0),
+    pz_average(0.0),
+    momentum_compaction(0.0),
+    dpz_damp(0.0),
     a(),
     b(),
     z(),
@@ -2825,6 +2881,42 @@ bool operator== (const CPP_em_field&, const CPP_em_field&);
 
 
 //--------------------------------------------------------------------
+// CPP_strong_beam
+
+class Opaque_strong_beam_class {};  // Opaque class for pointers to corresponding fortran structs.
+
+class CPP_strong_beam {
+public:
+  Int ix_slice;
+  Real x_center;
+  Real y_center;
+  Real x_sigma;
+  Real y_sigma;
+  Real dx;
+  Real dy;
+
+  CPP_strong_beam() :
+    ix_slice(0),
+    x_center(0.0),
+    y_center(0.0),
+    x_sigma(0.0),
+    y_sigma(0.0),
+    dx(0.0),
+    dy(0.0)
+    {}
+
+  ~CPP_strong_beam() {
+  }
+
+};   // End Class
+
+extern "C" void strong_beam_to_c (const Opaque_strong_beam_class*, CPP_strong_beam&);
+extern "C" void strong_beam_to_f (const CPP_strong_beam&, Opaque_strong_beam_class*);
+
+bool operator== (const CPP_strong_beam&, const CPP_strong_beam&);
+
+
+//--------------------------------------------------------------------
 // CPP_track_point
 
 class Opaque_track_point_class {};  // Opaque class for pointers to corresponding fortran structs.
@@ -2834,6 +2926,7 @@ public:
   Real s_body;
   CPP_coord orb;
   CPP_em_field field;
+  CPP_strong_beam strong_beam;
   Real_ARRAY vec0;
   Real_MATRIX mat6;
 
@@ -2841,6 +2934,7 @@ public:
     s_body(0.0),
     orb(),
     field(),
+    strong_beam(),
     vec0(0.0, 6),
     mat6(Real_ARRAY(0.0, 6), 6)
     {}
@@ -2921,13 +3015,17 @@ bool operator== (const CPP_synch_rad_common&, const CPP_synch_rad_common&);
 
 
 //--------------------------------------------------------------------
-// CPP_csr_parameter
+// CPP_space_charge_common
 
-class Opaque_csr_parameter_class {};  // Opaque class for pointers to corresponding fortran structs.
+class Opaque_space_charge_common_class {};  // Opaque class for pointers to corresponding fortran structs.
 
-class CPP_csr_parameter {
+class CPP_space_charge_common {
 public:
   Real ds_track_step;
+  Real dt_track_step;
+  Real cathode_strength_cutoff;
+  Real rel_tol_tracking;
+  Real abs_tol_tracking;
   Real beam_chamber_height;
   Real sigma_cutoff;
   Int_ARRAY space_charge_mesh_size;
@@ -2937,14 +3035,14 @@ public:
   Int n_shield_images;
   Int sc_min_in_bin;
   Bool lsc_kick_transverse_dependence;
-  Bool print_taylor_warning;
-  Bool write_csr_wake;
-  Bool use_csr_old;
-  Bool small_angle_approx;
-  string wake_output_file;
+  string diagnostic_output_file;
 
-  CPP_csr_parameter() :
+  CPP_space_charge_common() :
     ds_track_step(0.0),
+    dt_track_step(1e-12),
+    cathode_strength_cutoff(0.01),
+    rel_tol_tracking(1e-8),
+    abs_tol_tracking(1e-10),
     beam_chamber_height(0.0),
     sigma_cutoff(0.1),
     space_charge_mesh_size(32, 3),
@@ -2954,22 +3052,18 @@ public:
     n_shield_images(0),
     sc_min_in_bin(10),
     lsc_kick_transverse_dependence(false),
-    print_taylor_warning(true),
-    write_csr_wake(false),
-    use_csr_old(false),
-    small_angle_approx(true),
-    wake_output_file()
+    diagnostic_output_file()
     {}
 
-  ~CPP_csr_parameter() {
+  ~CPP_space_charge_common() {
   }
 
 };   // End Class
 
-extern "C" void csr_parameter_to_c (const Opaque_csr_parameter_class*, CPP_csr_parameter&);
-extern "C" void csr_parameter_to_f (const CPP_csr_parameter&, Opaque_csr_parameter_class*);
+extern "C" void space_charge_common_to_c (const Opaque_space_charge_common_class*, CPP_space_charge_common&);
+extern "C" void space_charge_common_to_f (const CPP_space_charge_common&, Opaque_space_charge_common_class*);
 
-bool operator== (const CPP_csr_parameter&, const CPP_csr_parameter&);
+bool operator== (const CPP_space_charge_common&, const CPP_space_charge_common&);
 
 
 //--------------------------------------------------------------------
@@ -2994,7 +3088,6 @@ public:
   Real autoscale_amp_rel_tol;
   Real autoscale_phase_tol;
   Real electric_dipole_moment;
-  Real ptc_cut_factor;
   Real sad_eps_scale;
   Real sad_amp_max;
   Int sad_n_div_max;
@@ -3005,8 +3098,8 @@ public:
   Bool rf_phase_below_transition_ref;
   Bool sr_wakes_on;
   Bool lr_wakes_on;
-  Bool ptc_use_orientation_patches;
   Bool auto_bookkeeper;
+  Bool high_energy_space_charge_on;
   Bool csr_and_space_charge_on;
   Bool spin_tracking_on;
   Bool backwards_time_tracking_on;
@@ -3015,10 +3108,10 @@ public:
   Bool radiation_zero_average;
   Bool radiation_fluctuations_on;
   Bool conserve_taylor_maps;
-  Bool absolute_time_tracking_default;
+  Bool absolute_time_tracking;
+  Bool absolute_time_ref_shift;
   Bool convert_to_kinetic_momentum;
   Bool aperture_limit_on;
-  Bool ptc_print_info_messages;
   Bool debug;
 
   CPP_bmad_common() :
@@ -3037,7 +3130,6 @@ public:
     autoscale_amp_rel_tol(1e-6),
     autoscale_phase_tol(1e-5),
     electric_dipole_moment(0.0),
-    ptc_cut_factor(0.006),
     sad_eps_scale(5.0e-3),
     sad_amp_max(5.0e-2),
     sad_n_div_max(1000),
@@ -3048,8 +3140,8 @@ public:
     rf_phase_below_transition_ref(false),
     sr_wakes_on(true),
     lr_wakes_on(true),
-    ptc_use_orientation_patches(true),
     auto_bookkeeper(true),
+    high_energy_space_charge_on(false),
     csr_and_space_charge_on(false),
     spin_tracking_on(false),
     backwards_time_tracking_on(false),
@@ -3058,10 +3150,10 @@ public:
     radiation_zero_average(false),
     radiation_fluctuations_on(false),
     conserve_taylor_maps(true),
-    absolute_time_tracking_default(false),
+    absolute_time_tracking(false),
+    absolute_time_ref_shift(true),
     convert_to_kinetic_momentum(false),
     aperture_limit_on(true),
-    ptc_print_info_messages(false),
     debug(false)
     {}
 
@@ -3208,6 +3300,7 @@ public:
   CPP_photon_element* photon;
   CPP_rad_int_ele_cache* rad_int_cache;
   CPP_taylor_ARRAY taylor;
+  Real_ARRAY spin_taylor_ref_orb_in;
   CPP_taylor_ARRAY spin_taylor;
   CPP_wake* wake;
   CPP_wall3d_ARRAY wall3d;
@@ -3219,14 +3312,13 @@ public:
   CPP_coord map_ref_orb_out;
   CPP_coord time_ref_orb_in;
   CPP_coord time_ref_orb_out;
-  Real_ARRAY spin_taylor_ref_orb_in;
   Real_ARRAY value;
   Real_ARRAY old_value;
+  Real_MATRIX spin_q;
   Real_ARRAY vec0;
   Real_MATRIX mat6;
   Real_MATRIX c_mat;
   Real gamma_c;
-  Real_MATRIX spin_q;
   Real s_start;
   Real s;
   Real ref_time;
@@ -3317,6 +3409,7 @@ public:
     photon(NULL),
     rad_int_cache(NULL),
     taylor(CPP_taylor_ARRAY(CPP_taylor(), 6)),
+    spin_taylor_ref_orb_in(Bmad::REAL_GARBAGE, 6),
     spin_taylor(CPP_taylor_ARRAY(CPP_taylor(), 4)),
     wake(NULL),
     wall3d(CPP_wall3d_ARRAY(CPP_wall3d(), 0)),
@@ -3328,14 +3421,13 @@ public:
     map_ref_orb_out(),
     time_ref_orb_in(),
     time_ref_orb_out(),
-    spin_taylor_ref_orb_in(0.0, 6),
     value(double(0), Bmad::NUM_ELE_ATTRIB+1),
     old_value(double(0), Bmad::NUM_ELE_ATTRIB+1),
+    spin_q(Real_ARRAY(Bmad::REAL_GARBAGE, 7), 4),
     vec0(0.0, 6),
     mat6(Real_ARRAY(0.0, 6), 6),
     c_mat(Real_ARRAY(0.0, 2), 2),
     gamma_c(1),
-    spin_q(Real_ARRAY(Bmad::REAL_GARBAGE, 7), 4),
     s_start(0.0),
     s(0.0),
     ref_time(0.0),
@@ -3543,7 +3635,6 @@ public:
   Int_ARRAY ic;
   Int photon_type;
   Int creation_hash;
-  Bool absolute_time_tracking;
 
   CPP_lat() :
     use_name(),
@@ -3574,8 +3665,7 @@ public:
     input_taylor_order(0),
     ic(0, 0),
     photon_type(Bmad::INCOHERENT),
-    creation_hash(0),
-    absolute_time_tracking(false)
+    creation_hash(0)
     {}
 
   ~CPP_lat() {
@@ -3608,9 +3698,13 @@ public:
   Real charge_live;
   Real z_center;
   Real t_center;
+  Real t0;
   Int ix_ele;
   Int ix_bunch;
+  Int ix_turn;
   Int n_live;
+  Int n_good;
+  Int n_bad;
 
   CPP_bunch() :
     particle(CPP_coord_ARRAY(CPP_coord(), 0)),
@@ -3619,9 +3713,13 @@ public:
     charge_live(0.0),
     z_center(0.0),
     t_center(0.0),
+    t0(Bmad::REAL_GARBAGE),
     ix_ele(0),
     ix_bunch(0),
-    n_live(0)
+    ix_turn(0),
+    n_live(0),
+    n_good(0),
+    n_bad(0)
     {}
 
   ~CPP_bunch() {
@@ -3654,6 +3752,7 @@ public:
   Real_ARRAY rel_max;
   Real_ARRAY rel_min;
   Real s;
+  Real t;
   Real charge_live;
   Real charge_tot;
   Int n_particle_tot;
@@ -3674,6 +3773,7 @@ public:
     rel_max(0.0, 6),
     rel_min(0.0, 6),
     s(-1),
+    t(-1),
     charge_live(0.0),
     charge_tot(0.0),
     n_particle_tot(0),

@@ -21,8 +21,8 @@ contains
 !+
 ! Function g_bend_from_em_field (B, E, orbit) result (g_bend)
 !
-! Routine to calculate the bending strength (1/bending_radius) for
-! a given particle for a given field.
+! Routine to calculate the bending strength (1/bending_radius) for a given particle for a given field.
+! This will include the dipole bending field of an sbend.
 !
 ! Input:
 !   B(3)  -- real(rp): Magnetic field.
@@ -55,7 +55,7 @@ end function g_bend_from_em_field
 !-----------------------------------------------------------
 !+
 ! Subroutine em_field_calc (ele, param, s_pos, orbit, local_ref_frame, field, calc_dfield, err_flag, &
-!               calc_potential, use_overlap, grid_allow_s_out_of_bounds, rf_time, used_eles, err_print_out_of_bounds)
+!               calc_potential, use_overlap, grid_allow_s_out_of_bounds, rf_time, used_eles, print_err)
 !
 ! Routine to calculate the E and B fields at a particular place in an element.
 !
@@ -88,9 +88,8 @@ end function g_bend_from_em_field
 !                         For example, time_runge_kutta uses this.
 !   used_eles(:)     -- ele_pointer_struct, allocatable, optional: For internal use only when this routine is
 !                         called recursively. Used to prevent double counting when there is field overlap.
-!   err_print_out_of_bounds
-!                    -- logical, optional: For grids: print an error message if the particle is out of bounds?
-!                         Default is True.
+!   print_err        -- logical, optional: Print an error message? Default is True.
+!                         For example, if the particle is out of bounds when the field is defined on a grid.
 !
 ! Output:
 !   field       -- em_field_struct: E and B fields and derivatives.
@@ -98,7 +97,7 @@ end function g_bend_from_em_field
 !-
 
 recursive subroutine em_field_calc (ele, param, s_pos, orbit, local_ref_frame, field, calc_dfield, err_flag, &
-             calc_potential, use_overlap, grid_allow_s_out_of_bounds, rf_time, used_eles, err_print_out_of_bounds)
+             calc_potential, use_overlap, grid_allow_s_out_of_bounds, rf_time, used_eles, print_err)
 
 use super_recipes_mod
 
@@ -119,6 +118,7 @@ type (taylor_field_struct), pointer :: t_field
 type (taylor_field_plane1_struct), pointer :: t_plane
 type (floor_position_struct) lab_position, global_position, lord_position
 type (spline_struct) spline
+type (branch_struct), pointer :: branch
 
 real(rp), optional :: rf_time
 real(rp) :: x, y, j1, dj1, time, s_pos, s_body, s_lab, s_lab2, z, ff, dk(3,3), ref_charge, f_p0c
@@ -143,7 +143,7 @@ complex(rp), pointer :: expt_ptr
 integer i, j, m, n, ix, trig_x, trig_y, status, im, iz0, iz1, izp, ix_pole_max
 
 logical :: local_ref_frame
-logical, optional :: calc_dfield, calc_potential, err_flag, use_overlap, grid_allow_s_out_of_bounds, err_print_out_of_bounds
+logical, optional :: calc_dfield, calc_potential, err_flag, use_overlap, grid_allow_s_out_of_bounds, print_err
 logical do_df_calc, err, dfield_computed, add_kicks
 
 character(*), parameter :: r_name = 'em_field_calc'
@@ -199,6 +199,10 @@ if (ele%field_calc == refer_to_lords$) then
       lord%floor = ele%floor  ! Needed if there is field overlap.
     else
       ds = ele%s_start - lord%s_start
+      if (lord%value(l$) > 0 .and. lord%s_start > lord%s) then ! Element wraps around zero
+        branch => pointer_to_branch(lord)
+        ds = modulo2(ds, 0.5_rp*branch%param%total_length)
+      endif
       s_lab2 = s_lab + ds
     endif
 
@@ -208,10 +212,10 @@ if (ele%field_calc == refer_to_lords$) then
         if (associated(used_eles(j)%ele, lord)) cycle lord_loop
       enddo
       call em_field_calc (lord, param, s_lab2, lab_orb, .false., field2, calc_dfield, err, calc_potential, &
-                            use_overlap, grid_allow_s_out_of_bounds, rf_time, used_eles, err_print_out_of_bounds)
+                            use_overlap, grid_allow_s_out_of_bounds, rf_time, used_eles, print_err)
     else
       call em_field_calc (lord, param, s_lab2, lab_orb, .false., field2, calc_dfield, err, calc_potential, &
-                            use_overlap, grid_allow_s_out_of_bounds, rf_time, used_list, err_print_out_of_bounds)
+                            use_overlap, grid_allow_s_out_of_bounds, rf_time, used_list, print_err)
     endif
 
     if (err) then
@@ -264,14 +268,14 @@ endif
 
 if (ele%key == sad_mult$ .and. ele%value(sad_flag$) == 0) then
   call transfer_ele(ele, ele2)
-  ele2%value(sad_flag$) = 1  ! To prevent infinite recursion
 
   ! Solenoid calc. Ignore multipoles
-  nullify(ele2%a_pole)
-  nullify(ele2%b_pole)
+  ele2%value(sad_flag$) = 1.0_rp  ! Signal solenoid calc. Sad_flag is only used here and nowhere else.
   call em_field_calc (ele2, param, s_pos, orbit, local_ref_frame, field1, calc_dfield, err_flag, calc_potential, &
-                                use_overlap, grid_allow_s_out_of_bounds, rf_time, used_eles, err_print_out_of_bounds)
-  ! multipole calc
+                                use_overlap, grid_allow_s_out_of_bounds, rf_time, used_eles, print_err)
+
+  ! Multipole calc. Ignore solenoid
+  ele2%value(sad_flag$) = 2.0_rp  ! Signal solenoid calc. Sad_flag is only used here and nowhere else.
   ele2%value(ks$) = 0
   ele2%value(bs_field$) = 0
   ele2%value(x_pitch_tot$) = ele%value(x_pitch_tot$) + ele%value(x_pitch_mult$)
@@ -279,7 +283,7 @@ if (ele%key == sad_mult$ .and. ele%value(sad_flag$) == 0) then
   ele2%value(x_offset_tot$) = ele%value(x_offset_tot$) + ele%value(x_offset_mult$)
   ele2%value(y_offset_tot$) = ele%value(y_offset_tot$) + ele%value(y_offset_mult$)
   call em_field_calc (ele2, param, s_pos, orbit, local_ref_frame, field2, calc_dfield, err_flag, calc_potential, &
-                                use_overlap, grid_allow_s_out_of_bounds, rf_time, used_eles, err_print_out_of_bounds)
+                                use_overlap, grid_allow_s_out_of_bounds, rf_time, used_eles, print_err)
 
   field%b  = field1%b + field2%b
   field%db = field1%db + field2%db 
@@ -299,7 +303,7 @@ endif
 !----------------------------------------------------------------------------
 ! Set up common variables for all (non-custom) methods
 
-ref_charge = charge_of(param%particle)
+ref_charge = charge_of(ele%ref_species)
 
 x = local_orb%vec(1)
 y = local_orb%vec(3)
@@ -388,7 +392,7 @@ case (bmad_standard$)
 
     ! The crab cavity is modeled as a TM110 traveling wave mode
     if (ele%value(l$) /= 0) then
-      voltage = e_accel_field(ele, voltage$) * rel_tracking_charge_to_mass(orbit, param%particle)
+      voltage = e_accel_field(ele, voltage$) * rel_tracking_charge_to_mass(orbit, ele%ref_species)
       k_rf = twopi * ele%value(rf_frequency$) / c_light
       if (present(rf_time)) then
         time = rf_time
@@ -645,9 +649,9 @@ case (bmad_standard$)
     endif
 
   !------------------
-  ! Solenoid
+  ! Solenoid / sad_mult
 
-  case (solenoid$, sad_mult$)
+  case (solenoid$)
 
     field%b(3) = ele%value(ks$) * f_p0c
 
@@ -657,6 +661,20 @@ case (bmad_standard$)
 
     if (logic_option(.false., calc_potential)) then
       field%A = (0.5_rp * field%b(3)) * [-y, x, 0.0_rp]      
+    endif
+
+  case (sad_mult$)
+    if (ele%value(sad_flag$) == 1.0_rp) then
+      field%b(3) = ele%value(ks$) * f_p0c
+
+      if (do_df_calc) then
+        dfield_computed = .true.
+      endif
+
+      if (logic_option(.false., calc_potential)) then
+        field%A = (0.5_rp * field%b(3)) * [-y, x, 0.0_rp]      
+      endif
+      return
     endif
 
   !------------------
@@ -674,8 +692,9 @@ case (bmad_standard$)
   ! Error
 
   case default
-    call out_io (s_fatal$, r_name, 'BMAD_STANDARD FIELD NOT YET CODED FOR ELEMENT OF TYPE: ' // key_name(ele%key), &
-                                   'FOR ELEMENT: ' // ele%name, 'PERHAPS "FIELD_CALC" NEEDS TO BE SET FOR THIS ELEMENT?')
+    if (logic_option(.true., print_err)) call out_io (s_fatal$, r_name, &
+                          'BMAD_STANDARD FIELD NOT YET CODED FOR ELEMENT OF TYPE: ' // key_name(ele%key), &
+                          'FOR ELEMENT: ' // ele%name, 'PERHAPS "FIELD_CALC" NEEDS TO BE SET FOR THIS ELEMENT?')
     if (global_com%exit_on_error) call err_exit
     if (present(err_flag)) err_flag = .true.
     return
@@ -1375,7 +1394,7 @@ case(fieldmap$)
       case (xyz$)
       
         call grid_field_interpolate(ele, local_orb, g_field, g_pt, err, x, y, z, &
-                    allow_s_out_of_bounds = grid_allow_s_out_of_bounds, err_print_out_of_bounds = err_print_out_of_bounds)
+                    allow_s_out_of_bounds = grid_allow_s_out_of_bounds, print_err = print_err)
         if (err) then
           if (present(err_flag)) err_flag = .true.
           return
@@ -1394,7 +1413,7 @@ case(fieldmap$)
         r = sqrt(x**2 + y**2)
 
         call grid_field_interpolate(ele, local_orb, g_field, g_pt, err, r, z, &
-                     allow_s_out_of_bounds = grid_allow_s_out_of_bounds, err_print_out_of_bounds = err_print_out_of_bounds)
+                     allow_s_out_of_bounds = grid_allow_s_out_of_bounds, print_err = print_err)
         if (err) then
           if (present(err_flag)) err_flag = .true.
           return
@@ -1539,8 +1558,7 @@ end select
 ! Scale ac_kicker element field
 
 if (ele%key == ac_kicker$) then
-
-  a_amp = ac_kicker_amp (ele, orbit)
+  a_amp = ac_kicker_amp (ele, orbit, rf_time)
 
   field%E = a_amp * field%E
   field%B = a_amp * field%B
@@ -1573,7 +1591,7 @@ if (ele%n_lord_field /= 0 .and. logic_option(.true., use_overlap)) then
     ! Set use_overlap = False to prevent recursion.
     call em_field_calc (lord, param, lord_position%r(3), lord_orb, .false., l1_field, calc_dfield, err, &
           use_overlap = .false., grid_allow_s_out_of_bounds = .true., used_eles = used_eles, &
-          err_print_out_of_bounds = err_print_out_of_bounds)
+          print_err = print_err)
     if (err) then
       if (present(err_flag)) err_flag = .true.
       return
@@ -1626,7 +1644,7 @@ integer i
 
 do i = 1, size(x)
   call grid_field_interpolate(ele, local_orb, g_field_ptr, g_pt, err, x(i), z, &
-              allow_s_out_of_bounds = .true., err_print_out_of_bounds = err_print_out_of_bounds)
+              allow_s_out_of_bounds = .true., print_err = print_err)
   rb_field(i) = x(i) * expt_ptr * g_pt%b(3)
 enddo
 
@@ -1824,30 +1842,28 @@ end subroutine rotate_em_field
 !-----------------------------------------------------------
 !+
 ! Subroutine grid_field_interpolate (ele, orbit, grid, field, err_flag, x1, x2, x3, &
-!                                                              allow_s_out_of_bounds, err_print_out_of_bounds)
+!                                                              allow_s_out_of_bounds, print_err)
 !
 ! Subroutine to interpolate the E and B fields on a rectilinear grid.
 !
 ! Input:
-!   ele      -- ele_struct: Element containing the grid.
-!   orbit    -- coord_struct: Used for constructing an error message if the particle is out of bounds.
-!   grid     -- grid_field_struct: Grid to interpolate.
-!   err_flag -- Logical: Set to true if there is an error. False otherwise.
-!   x1       -- real(rp): dimension 1 interpolation point.
-!   x2       -- real(rp), optional: dimension 2 interpolation point.
-!   x3       -- real(rp), optional: dimension 3 interpolation point.
+!   ele       -- ele_struct: Element containing the grid.
+!   orbit     -- coord_struct: Used for constructing an error message if the particle is out of bounds.
+!   grid      -- grid_field_struct: Grid to interpolate.
+!   err_flag  -- Logical: Set to true if there is an error. False otherwise.
+!   x1        -- real(rp): dimension 1 interpolation point.
+!   x2        -- real(rp), optional: dimension 2 interpolation point.
+!   x3        -- real(rp), optional: dimension 3 interpolation point.
 !   allow_s_out_of_bounds -- logical, optional: allow s-coordinate grossly out of bounds to return
 !                 zero field without an error. This is used when the field of one element overlaps
 !                 the field of another. Default is False.
-!   err_print_out_of_bounds
-!            -- logical, optional: print an error message if the particle is out of bounds? Default is True.
+!   print_err -- logical, optional: print an error message if the particle is out of bounds? Default is True.
 !
 ! Output:
-!   field    -- grid_field_pt_struct: Interpolated field (complex)
+!   field     -- grid_field_pt_struct: Interpolated field (complex)
 !-
 
-subroutine grid_field_interpolate (ele, orbit, grid, g_field, err_flag, x1, x2, x3, &
-                                                                allow_s_out_of_bounds, err_print_out_of_bounds)
+subroutine grid_field_interpolate (ele, orbit, grid, g_field, err_flag, x1, x2, x3, allow_s_out_of_bounds, print_err)
 
 type (ele_struct) ele
 type (coord_struct) orbit
@@ -1866,7 +1882,7 @@ integer i, n, i1, i2, i3, grid_dim, allow_s, lbnd, ubnd, nn
 integer, parameter :: allow_tiny$ = 1, allow_some$ = 2, allow_all$ = 3
 
 logical err_flag
-logical, optional :: allow_s_out_of_bounds, err_print_out_of_bounds
+logical, optional :: allow_s_out_of_bounds, print_err
 
 character(*), parameter :: r_name = 'grid_field_interpolate'
 character(40) extrapolation
@@ -2137,7 +2153,7 @@ if (i0 < ig0 .or. i0 >= ig1) then
     call check_aperture_limit(orb2, ele, in_between$, ele%branch%param)
   endif
 
-  if (orb2%state == alive$ .and. logic_option(.true., err_print_out_of_bounds)) then
+  if (orb2%state == alive$ .and. logic_option(.true., print_err)) then
     call out_io (s_error$, r_name, '\i0\D GRID_FIELD INTERPOLATION INDEX OUT OF BOUNDS: I\i0\ = \i0\ (POSITION = \f12.6\)', &
                                  'FOR ELEMENT: ' // ele%name // '  ' // trim(ele_loc_name(ele, parens = '()')), &
                                  'PARTICLE POSITION: \3F12.6\ ', &

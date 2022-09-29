@@ -377,6 +377,7 @@ slave_val = slave%value  ! save
 slave%value = lord%value
 if (lord%key == lcavity$ .or. lord%key == rfcavity$) then
   slave%value(phi0_multipass$) = slave_val(phi0_multipass$)
+  slave%value(l_active$)       = lord%value(l_active$)
 endif
 
 ! A slave's field_master = T irregardless of the lord's setting.
@@ -393,6 +394,7 @@ if (attribute_index(slave, 'FIELD_MASTER') /= 0) slave%field_master = .true.
 
 if (associated(slave%a_pole)) deallocate(slave%a_pole, slave%b_pole)
 if (associated(slave%a_pole_elec)) deallocate(slave%a_pole_elec, slave%b_pole_elec)
+if (allocated(slave%multipole_cache)) deallocate(slave%multipole_cache)
 
 ! A match element with match_end$: Restore initial Twiss parameters (which
 ! are calculated in twiss_propagate1).
@@ -407,7 +409,7 @@ if (lord%key == match$) then
     slave%value(eta_y0$)     = slave_val(eta_y0$)
     slave%value(etap_x0$)    = slave_val(etap_x0$)
     slave%value(etap_y0$)    = slave_val(etap_y0$)
-    slave%value(c11_mat0$:c22_mat1$) = slave_val(c11_mat0$:c22_mat1$)
+    slave%value(c11_mat0$:mode_flip1$) = slave_val(c11_mat0$:mode_flip1$)
   endif
 
   if (is_true(lord%value(match_end_orbit$))) then
@@ -533,6 +535,7 @@ endif
 slave%field_calc = refer_to_lords$
 if (associated(slave%a_pole)) deallocate(slave%a_pole, slave%b_pole)
 if (associated(slave%a_pole_elec)) deallocate(slave%a_pole_elec, slave%b_pole_elec)
+if (allocated(slave%multipole_cache)) deallocate(slave%multipole_cache)
 
 ! Bookkeeping for EM_Field slave is mostly independent of the lords.
 
@@ -573,6 +576,10 @@ if (slave%key == em_field$) then
   do i = 1, slave%n_lord
     lord => pointer_to_lord(slave, i)
     if (lord%lord_status /= super_lord$) cycle
+    lord%tracking_method = slave%tracking_method  ! Important for lcavity element to make sure 
+                                                  !   tracking along entire element is self-consistent.
+    lord%mat6_calc_method = tracking$
+    lord%spin_tracking_method = tracking$
     select case (lord%key)
     case (lcavity$)
       slave%value(constant_ref_energy$) = false$
@@ -1754,7 +1761,7 @@ subroutine aperture_bookkeeper (ele)
 
 type (ele_struct), target :: ele
 type (surface_grid_struct), pointer :: grid
-type (pixel_grid_struct), pointer :: pixel
+type (pixel_detec_struct), pointer :: pixel
 type (wall3d_section_struct), pointer :: sec
 
 real(rp) angle, r_wall, dr_dtheta, x, y

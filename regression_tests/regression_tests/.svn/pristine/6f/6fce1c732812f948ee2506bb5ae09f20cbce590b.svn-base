@@ -1,3 +1,0 @@
-##rm output.now
-../../debug/bin/bookkeeper_test 
-##cat output.now

@@ -30,7 +30,7 @@
 ! Input:
 !   lat        -- lat_struct: Lattice to use. The calculation assumes that 
 !                    the Twiss parameters have been calculated.
-!   orbit(0:)  -- Coord_struct: Closed orbit. for the branch.
+!   orbit(0:)  -- Coord_struct: Closed orbit for the branch.
 !   ix_cache   -- Integer, optional: Cache pointer.
 !                      = -2 --> No temporary wiggler cache. This is slow so only use as a check.
 !                      = -1 --> Use temporary cache for wiggler elements only (default).
@@ -46,7 +46,7 @@
 !     %sig_z          -- Bunch Length
 !     %e_loss         -- Energy loss in eV per turn
 !     %a, %b, %z      -- Anormal_mode_struct: Substructure
-!       %emittance      -- Emittance
+!       %emittance      -- Emittance. B-mode emit includes photon opening angle (I6) contribution.
 !       %synch_int(4:6) -- Synchrotron integrals
 !       %j_damp         -- Damping partition factor
 !       %alpha_damp     -- Exponential damping coefficient per turn
@@ -70,7 +70,7 @@
 !
 ! 2) The lin_norm_emit values are running sums from the beginning of the 
 !    lattice and include the beginning emittance stored in lat%a%emit and lat%b%emit.
-!-       
+!-
 
 subroutine radiation_integrals (lat, orbit, mode, ix_cache, ix_branch, rad_int_by_ele)
 
@@ -86,7 +86,6 @@ type (ele_struct) :: ele2, ele_start, ele_end, runt
 type (coord_struct), target :: orbit(0:), orb_start, orb_end, orb_here
 type (normal_modes_struct) mode
 type (bmad_common_struct) bmad_com_save
-type (lat_param_struct) branch_param_save
 type (track_struct), target :: track
 type (track_point_struct), pointer :: tp
 type (rad_int_all_ele_struct), optional, target :: rad_int_by_ele
@@ -192,9 +191,7 @@ bmad_com%csr_and_space_charge_on = .false.
 bmad_com%spin_tracking_on = .false.
 bmad_com%rel_tol_adaptive_tracking = 1d-6
 bmad_com%abs_tol_adaptive_tracking = 1d-8
-
-branch_param_save = branch%param
-branch%param%high_energy_space_charge_on = .false.
+bmad_com%high_energy_space_charge_on = .false.
 
 call init_ele (ele2)
 call init_ele (ele_start)
@@ -311,7 +308,7 @@ if (use_cache .or. init_cache) then
       call allocate_cache(cache_ele, track%n_pt)
       do i = 0, track%n_pt
         cache_ele%pt(i)%ref_orb_in  = orb_start
-        call cache_fill(branch, cache_ele%pt(i), track, i, max(0, i-1), min(track%n_pt, i+1))
+        call cache_fill(ele2, branch, cache_ele%pt(i), track, i, max(0, i-1), min(track%n_pt, i+1))
       enddo
 
     ! All else...
@@ -603,8 +600,10 @@ mode%b%synch_int(6) = i6b
 if (branch%param%geometry == closed$) then
   if (i2 /= 0) then
 
-    mode%a%emittance = const_q * gamma2_factor * i5a / (i2 - i4a)
-    mode%b%emittance = const_q * (gamma2_factor * i5b + 13 * i6b / 55) / (i2 - i4b)
+    mode%a%emittance         = const_q * gamma2_factor * i5a / (i2 - i4a)
+    mode%a%emittance_no_vert = mode%a%emittance
+    mode%b%emittance         = const_q * (gamma2_factor * i5b + 13 * i6b / 55) / (i2 - i4b)
+    mode%b%emittance_no_vert = const_q * (gamma2_factor * i5b) / (i2 - i4b)
 
     mode%a%j_damp = 1 - i4a / i2
     mode%b%j_damp = 1 - i4b / i2
@@ -632,10 +631,10 @@ if (branch%param%geometry == closed$) then
   endif
 
   mode%z%emittance = mode%sig_z * mode%sigE_E
+  mode%z%emittance_no_vert = mode%z%emittance
 endif
 
 bmad_com = bmad_com_save
-branch%param = branch_param_save
 
 call deallocate_ele_pointers(ele2)
 call deallocate_ele_pointers(ele_start)
@@ -740,8 +739,9 @@ end subroutine cache_this_point
 !------------------------------------------------------------------------
 ! contains
 
-subroutine cache_fill (branch, c_pt, track, ix, ix0, ix1)
+subroutine cache_fill (ele2, branch, c_pt, track, ix, ix0, ix1)
 
+type (ele_struct) ele2
 type (branch_struct) branch
 type (rad_int_track_point_struct) :: c_pt
 type (track_struct) track

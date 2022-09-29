@@ -38,7 +38,7 @@ real(rp) pz0, dvec(6)
 integer iuni, i, j, k, nc, ib, ix, iy, n_max, iu, it, id, n_turn
 
 logical, optional :: print_err
-logical calc_ok, this_calc_ok, err, mat_changed
+logical calc_ok, this_calc_ok, err, mat_changed, track_this_beam
 
 character(*), parameter :: r_name = "tao_lattice_calc"
 character(20) name
@@ -58,6 +58,7 @@ do iuni = lbound(s%u, 1), ubound(s%u, 1)
   if (err) then
     do id = 1, size(u%data)
       if (u%data(id)%data_type /= 'unstable.lattice') cycle
+      if (.not. u%data(id)%exists) cycle
       call tao_evaluate_a_datum (u%data(id), u, u%model, u%data(id)%model_value, u%data(id)%good_model)
     enddo
     calc_ok = .false.
@@ -125,8 +126,11 @@ uni_loop: do iuni = lbound(s%u, 1), ubound(s%u, 1)
       ! Need to beam track even if single tracking is not OK since the merit function may depend
       ! upon the beam tracking.
 
-      if (s%global%track_type == 'beam' .and. branch%param%particle /= photon$ .and. u%beam%track_beam_in_universe) then
-        call tao_inject_beam (u, tao_lat, ib, beam, this_calc_ok)
+      track_this_beam = (s%global%track_type == 'beam' .and. branch%param%particle /= photon$ .and. u%beam%track_beam_in_universe) 
+
+      if (track_this_beam .or. s%global%init_lat_sigma_from_beam) call tao_inject_beam (u, tao_lat, ib, beam, this_calc_ok)
+
+      if (track_this_beam) then
         if (.not. this_calc_ok) calc_ok = .false.
         if (this_calc_ok) then
           call tao_beam_track (u, tao_lat, ib, beam, this_calc_ok)
@@ -134,15 +138,22 @@ uni_loop: do iuni = lbound(s%u, 1), ubound(s%u, 1)
         else
           tao_branch%bunch_params(:)%n_particle_lost_in_ele = 0
           tao_branch%bunch_params(:)%n_particle_live = 0
+          if (allocated(tao_branch%bunch_params_comb)) then
+            tao_branch%bunch_params_comb(:)%n_particle_lost_in_ele = 0
+            tao_branch%bunch_params_comb(:)%n_particle_live = 0
+          endif
         endif
       endif
 
+      if (this_calc_ok) call tao_lat_sigma_track (tao_lat, this_calc_ok, ib, print_err)
+
       !
 
-      if (branch%param%geometry == closed$ .and. (u%calc%chrom_for_data .or. u%calc%chrom_for_plotting)) then
+      if (branch%param%geometry == closed$ .and. (s%com%force_chrom_calc .or. &
+                                                       u%calc%chrom_for_data .or. u%calc%chrom_for_plotting)) then
         call chrom_calc (tao_lat%lat, s%global%delta_e_chrom, tao_branch%a%chrom, tao_branch%b%chrom, err, &
-                       tao_branch%orbit(0)%vec(6), low_E_lat=tao_lat%low_E_lat, high_E_lat=tao_lat%high_E_lat, &
-                       ix_branch = ib)
+                tao_branch%orbit(0)%vec(6), low_E_lat=tao_lat%low_E_lat, high_E_lat=tao_lat%high_E_lat, ix_branch = ib)
+          s%com%force_chrom_calc = .false.
       endif
 
       ! do multi-turn tracking if needed.
@@ -173,6 +184,15 @@ uni_loop: do iuni = lbound(s%u, 1), ubound(s%u, 1)
               crv(1:nc-1) = crv_temp
               deallocate(crv_temp)
             endif
+
+            if (curve%n_turn < 1) then
+              call out_io (s_warn$, r_name, 'Multi-turn orbit curve has %n_turn component non-positive! ' // &
+                                                tao_curve_name(curve))
+              curve%why_invalid = '%n_turn component is not positive.'
+              curve%valid = .false.
+              cycle
+            endif
+
             crv(nc)%c => curve
             n_turn = max(n_turn, curve%n_turn)
             curve%valid = .true.
@@ -264,21 +284,13 @@ uni_loop: do iuni = lbound(s%u, 1), ubound(s%u, 1)
       da => u%dynamic_aperture
       call dynamic_aperture_scan(da%scan, da%param, da%pz, tao_lat%lat, print_timing = (.not. s%com%optimizer_running))
     endif
-
-    ! If calc is on common model then transfer data to base of all other universes
-
-    if (s%com%common_lattice .and. iuni == ix_common_uni$) then
-      do j = lbound(s%u, 1), ubound(s%u, 1)
-        if (j == ix_common_uni$) cycle
-        s%u(j)%data(:)%base_value = u%data(:)%model_value
-      enddo
-    endif
   endif  ! if (u%calc%lattice)
 
   ! Calculate non-expression data 
 
   do id = 1, size(u%data)
     if (substr(u%data(id)%data_type,1,11) == 'expression:') cycle
+    if (.not. u%data(id)%exists) cycle
     call tao_evaluate_a_datum (u%data(id), u, u%model, u%data(id)%model_value, u%data(id)%good_model)
   enddo
 
@@ -298,6 +310,7 @@ do iuni = lbound(s%u, 1), ubound(s%u, 1)
 
   do id = 1, size(u%data)
     if (substr(u%data(id)%data_type,1,11) /= 'expression:') cycle
+    if (.not. u%data(id)%exists) cycle
     call tao_evaluate_a_datum (u%data(id), u, u%model, u%data(id)%model_value, u%data(id)%good_model)
   enddo
 enddo

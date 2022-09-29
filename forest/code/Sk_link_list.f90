@@ -195,6 +195,18 @@ CONTAINS
        DEALLOCATE(L%DNA)
        if(lielib_print(12)==1) WRITE(6,*) " DNA CONTENT HAS BEEN DEALLOCATED "
     ENDIF
+
+    IF(ASSOCIATED(L%a)) THEN
+       call kill_array_of_fibres(L%a)
+       DEALLOCATE(L%a)
+       if(lielib_print(12)==1) WRITE(6,*) " ARRAY OF FIBRES HAS BEEN DEALLOCATED "
+    ENDIF
+    IF(ASSOCIATED(L%lf0)) THEN
+       call kill_d_lattice_functions(L%lf0) 
+       !DEALLOCATE(L%lf0)
+       if(lielib_print(12)==1) WRITE(6,*) " lf0 HAS BEEN DEALLOCATED "
+    ENDIF
+
     !    IF(ASSOCIATED(L%con)) THEN
     !       DEALLOCATE(L%con)
     !       if(lielib_print(12)==1) WRITE(6,*) " CONNECTOR CONTENT HAS BEEN KILLED "
@@ -693,7 +705,69 @@ endif
     L%HARMONIC_NUMBER=0
   END SUBROUTINE Set_Up
 
+ subroutine zero_d_lattice_function(a)
+ implicit none
+ type(d_lattice_function) , intent(inout) :: a
+  a%e=0
+  a%phase=0
+  a%damping=0
+  a%spin=0
+  a%Spin_lat=0
+  a%fixa=0
+  a%fixb=0
+  a%sigmas=0
+  a%emittance=0
+  a%a0=1
+  a%a1i=1
+  end subroutine zero_d_lattice_function
 
+ subroutine alloc_array_of_fibres(a,n)
+ implicit none
+ type(array_of_fibres), pointer :: a(:)
+ integer i,n,m
+ allocate(a(n))
+
+ do i=1,n
+   allocate(a(i)%m)
+   a(i)%m=0
+   allocate(a(i)%lf)
+   allocate(a(i)%centre)
+   a(i)%centre=0
+   call zero_d_lattice_function(a(i)%lf)
+   !allocate(a(i)%state)
+!   a(i)%state=default
+!   a(i)%state%TOTALPATH=-1
+ enddo
+
+ end  subroutine alloc_array_of_fibres
+
+ subroutine kill_d_lattice_functions(lf)
+ implicit none
+ type(d_lattice_function), pointer :: lf
+
+ if(associated(lf%m)) then
+  call kill(lf%m)
+  deallocate(lf%m)
+  nullify(lf%m)
+ endif
+ deallocate(lf)
+
+ end  subroutine kill_d_lattice_functions
+
+ subroutine kill_array_of_fibres(a)
+ implicit none
+ type(array_of_fibres), pointer :: a(:)
+ integer i
+
+ do i=1,size(a)
+   deallocate(a(i)%m)
+   deallocate(a(i)%centre)
+  ! deallocate(a(i)%state)
+   call kill_d_lattice_functions(a(i)%lf)
+ enddo
+! deallocate(a)
+
+ end  subroutine kill_array_of_fibres
 
 
   SUBROUTINE de_Set_Up( L ) ! deallocates layout content
@@ -704,6 +778,11 @@ endif
     deallocate(L%NTHIN);deallocate(L%THIN);
     deallocate(L%n);          !deallocate(L%parent_universe)   left out
     IF(ASSOCIATED(L%T)) deallocate(L%T);
+    IF(ASSOCIATED(L%A)) then
+       call kill_array_of_fibres(L%A)
+       deallocate(L%A);
+    endif
+   IF(ASSOCIATED(L%lf0)) deallocate(L%lf0); 
   END SUBROUTINE de_Set_Up
 
 
@@ -731,7 +810,8 @@ endif
     nullify(L%END )
     nullify(L%START )
     nullify(L%START_GROUND )! STORE THE GROUNDED VALUE OF START DURING CIRCULAR SCANNING
-    nullify(L%END_GROUND )! STORE THE GROUNDED VALUE OF END DURING CIRCULAR SCANNING
+    nullify(L%END_GROUND )
+    !   STORE THE GROUNDED VALUE OF END DURING CIRCULAR SCANNING
     !   nullify(L%NEXT )! STORE THE GROUNDED VALUE OF END DURING CIRCULAR SCANNING
     !   nullify(L%PREVIOUS )! STORE THE GROUNDED VALUE OF END DURING CIRCULAR SCANNING
     !  nullify(L%parent_universe ) ! left out
@@ -742,6 +822,8 @@ endif
     !    write(6,*) " Only =0 permitted (nullify) "
     !    ! call !write_e(100)
     ! endif
+          nullify(L%a)
+         nullify(L%lf0)! 
   END SUBROUTINE nullIFY_LAYOUT
 
 

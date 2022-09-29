@@ -1,4 +1,0 @@
-/home/dcs16/dcs16/bmad_distribution/bmad_dist_gfortran_mpi_openmp_shared/cpp_bmad_interface/production/CMakeFiles/edit_cache.dir
-/home/dcs16/dcs16/bmad_distribution/bmad_dist_gfortran_mpi_openmp_shared/cpp_bmad_interface/production/CMakeFiles/cpp_bmad_interface_test-exe.dir
-/home/dcs16/dcs16/bmad_distribution/bmad_dist_gfortran_mpi_openmp_shared/cpp_bmad_interface/production/CMakeFiles/rebuild_cache.dir
-/home/dcs16/dcs16/bmad_distribution/bmad_dist_gfortran_mpi_openmp_shared/cpp_bmad_interface/production/CMakeFiles/cpp_bmad_interface.dir

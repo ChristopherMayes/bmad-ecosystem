@@ -81,7 +81,7 @@ s_body = s1_body
 s_body_ptr => s_body     ! s_body_ptr used to get around an ifort bug.
 s_dir = sign(1.0_rp, s2_body-s1_body)
 ds_next = bmad_com%init_ds_adaptive_tracking * s_dir
-if (ele%tracking_method == fixed_step_runge_kutta$) ds_next = ele%value(ds_step$)
+if (ele%tracking_method == fixed_step_runge_kutta$) ds_next = ele%value(ds_step$) * s_dir
 ds_tiny  = bmad_com%significant_length/100
 track_spin = (ele%spin_tracking_method == tracking$ .and. &
                                 (ele%field_calc == bmad_standard$ .or. ele%field_calc == fieldmap$))
@@ -251,7 +251,7 @@ if (sqrt(orbit%vec(2)**2 + orbit%vec(4)**2) > 0.9 * (1 + orbit%vec(6)) .or. orbi
   orbit%state = lost_pz_aperture$
 else
   call out_io (s_error$, r_name, 'STEP SIZE IS TOO SMALL OR TOO MANY STEPS WHILE TRACKING THROUGH: ' // ele%name, &
-                                 'AT (X,Y,Z) POSITION FROM ENTRANCE: \3F12.7\ ', &
+                                 'AT (X,Y,Z) POSITION FROM ENTRANCE: \3F14.7\ ', &
                                  'TYPICALLY THIS IS DUE TO THE FIELD NOT OBEYING MAXWELL''S EQUATIONS.', &
                                  '[OFTEN TIMES THE FIELD IS NOT EVEN BE CONTINUOUS IN THIS CASE!]', &
                                  'THE PARTICLE WILL BE MARKED AS LOST.', &
@@ -674,7 +674,7 @@ endif
 
 err = .true.
 rel_dir = ele%orientation * orbit%direction
-dt_ds_ref = rel_dir / (beta0 * c_light)
+dt_ds_ref = ele%orientation / (beta0 * c_light)
 p0 = ele%value(p0c$) / c_light
 e_tot = orbit%p0c * (1 + orbit%vec(6)) / orbit%beta
 
@@ -687,13 +687,13 @@ if (ele%key == patch$) then
   ! Particle going towards an end uses the coordinate of that end.
   ! But the field is specified in the exit end coords so must transform if particle is traveling towards the entrance end.
   if (rel_dir == 1) then
-    call em_field_calc (ele, param, s_body, orbit, .true., field, calc_dfield, err, err_print_out_of_bounds = print_err)
+    call em_field_calc (ele, param, s_body, orbit, .true., field, calc_dfield, err, print_err = print_err)
   else
     call floor_angles_to_w_mat(ele%value(x_pitch$), ele%value(y_pitch$), ele%value(tilt$), w_mat = ww, w_mat_inv = ww_inv)
     orbit2 = orbit
     r_vec = matmul(ww_inv, [orbit%vec(1), orbit%vec(3), s_body] - [ele%value(x_offset$), ele%value(y_offset$), ele%value(z_offset$)])
     orbit2%vec(1:3:2) = r_vec(1:2)
-    call em_field_calc (ele, param, r_vec(3)+ele%value(l$), orbit2, .true., field, calc_dfield, err, err_print_out_of_bounds = print_err)
+    call em_field_calc (ele, param, r_vec(3)+ele%value(l$), orbit2, .true., field, calc_dfield, err, print_err = print_err)
     field%B = matmul(ww, field%B)
     field%E = matmul(ww, field%E)
     if (calc_dfield) then
@@ -705,7 +705,7 @@ if (ele%key == patch$) then
   endif
 
 else
-  call em_field_calc (ele, param, s_body, orbit, .true., field, calc_dfield, err, err_print_out_of_bounds = print_err)
+  call em_field_calc (ele, param, s_body, orbit, .true., field, calc_dfield, err, print_err = print_err)
 endif
 
 if (err) return

@@ -48,7 +48,7 @@ endif
 
 bmad_com%spin_tracking_on = .true.
 call bmad_parser (lat_file, lat, make_mats6 = .false.)
-abs_time = lat%absolute_time_tracking
+abs_time = bmad_com%absolute_time_tracking
 
 if (custom_test) then
   print '(a, 6f12.6)', 'Init orb: ', lat%particle_start%vec
@@ -77,10 +77,10 @@ do ib = 0, ubound(lat%branch, 1)
     if (i == branch%n_ele_track .and. ele%name == 'END') cycle
     ns = len_trim(ele%name) + 28
 
-    if (index(ele%name, 'ABS_TIME') /= 0) lat%absolute_time_tracking = .true.
+    if (index(ele%name, 'ABS_TIME') /= 0) bmad_com%absolute_time_tracking = .true.
 
     do j = 1, n_methods$
-      if (.not. valid_mat6_calc_method(ele, branch%param%particle, j) .or. j == static$ .or. j == custom$ .or. j == mad$) cycle
+      if (.not. valid_mat6_calc_method(ele, branch%param%particle, j) .or. j == custom$ .or. j == mad$) cycle
       if (ele%key /= taylor$) call kill_taylor(ele%taylor)
       ele%mat6_calc_method = j
       call init_coord (start_orb, lat%particle_start, ele, upstream_end$, branch%param%particle)
@@ -93,13 +93,13 @@ do ib = 0, ubound(lat%branch, 1)
       endif
     enddo
 
-    if (index(ele%name, 'ABS_TIME') /= 0) lat%absolute_time_tracking = abs_time
+    if (index(ele%name, 'ABS_TIME') /= 0) bmad_com%absolute_time_tracking = abs_time
 
     do k = 1, 8  ! Output line index
       do j = 1, n_methods$
         ! if (j == mad$ .and. custom_test) cycle
         if (j == fixed_step_runge_kutta$ .or. j == fixed_step_time_runge_kutta$) cycle
-        if(.not. valid_mat6_calc_method(ele, branch%param%particle, j) .or. j == static$ .or. j == custom$ .or. j == mad$) cycle
+        if(.not. valid_mat6_calc_method(ele, branch%param%particle, j) .or. j == custom$ .or. j == mad$) cycle
         ele2 => eles(j)
         if (k < 7) then
           if (custom_test) then
@@ -176,30 +176,42 @@ case ('"E_GUN1:Tracking:Symp_Err"')                ; tolerance = 'ABS 4e-07'
 case ('"E_GUN1:Tracking:Vector"')                  ; tolerance = 'ABS 6e-10'
 
 case ('"ECOLLIMATOR1:Tracking:MatrixRow5"')        ; tolerance = 'ABS 5e-11'
+case ('"ECOLLIMATOR1:Tracking:Symp_Err"')          ; tolerance = 'ABS 2e-11'
 
 case ('"ELSEPARATOR1:Tracking:MatrixRow5"')        ; tolerance = 'ABS 2e-10'
 case ('"ELSEPARATOR2:Tracking:MatrixRow5"')        ; tolerance = 'ABS 1e-10'
 case ('"ELSEPARATOR2:Tracking:Symp_Err"')          ; tolerance = 'ABS 5e-11'
 
+case ('"KICKER1:Tracking:MatrixRow5"')             ; tolerance = 'ABS 5e-11'
 
 case ('"WIGGLER_MAP1:Tracking:MatrixRow6"')        ; tolerance = 'ABS 2e-11'
 case ('"WIGGLER_MAP1:Tracking:Symp_Err"')          ; tolerance = 'ABS 2e-11'
 
-case ('"LCAVITY1:Tracking:Symp_Err"')              ; tolerance = 'ABS 1e-10'
+case ('"LCAVITY1:Tracking:MatrixRow5"')            ; tolerance = 'ABS 5e-11'
+case ('"LCAVITY1:Tracking:Symp_Err"')              ; tolerance = 'ABS 3e-9'
 case ('"LCAVITY2:Tracking:MatrixRow5"')            ; tolerance = 'ABS 1e-10'
+case ('"LCAVITY2:Tracking:Symp_Err"')              ; tolerance = 'ABS 1e-7'
 case ('"LCAVITY3:Tracking:MatrixRow5"')            ; tolerance = 'ABS 2e-10'
 case ('"LCAVITY3:Tracking:MatrixRow6"')            ; tolerance = 'ABS 1e-10'
-case ('"LCAVITY3:Tracking:Symp_Err"')              ; tolerance = 'ABS 1e-10'
+case ('"LCAVITY3:Tracking:Symp_Err"')              ; tolerance = 'ABS 1e-9'
 
-case ('"LCAVITY1_ABS_TIME:Tracking:Symp_Err"')     ; tolerance = 'ABS 1e-10'
+
+case ('"LCAVITY1_ABS_TIME:Tracking:MatrixRow5"')   ; tolerance = 'ABS 5e-11'
+case ('"LCAVITY1_ABS_TIME:Tracking:Symp_Err"')     ; tolerance = 'ABS 3e-9'
+case ('"LCAVITY2_ABS_TIME:Tracking:Symp_Err"')     ; tolerance = 'ABS 5e-11'
 case ('"LCAVITY2_ABS_TIME:Tracking:MatrixRow5"')   ; tolerance = 'ABS 1e-10'
 case ('"LCAVITY3_ABS_TIME:Tracking:MatrixRow5"')   ; tolerance = 'ABS 2e-10'
-case ('"LCAVITY3_ABS_TIME:Tracking:Symp_Err"')     ; tolerance = 'ABS 1e-9'
+case ('"LCAVITY3_ABS_TIME:Tracking:Symp_Err"')     ; tolerance = 'ABS 3e-9'
 
-case ('"PATCH1:Tracking:MatrixRow5"')              ; tolerance = 'ABS 3e-11'
+case ('"OCTUPOLE1:Tracking:MatrixRow5"')           ; tolerance = 'ABS 5e-11'
+
+case ('"PATCH1:Tracking:MatrixRow1"')              ; tolerance = 'ABS 3e-11'
+case ('"PATCH1:Tracking:MatrixRow5"')              ; tolerance = 'ABS 1e-10'
 case ('"PATCH1:Tracking:Symp_Err"')                ; tolerance = 'ABS 4e-11'
 
-case ('"RFCAVITY1:Tracking:MatrixRow5"')           ; tolerance = 'ABS 2e-11'
+case ('"RCOLLIMATOR1:Tracking:MatrixRow5"')        ; tolerance = 'ABS 5e-11'
+
+case ('"RFCAVITY1:Tracking:MatrixRow5"')           ; tolerance = 'ABS 5e-11'
 case ('"RFCAVITY1:Tracking:MatrixRow6"')           ; tolerance = 'ABS 1e-10'
 case ('"RFCAVITY1:Tracking:Symp_Err"')             ; tolerance = 'ABS 9e-11'
 case ('"RFCAVITY2:Tracking:MatrixRow5"')           ; tolerance = 'ABS 2e-10'
@@ -221,12 +233,12 @@ case ('"RBEND4:Bmad_Standard:MatrixRow3"')         ; tolerance = 'ABS 2e-10'
 case ('"RBEND4:Bmad_Standard:MatrixRow5"')         ; tolerance = 'ABS 1e-07'
 case ('"RBEND4:Bmad_Standard:Vector"')             ; tolerance = 'ABS 4e-10'
 case ('"RBEND4:Bmad_Standard:Symp_Err"')           ; tolerance = 'ABS 2e-11'
-case ('"RBEND4:Tracking:MatrixRow1"')              ; tolerance = 'ABS 1e-08'
+case ('"RBEND4:Tracking:MatrixRow1"')              ; tolerance = 'ABS 2e-08'
 case ('"RBEND4:Tracking:MatrixRow2"')              ; tolerance = 'ABS 2e-10'
 case ('"RBEND4:Tracking:MatrixRow3"')              ; tolerance = 'ABS 1e-07'
 case ('"RBEND4:Tracking:MatrixRow4"')              ; tolerance = 'ABS 2e-11'
 case ('"RBEND4:Tracking:MatrixRow5"')              ; tolerance = 'ABS 1e-05'
-case ('"RBEND4:Tracking:MatrixRow6"')              ; tolerance = 'ABS 2e-11'
+case ('"RBEND4:Tracking:MatrixRow6"')              ; tolerance = 'ABS 1e-10'
 case ('"RBEND4:Tracking:Vector"')                  ; tolerance = 'ABS 1e-07'
 case ('"RBEND4:Tracking:Symp_Err"')                ; tolerance = 'ABS 1e-06'
 case ('"SBEND5:Tracking:MatrixRow1"')              ; tolerance = 'ABS 8e-09'
@@ -249,6 +261,7 @@ case ('"RBEND6:Symp_Lie_PTC:Symp_Err"')            ; tolerance = 'ABS 2e-07'
 case ('"RBEND6:Taylor:Symp_Err"')                  ; tolerance = 'ABS 2e-07'
 case ('"RBEND6:Tracking:MatrixRow1"')              ; tolerance = 'ABS 2e-11'
 case ('"RBEND6:Tracking:MatrixRow2"')              ; tolerance = 'ABS 1e-10'
+case ('"RBEND6:Tracking:MatrixRow5"')              ; tolerance = 'ABS 2e-11'
 case ('"RBEND6:Tracking:Symp_Err"')                ; tolerance = 'ABS 1e-10'
 case ('"SBEND7:Tracking:MatrixRow1"')              ; tolerance = 'ABS 1e-08'
 case ('"SBEND7:Tracking:MatrixRow2"')              ; tolerance = 'ABS 1e-10'
@@ -259,12 +272,19 @@ case ('"SBEND7:Tracking:MatrixRow6"')              ; tolerance = 'ABS 4e-11'
 case ('"SBEND7:Tracking:Symp_Err"')                ; tolerance = 'ABS 5e-09'
 case ('"SBEND7:Tracking:Vector"')                  ; tolerance = 'ABS 1e-10'
 
+case ('"SOL_QUAD1:Tracking:MatrixRow5"')           ; tolerance = 'ABS 2e-11'
 case ('"SOL_QUAD1:Tracking:Symp_Err"')             ; tolerance = 'ABS 2e-11'
 case ('"SOL_QUAD2:Tracking:MatrixRow1"')           ; tolerance = 'ABS 8e-10'
 case ('"SOL_QUAD2:Tracking:MatrixRow2"')           ; tolerance = 'ABS 2e-11'
 case ('"SOL_QUAD2:Tracking:MatrixRow3"')           ; tolerance = 'ABS 8e-11'
 case ('"SOL_QUAD2:Tracking:MatrixRow4"')           ; tolerance = 'ABS 2e-10'
-case ('"SOL_QUAD2:Tracking:Symp_Err"')             ; tolerance = 'ABS 2e-10'
+case ('"SOL_QUAD2:Tracking:MatrixRow5"')           ; tolerance = 'ABS 2e-11'
+case ('"SOL_QUAD2:Tracking:Symp_Err"')             ; tolerance = 'ABS 2e-11'
+
+case ('"SOLENOID1:Tracking:MatrixRow5"')           ; tolerance = 'ABS 5e-11'
+case ('"SOLENOID2:Tracking:MatrixRow5"')           ; tolerance = 'ABS 5e-11'
+
+case ('"VKICKER1:Tracking:MatrixRow5"')            ; tolerance = 'ABS 5e-11'
 
 case default                                       ; tolerance = 'ABS 1E-11'
 end select

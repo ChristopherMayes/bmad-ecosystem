@@ -45,7 +45,7 @@ real(rp) w_inv(3,3), len_old, f, dl, b_max, zmin, ky, kz
 real(rp), pointer :: val(:), tt
 real(rp) knl(0:n_pole_maxx), tilt(0:n_pole_maxx), eps6
 real(rp) kick_magnitude, bend_factor, quad_factor, radius0, step_info(7), dz_dl_max_err
-real(rp) a_pole(0:n_pole_maxx), b_pole(0:n_pole_maxx), n_particles
+real(rp) a_pole(0:n_pole_maxx), b_pole(0:n_pole_maxx)
 
 integer i, j, ix, n, n_div, ixm, ix_pole_max, particle, geometry, i_max, status
 
@@ -67,11 +67,9 @@ branch => pointer_to_branch(ele)
 if (associated(branch)) then
   particle = branch%param%particle
   geometry = branch%param%geometry
-  n_particles = branch%param%n_part
 else
   particle = positron$  ! Just to keep the code happy
   geometry = open$
-  n_particles = 0
 endif
   
 ! Overlay and group and hybrid elements do not have any dependent attributes
@@ -178,6 +176,8 @@ if (ele%field_master) then
   endif
 
   select case (ele%key)
+  case (beambeam$)
+    val(ks$) = factor * val(Bs_field$)
   case (quadrupole$)
     val(k1$) = factor * val(B1_gradient$)
   case (sextupole$)
@@ -214,6 +214,8 @@ else
   endif
 
   select case (ele%key)
+  case (beambeam$)
+    val(Bs_field$)    = factor * val(ks$)
   case (quadrupole$)
     val(B1_gradient$) = factor * val(k1$)
   case (sextupole$)
@@ -358,22 +360,20 @@ case (beambeam$)
 
   if (val(n_slice$) == 0) val(n_slice$) = 1.0 ! revert to default
 
-  if (val(charge$) == 0 .or. n_particles == 0) then
+  if (strong_beam_strength(ele) == 0) then
     val(bbi_const$) = 0
 
   else
-
     if (val(sig_x$) == 0 .or. val(sig_y$) == 0) then
-      call out_io(s_abort$, r_name, 'ZERO SIGMA IN BEAMBEAM ELEMENT!' // ele%name)
+      call out_io(s_error$, r_name, 'ZERO SIGMA IN BEAMBEAM ELEMENT!' // ele%name)
       call type_ele(ele, .true., 0, .false., 0, .false.)
-      if (global_com%exit_on_error) call err_exit
+      return
     endif
 
     if (val(p0c$) /= 0) then  ! Can happen when parsing lattice file.
-      val(bbi_const$) = -n_particles * val(charge$) * classical_radius_factor /  &
-                             (2 * pi * val(p0c$) * (val(sig_x$) + val(sig_y$)))
+      val(bbi_const$) = -strong_beam_strength(ele) * classical_radius_factor /  &
+                                  (2 * pi * val(p0c$) * (val(sig_x$) + val(sig_y$)))
     endif
-
   endif
 
 ! Converter. Note: Reference energy bookkeeping handled in ele_compute_ref_energy_and_time.
@@ -480,10 +480,13 @@ case (lcavity$)
     val(rf_wavelength$) = 0
   endif
 
-  if (val(rf_frequency$) /= 0 .and. ele%field_calc == bmad_standard$ .and. nint(ele%value(cavity_type$)) == standing_wave$) then
-    val(l_active$) = 0.5_rp * val(rf_wavelength$) * nint(val(n_cell$))
-  else
-    val(l_active$) = val(l$)
+  ! multipass_slaves will inherit from lord
+  if (ele%slave_status /= multipass_slave$) then
+    if (val(rf_frequency$) /= 0 .and. ele%field_calc == bmad_standard$ .and. nint(ele%value(cavity_type$)) == standing_wave$) then
+      val(l_active$) = 0.5_rp * val(rf_wavelength$) * nint(val(n_cell$))
+    else
+      val(l_active$) = val(l$)
+    endif
   endif
 
 ! Patch
@@ -516,10 +519,13 @@ case (rfcavity$)
     val(rf_wavelength$) = 0
   endif
 
-  if (val(rf_frequency$) /= 0 .and. ele%field_calc == bmad_standard$ .and. nint(ele%value(cavity_type$)) == standing_wave$) then
-    val(l_active$) = 0.5_rp * val(rf_wavelength$) * nint(val(n_cell$))
-  else
-    val(l_active$) = val(l$)
+  ! multipass_slaves will inherit from lord
+  if (ele%slave_status /= multipass_slave$) then
+    if (val(rf_frequency$) /= 0 .and. ele%field_calc == bmad_standard$ .and. nint(ele%value(cavity_type$)) == standing_wave$) then
+      val(l_active$) = 0.5_rp * val(rf_wavelength$) * nint(val(n_cell$))
+    else
+      val(l_active$) = val(l$)
+    endif
   endif
 
   if (val(voltage$) == 0) then
@@ -705,6 +711,8 @@ endif
 if (non_offset_changed .or. (offset_changed .and. ele%taylor_map_includes_offsets)) then
   if (associated(ele%taylor(1)%term)) then
     call kill_taylor(ele%taylor)
+  endif
+  if (associated(ele%spin_taylor(0)%term)) then
     call kill_taylor(ele%spin_taylor)
     ele%spin_q(0,0) = real_garbage$
   endif
@@ -712,7 +720,8 @@ endif
 
 ! Make stale ele%rad_int_cache if allocated
 
-if (associated(ele%rad_int_cache))   ele%rad_int_cache%stale = .true.  ! Forces recalc
+if (associated(ele%rad_int_cache)) ele%rad_int_cache%stale = .true.  ! Forces recalc
+
 if (allocated(ele%multipole_cache)) then
   ele%multipole_cache%ix_pole_mag_max = invalid$ ! Forces recalc
   ele%multipole_cache%ix_pole_elec_max = invalid$ ! Forces recalc

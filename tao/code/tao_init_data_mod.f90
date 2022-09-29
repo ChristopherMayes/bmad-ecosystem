@@ -254,8 +254,7 @@ do
 
     do i = lbound(datum, 1), ubound(datum, 1)
       if (index(datum(i)%data_type, 'dat::') /= 0) then
-        call out_io (s_error$, r_name, &
-                     'DATA_TYPE USES OLD "dat::" PREFIX. PLEASE CHANGE TO "data::": ' // quote(datum(i)%data_type))
+        call out_io (s_error$, r_name, 'DATA_TYPE USES OLD "dat::" PREFIX. PLEASE CHANGE TO "data::": ' // quote(datum(i)%data_type))
         datum(i)%data_type = 'data::' // datum(i)%data_type(6:)
       endif
     enddo
@@ -597,7 +596,7 @@ do j = n1, n2
     endif
   endif
 
-  if (tao_beam_sigma_calc_needed(dat%data_type, dat%data_source)) u%calc%beam_sigma_for_data = .true. 
+  if (tao_lat_sigma_calc_needed(dat%data_type, dat%data_source)) u%calc%lat_sigma_for_data = .true. 
   if (tao_spin_matrices_calc_needed(dat%data_type, dat%data_source)) u%calc%spin_matrices = .true. 
 
   ! Some data types are global and are not associated with a particular element. Check for this.

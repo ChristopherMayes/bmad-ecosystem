@@ -67,7 +67,7 @@ definition \Eq{mgq2m2}. See the discussion after \Eq{mgq2m}.
 \label{s:quat}
 
 \bmad uses a quaternion representation for spin rotations\cite{b:quat} and for the single resonance
-analysis (\sref{s:spin.res}) it is convienient to use biquaternions which are quaternions with
+analysis (\sref{s:spin.res}) it is convenient to use biquaternions which are quaternions with
 complex coefficients. The following is a brief introduction to quaternions and biquaternions. For
 more information, the reader is referred to the literature\cite{b:biquat}.
 
@@ -112,10 +112,10 @@ the quaternion product in terms of $S$ and $\bfV$ is
 \begin{equation}
   \bfp \, \bfq = S(\bfp) S(\bfq) + S(\bfp) \bfV(\bfq) + S(\bfq) \bfV(\bfp) + \bfV(\bfp) \bfV(\bfq)
 \end{equation}
-and, if $\bfV(\bfp)$ and $\bfV(\bfq)$ are considered as vectors, the last term in the above equation
-can be written as
+and, if $\bfV(\bfp)$ and $\bfV(\bfq)$ are considered as vectors, the last term $\bfa \equiv
+\bfV(\bfp) \bfV(\bfq)$ in the above equation can be written as
 \begin{equation}
-  \bfV(\bfp) \bfV(\bfq) = \bfV(\bfp) \dot \bfV(\bfq) \bfV(\bfp) \cross \bfV(\bfq)
+  S(\bfa) = -\bfV(\bfp) \cdot \bfV(\bfq), \qquad \bfV(\bfa) = \bfV(\bfp) \cross \bfV(\bfq)
 \end{equation}
 
 In the literature, the scalar part is sometimes called the \vn{real} part and the vector part is
@@ -268,7 +268,7 @@ T-BMT equation, is the spin part of the map which is a function of $\bfr$. That 
 spin field (ISF) obeys the T-BMT equation. Thus, a particle whose spin points in the direction of
 $\bfn(\bfr, s)$ at some time $t$ will, in the absence of radiation effects, always have its spin
 pointing in the direction of $\bfn(\bfr, s)$. When there are no resonances, $\bfn(\bfr, s)$ is
-unique up to a flip of sign.
+unique up to a flip of sign. 
 
 In general, it is not straightforward to calculate $\bfn$. The exceptional case (besides the cases
 where there is a resonance) is if the particle is on the closed orbit $\bfr_0$. In this case, since
@@ -277,7 +277,27 @@ to give the invariant spin field on the closed orbit denoted by $\bfn_0$.  Over 
 the closed orbit rotates around $\bfn_0$ by the angle $2 \pi \nu_0$ where $\nu_0$ is the
 closed-orbit spin tune.
 
-Once the invariant spin field has been calculated, various quantities of interest can be
+Only the fractional part of the closed orbit spin tune $\nu_0$ is generally well defined. That is,
+it is not in general possible to distinguish between tunes $\nu_0+m$ where $m$ is an
+integer.\footnote
+  {
+This is in contrast to the orbital tunes where the integer part is generally well defined (but there
+are exceptions when there is strong coupling). The reason for this is that at all points in the
+ring, the orbital normal mode axes are fairly well defined (see, for example, \Eq{avx}). This means
+that the phase angle of an oscillating particle with respect to the axes is fairly well defined and
+counting full oscillations is unambiguous. With spin, the closed orbit spin oscillations are in the
+plane transverse to $\bfn_0$ and here there is no non-arbitrary way to define the transverse plane
+coordinate axes (there is an exception here if $\bfn_0$ always is pointing in the same general
+direction). This makes the integer part of the spin tune ambiguous.
+  }
+Additionally, if $\bfn_0$ is a valid closed orbit spin field then so is $-\bfn_0$ and the spin tune
+associated with $-\bfn_0$ is the negative of the spin tune associated with $\bfn_0$.
+
+%-----------------------------------------------------------------   
+\section{Polarization Limits and Polarization/Depolarization Rates}
+\label{s:spin.pol}
+
+Once the invariant spin field (\sref{s:isf}) has been calculated, various quantities of interest can be
 computed. For example, given some initial distribution of spins in a beam, the maximum possible time
 averaged polarization $\left< \bfS \right>_{\max}$ is
 \begin{equation}
@@ -317,13 +337,14 @@ The corresponding BKS polarization build-up rate $\tau_{bks}^{-1}$ is
 \end{equation}
 
 If the the stochastic excitation of the beam is taken into account, the generalized Sokolov-Ternov
-polarization is called the \vn{Derbenev-Kondratenko-Mane} formula
+polarization is called the \vn{Derbenev-Kondratenko} formula
 \begin{equation}
   P_{dk} = \pm \frac{8}{5 \, \sqrt{3}}
   \frac{\displaystyle \oint ds \, \left< g^3 \, \what\bfb \dotproduct 
     \left( \bfn - \frac{\partial \bfn}{\partial \delta} \right) \right>}
   {\displaystyle \oint ds \, \left< g^3 \left( 1 - \frac{2}{9} (\bfn \dotproduct \what\bfs)^2 + 
     \frac{11}{18} \left| \frac{\partial \bfn}{\partial \delta} \right|^2 \right) \right>}
+  \label{pdk85}
 \end{equation}
 where $<>$ denotes an average over phase space, and $\delta$ is the fractional energy deviation
 which, for ultra-relativistic particles, is the same as phase space $p_z$. Since, away from any
@@ -361,7 +382,34 @@ RHS in \Eq{t583} and the depolarization rate $\tau_{dep}^{-1}$ is given by the t
 \end{align}
 $\tau_{pol}^{-1}$ is generally well approximated by the \vn{Baier-Katkov-Strakhovenko} polarization
 rate (\Eq{tbks}). The difference being that $\tau_{bks}^{-1}$ is evaluated along the closed orbit
-while $\tau_{pol}^{-1}$ takes into account the size of the beam.
+while $\tau_{pol}^{-1}$ involves an average over the transverse beam size.
+
+The calculation of $P_{dk}$ (\Eq{pdk85}) and $\tau_{dep}^{-1}$ (\Eq{tdep}) involve integrating
+$\partial\bfn/\partial\delta$ around the ring. The calculation of $\partial\bfn/\partial\delta$ at
+any point in the ring involves a sum of eigenvectors $\bfn_k$, $k = 1, \ldots, 6$ (\Eq{ndan}) with
+pairs of eigenvectors being associated with the three orbital modes of oscillation. Insight into the
+decoherence process can had by considering what $P_{dk}$ and $\tau_{dep}^{-1}$ would be if only
+one oscillation mode was being excited. This is done by calculating $\partial\bfn/\partial\delta$ with
+\Eq{ndan} by using the two $\bfn_k$ for one particular mode and taking the other $\bfn_k$ to be zero.
+This is then used in \Eq{pdk85} and \Eq{tdep}.
+
+One problem in evaluating \Eq{pdk85} is that accurately evaluating the $\partial\bfn/\partial\delta$
+terms over the transverse bunch distribution is complicated due to lattice nonlinearities. One way
+to evaluate $P_{dk}$ with nonlinearities included is by tracking a bunch of particles over some
+number of turns. To help minimize the needed tracking, the spin flip process can be neglected. With
+this, and starting with 100\% polarization, a turn-by-turn plot of the polarization will give the
+depolarization rate $\tau_{dep}^{-1}$. The integrals of $g^3 \, \what\bfb \dotproduct \bfn$ and $g^3
+\, (1 - 2(\bfn \dotproduct \what\bfs)^2/9)$ can be well approximated by the integrals over the
+closed orbit ignoring the finite beam size.  Finally, for most rings, the integral of $g^3 \what\bfb
+\dotproduct \partial\bfn/\partial\delta$ is generally small compared to the integral of $g^3 \,
+\what\bfb \dotproduct \bfn$ since, in most of the machine, $\what\bfb$ and $\bfn$ will point in the
+vertical direction and $\partial\bfn/\partial\delta$ will be perpendicular to the vertical (see
+\Eq{qq0}).  Putting this all together, the equilibrium polarization can be computed from
+\begin{equation}
+  P_{dk} \approx P_{bks} \frac{\tau_{bks}^{-1}}{\tau_{bks}^{-1} + \tau_{dep}^{-1}}
+\end{equation}
+where $\tau_{dep}^{-1}$ is calculated via particle tacking and the other quantities are calculated by
+integrals over the closed orbit ignoring beam size effects.
 
 %-----------------------------------------------------------------   
 \section{Linear \texorpdfstring{$\partial\bfn/\partial\delta$}{dn/dpz} Calculation}
@@ -404,6 +452,7 @@ Since $\bfq_s$ is a rotation quaternion, the magnitude of $\bfq_s(\bfr)$ must re
 \Eq{qqqr} in \Eq{1qqq}, to keep the magnitude equal to one to linear order gives the condition
 \begin{equation}
   \bfq_0 \dotproduct \bfq_k = 0, \qquad k = 1, \ldots, 6
+  \label{qq0}
 \end{equation}
 for all $\bfq_k$ components of $\arrowbfq$.
 
@@ -480,9 +529,25 @@ is to reduce the dimensionality of phase space to five by removing the $z$ coord
 equations then can be used with the sums over $k$ ranging from 1 to 5. 
 
 It is sometimes informative to compute the contribution of ${\partial \bfn}/\partial \delta$ due to
-a single mode of oscillation. That is, to compute ${\partial \bfn}/\partial \delta$ with the sum in
-\Eq{ndan} restricted to be over the two corresponding eigen states that comprise the oscillation
-mode of interest. This information can help guide lattice design.
+just one or two modes of oscillation. That is, to compute ${\partial \bfn}/\partial \delta$ with the sum in
+\Eq{ndan} restricted to be over one or two corresponding eigen states that comprise the oscillation
+modes of interest. This information can help guide lattice design.
+
+Another way for analyzing where in the lattice contributions to $\partial\bfn/\partial\delta$ are
+coming from is to consider the spin transport maps for individual elements. These maps will be of
+the form given in \Eq{qqqr}. The contribution to $\partial\bfn/\partial\delta$ from an element is
+due to the non-zero terms in $\arrowbfq = (\bfq_1, \ldots, \bfq_6)$. If terms are selectively
+zeroed, and this significantly changes the polarization, this is a clue for designing a lattice. For
+example, if setting $\bfq_1$ and $\bfq_2$ to zero for a set of elements in a certain region of the
+machine leads to significantly greater polarizations, this indicates that the polarization is
+sensitive to horizontal excitation in this region. Similarly, zeroing elements in $\bfq_3$ and
+$\bfq_4$ is associated with vertical excitation and $\bfq_5$ and $\bfq_6$ is associated with
+longitudinal excitation. With the slim formalism (\sref{s:slim}), the $2\times6$ matrix
+$\bfG$ can be decomposed into three $2\times2$ sub-matrices:
+\begin{equation}
+  \bfG = \left( \bfG_x, \bfG_y, \bfG_z \right)
+\end{equation}
+Zeroing $\bfq_1$ and $\bfq_2$ is equivalent to zeroing $\bfG_x$, etc.
 
 %-----------------------------------------------------------------   
 \section{Single Resonance Model}
@@ -500,7 +565,7 @@ resonances only occur if one and exactly one of the $m_x$, $m_y$, or $m_z$ has a
 the other two are zero.
 
 Generally, in rings where the synchrotron radiation is large (think electrons), the depolarization
-due to radiation will tend to dominate (\sref{s:isf}). For rings where the synchrotron radiation is
+due to radiation will tend to dominate (\sref{s:spin.pol}). For rings where the synchrotron radiation is
 small (think protons), resonances will be more important. Notice that synchrotron radiation, being a
 stochastic process results in depolarization. Resonances, on the other hand, are not stochastic and
 even if a resonance tilts the polarization direction there can be the possibility of recovery.
@@ -687,12 +752,12 @@ The normalized resonance strength $\xi_r$ is defined by
 Combining the above equations along with \Eqs{n6} through \eq{4ggg}, the strength of the sum
 resonance for the $k$ mode of oscillation is
 \begin{equation}
-  \xi_r = \frac{\sqrt{2}}{2\pi} \big| \bf{\cal G} \cdot \bfv_k \big| 
+  \xi_{r1} = \frac{\sqrt{2}}{2\pi} \big| \bf{\cal G} \cdot \bfv_k \big| 
   \label{x12pq1}
 \end{equation}
 and for the difference resonance the strength is
 \begin{equation}
-  \xi_r = \frac{\sqrt{2}}{2\pi} \big|
+  \xi_{r2} = \frac{\sqrt{2}}{2\pi} \big|
   \bf{\cal G} \cdot \bfv_k^* \big| 
   \label{x12pq2}
 \end{equation}
@@ -701,10 +766,14 @@ where $\bf{\cal G}$ is given by
   \bf{\cal G} = 2 \, \bfn_0^\ppls \arrowbfq \bfn_0^\mmin
   \label{g2nqn}
 \end{equation}
+It should be noted that sum resonances are not physically ``distinct'' from difference
+resonances. That is, sum resonances become difference resonances and vice versa if the sign of
+$\bfn$ and $\nu$ are flipped in the analysis (remember that if $\bfn$ is a valid spin field then so
+is $-\bfn$).
 
 The resonance strength can also be calculated within the \vn{SLIM} formalism (\sref{s:slim}) via
 \Eq{x1pg} or \Eq{x2pg}. Comparing \Eqs{x12pq1} or \eq{x12pq2} with \Eq{x2pg} it is seen
-that $\bf{\cal G}$ is the quaternion equivalent of the SLIM $\bfG_{2\cross6}$ matrix.
+that $\bf{\cal G}$ is the quaternion equivalent of the SLIM $\bfG$ $2\cross6$ matrix.
 
 %-----------------------------------------------------------------   
 \section{SLIM Formalism}
@@ -738,7 +807,7 @@ under the restriction of the aforementioned linearization. Moreover, a procedure
 spin-matching, for minimizing depolarization driven by the noise injected into synchro-betatron
 motion by synchrotron radiation, and which involves optimizing the layout of the ring, can be
 executed in a simple and elegant way via the SLIM formalism. The formalism can also give insights
-into proton spin dynamics in regimes where the linearization suffices.
+into proton spin dynamics in regimes where the linearization approximation suffices.
 
 The \vn{SLIM} formalism expresses spin components using two right-hand coordinate systems:
 \footnote{Different authors will use different conventions for the ordering of the axes

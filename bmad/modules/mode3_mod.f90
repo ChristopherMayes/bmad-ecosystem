@@ -19,8 +19,8 @@ real(rp), parameter :: S(6,6) = reshape( [o, -l, o, o, o, o, l, o, o, o, o, o, &
 real(rp), parameter :: I2_mat(2, 2) = reshape( [1, 0, 0, 1], [2, 2] )
 
 private m, o, l
-private Qr, Qi
-private S
+private Q, Qr, Qi
+private S, I2_mat
 
 contains
 
@@ -390,16 +390,16 @@ end subroutine xyz_to_action
 ! Where N is from the Eigen decomposition of the 1-turn transfer matrix.
 !
 ! Input:
-!  ring     -- lat_struct: lattice
-!      %a%tune -- a-mode tune (horizontal-like)
-!      %b%tune -- b-mode tune (vertical-like)
-!      %z%tune -- c-mode tune (synchrotron-like)
-!  ix       -- integer: element index at which to calculate J
-!  J(1:6)   -- real(rp): Vector containing normal mode invariants and phases
+!  ring       -- lat_struct: lattice
+!      %a%tune   -- a-mode tune (horizontal-like)
+!      %b%tune   -- b-mode tune (vertical-like)
+!      %z%tune   -- c-mode tune (synchrotron-like)
+!  ix         -- integer: element index at which to calculate J
+!  J(1:6)     -- real(rp): Vector containing normal mode invariants and phases
 !
 ! Output:
-!  X(1:6)   -- real(rp): canonical phase space coordinates of the particle
-!  err_flag    -- logical: Set to true on error.  Often means Eigen decomposition failed.
+!  X(1:6)     -- real(rp): canonical phase space coordinates of the particle
+!  err_flag   -- logical: Set to true on error.  Often means Eigen decomposition failed.
 !-
 subroutine action_to_xyz(ring, ix, J, X, err_flag)
 
@@ -725,7 +725,7 @@ logical err_flag
 real(rp) abz_tunes(3)
 real(rp) abz(3), dtune(3,3)
 real(rp) val(6)
-integer j, pairindexes(6)
+integer j, pairindexes(6), tz1, tz2
 
 character(*), parameter :: r_name = 'order_evecs_by_tune'
 
@@ -736,15 +736,10 @@ where(abz < 0.0) abz = twopi + abz
 
 err_flag = .true.
 
-if ( any(abs(mat_tunes(1:3)) .lt. 0.0001) ) then
-  call out_io (s_fatal$, r_name, "mat_tunes is not fully populated.  Printing mat_tunes.")
-  write(*, '(3f14.5)') mat_tunes(1:3) / twopi
-  if (global_com%exit_on_error) call err_exit
-  return
-endif
-
-if ( any(abs(abz(1:3)) .lt. 0.0001) ) then
-  call out_io (s_fatal$, r_name, "Input tunes is not fully set: \3f14.5\ ", r_array = abz(1:3)/twopi)
+tz1 = count(abs(mat_tunes(1:3)) < 0.0001)
+tz2 = count(abs(abz(1:3)) < 0.0001)
+if (tz1 > 1 .or. tz1 /= tz2) then
+  call out_io (s_fatal$, r_name, "tunes is not fully populated.")
   if (global_com%exit_on_error) call err_exit
   return
 endif
@@ -944,7 +939,7 @@ end subroutine make_N
 !
 ! Input:
 !  sigma_mat(6,6)   -- real(rp): beam envelop sigma matrix
-!  Nmat(6,6)        -- real(rp): If present, then the emittanced will be ordered such that
+!  Nmat(6,6)        -- real(rp), optional: If present, then the emittanced will be ordered such that
 !                                the eigensystem most closely resembles Nmat.
 ! Output:
 !  normal(3)        -- real(rp): normal mode emittances

@@ -1,7 +1,6 @@
 program twiss_track_test
 
 use bmad
-use z_tune_mod
 
 implicit none
 
@@ -37,7 +36,7 @@ allocate (orb(0:lat%n_ele_max))
 
 bmad_com%radiation_damping_on = .true.
 
-lat%absolute_time_tracking = .true.
+bmad_com%absolute_time_tracking = .true.
 call closed_orbit_calc (lat, orb, 6)
 write (2, '(a, 6es16.6)') '"Closed Orb 6T Start"  ABS 1e-12', orb(0)%vec
 dorb = orb(lat%n_ele_track)%vec - orb(0)%vec
@@ -46,7 +45,7 @@ rf_freq = lat%ele(76)%value(rf_frequency$)
 dorb(5) = -orb(0)%beta * c_light * (dt - nint(dt * rf_freq) / rf_freq)
 write (2, '(a, 6es12.4)') '"Closed Orb 6T Del"    ABS 2e-12', dorb
 
-lat%absolute_time_tracking = .false.
+bmad_com%absolute_time_tracking = .false.
 call closed_orbit_calc (lat, orb, 6)
 write (2, '(a, 6es16.6)') '"Closed Orb 6 Start"  ABS 1e-12', orb(0)%vec
 write (2, '(a, 6es12.4)') '"Closed Orb 6 Del"    ABS 1e-12', orb(lat%n_ele_track)%vec - orb(0)%vec
@@ -176,7 +175,7 @@ call data_out (mode%b%synch_int(4),  1.0D-07, 'Lat1:B%Synch_int(4)')
 call data_out (mode%b%synch_int(5),  1.0D-11, 'Lat1:B%Synch_int(5)')
 call data_out (mode%z%synch_int(4),  1.0D-08, 'Lat1:Z%Synch_int(4)')
  
-call set_z_tune (lat, -0.05 * twopi)
+call set_z_tune (lat%branch(0), -0.05 * twopi)
 
 !--------------------------------
 

@@ -76,7 +76,11 @@ sliced_ele%map_ref_orb_out = coord_struct()
 ! Except if the original element is itself a super_slave. Then the sliced element is a super_slave
 ! of the original elements lords.
 
-sliced_ele%lord => ele_in
+if (ele_in%slave_status == slice_slave$) then
+  sliced_ele%lord => ele_in%lord
+else
+  sliced_ele%lord => ele_in
+endif
 
 sliced_ele%n_lord = 1
 if (ele_in%slave_status == super_slave$) sliced_ele%n_lord = ele_in%n_lord
@@ -151,14 +155,14 @@ select case (sliced_ele%mat6_calc_method)
 case (taylor$, symp_lie_ptc$)
   if (sliced_ele%field_calc == fieldmap$) then
     select case (sliced_ele%key)
-    case (wiggler$, undulator$); sliced_ele%tracking_method = symp_lie_bmad$
-    case default;                sliced_ele%tracking_method = symp_lie_ptc$
+    case (wiggler$, undulator$); sliced_ele%mat6_calc_method = symp_lie_bmad$
+    case default;                sliced_ele%mat6_calc_method = symp_lie_ptc$
     end select
   else
     select case (sliced_ele%key)
-    case (wiggler$, undulator$); sliced_ele%tracking_method = symp_lie_bmad$
-    case (em_field$);            sliced_ele%tracking_method = symp_lie_ptc$
-    case default;                sliced_ele%tracking_method = bmad_standard$
+    case (wiggler$, undulator$); sliced_ele%mat6_calc_method = symp_lie_bmad$
+    case (em_field$);            sliced_ele%mat6_calc_method = symp_lie_ptc$
+    case default;                sliced_ele%mat6_calc_method = bmad_standard$
     end select
   endif
 end select

@@ -54,7 +54,7 @@ character(*), parameter :: r_name = 'multipole_ele_to_ab'
 
 ix_pole_max = -1
 
-if (.not. ele%is_on) then
+if (.not. ele%is_on .or. ele%key == drift$) then
   a = 0;  b = 0
   if (present(b1)) b1 = 0
   return
@@ -65,12 +65,12 @@ endif
 
 p_type = integer_option(magnetic$, pole_type)
 include_kck = integer_option(no$, include_kicks)
-can_use_cache = (.not. bmad_com%auto_bookkeeper)
+can_use_cache = (.not. bmad_com%auto_bookkeeper .and. allocated(ele%multipole_cache))
 
 ! Note: slice_slave and super_slave elements have multipoles stored in their lords.
 
 cache => ele%multipole_cache
-if (can_use_cache .and. allocated(ele%multipole_cache)) then
+if (can_use_cache) then
   if (p_type == magnetic$ .and. cache%ix_pole_mag_max /= invalid$) then
     ix_pole_max = cache%ix_pole_mag_max
     if (ix_pole_max == invalid$ .and. (include_kck == no$ .or. cache%ix_kick_mag_max == invalid$)) then
@@ -126,6 +126,13 @@ if (ele%key == multipole$) then
   call pointer_to_ele_multipole (ele, a_pole, b_pole, ksl_pole, pole_type)
   call multipole_kt_to_ab (a_pole, ksl_pole, b_pole, a, b)
   ix_pole_max = max_nonzero(0, a, b)
+
+  if (ele%field_master .and. ele%value(p0c$) /= 0) then
+    factor = charge_of(ele%ref_species) * c_light / ele%value(p0c$)
+    a = factor * a
+    b = factor * b
+  endif
+
   if (can_use_cache) then
     a_kick = 0;  b_kick = 0
     call load_this_cache(cache, p_type, ix_pole_max, a, b, a_kick, b_kick)
@@ -359,13 +366,7 @@ endif
 
 if (this_ele%field_master .and. this_ele%value(p0c$) /= 0 .and. &
         p_type == magnetic$ .and. this_ele%key /= sad_mult$) then
-  branch => pointer_to_branch(this_ele)
-  if (.not. associated(branch)) then
-    call out_io (s_fatal$, r_name, 'ELEMENT WITH MULTIPOLES AND FIELD_MASTER = T NOT ASSOCIATED WITH ANY LATTICE!')
-    if (global_com%exit_on_error) call err_exit
-    return
-  endif
-  factor = charge_of(branch%param%particle) * c_light / this_ele%value(p0c$)
+  factor = charge_of(this_ele%ref_species) * c_light / this_ele%value(p0c$)
   this_a = factor * this_a
   this_b = factor * this_b
 endif
@@ -466,10 +467,7 @@ integer p_type, ix_pole_max
 
 !
 
-if (.not. allocated(ele%multipole_cache)) then
-  allocate(ele%multipole_cache)
-  cache => ele%multipole_cache
-endif
+cache => ele%multipole_cache
 
 select case (p_type)
 case (magnetic$)

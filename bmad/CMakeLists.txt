@@ -26,6 +26,7 @@ SET (SRC_DIRS
   interface
   modules
   multiparticle
+  ptc
   photon
   parsing
   low_level
@@ -44,7 +45,6 @@ SET (SRC_DIRS
 # SET (LINK_FLAGS "-fPIC")
 
 SET (SHARED_DEPS
-  bmad 
   sim_utils
   $ENV{ACC_BMAD_LINK_LIBS}
   X11

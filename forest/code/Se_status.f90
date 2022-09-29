@@ -371,7 +371,7 @@ CONTAINS
     P%KILL_ENT_SPIN=.FALSE.
     P%KILL_EXI_SPIN=.FALSE.
     P%bend_fringe=.false.
-    call alloc(p%f)
+    call alloc_f(p%f)
     ! if(junk) ccc=ccc+1
 
   end subroutine alloc_p
@@ -393,8 +393,8 @@ CONTAINS
     !    if(associated(p%gambet)) DEALLOCATE(P%gambet);
     if(associated(p%P0C)) DEALLOCATE(P%P0C);
     if(associated(p%f)) then
-       call kill(p%f)
-       DEALLOCATE(P%f);
+       call kill_f(p%f)
+!       DEALLOCATE(P%f);
     endif
     if(associated(p%APERTURE)) then
        CALL kill(p%APERTURE)
@@ -1151,11 +1151,13 @@ CONTAINS
     MODULATION=MODULATION0
   end subroutine clear_states  !%nxyz
 
-  subroutine print_s(S,MF)
+  subroutine print_s(S,MFi)
     implicit none
     type (INTERNAL_STATE) S
-    INTEGER MF
-
+    INTEGER,optional, intent(in) :: MFi
+     integer mf
+     mf=6
+     if(present(mfi)) mf=mfi
 
     write(mf,*) "************ State Summary ****************"
     write(mf,'((1X,a16,1x,i4,1x,a24))' ) "MADTHICK=>KIND =", MADKIND2,Mytype(MADKIND2)
@@ -1508,6 +1510,10 @@ CONTAINS
     LOGICAL(lp), optional, INTENT(IN):: pack
     INTEGER, INTENT(IN):: NO1,NP1
     INTEGER,optional :: ND2,NPARA,number_of_clocks
+     do_damping=.false.
+     do_spin=.false.
+    if(state%radiation) do_damping=.true.
+    if(state%spin) do_spin=.true.
 
     use_complex_in_ptc=my_true
     call S_init(STATE,NO1,NP1,pack,ND2,NPARA,number_of_clocks)
@@ -1523,6 +1529,10 @@ CONTAINS
     INTEGER,optional :: ND2,NPARA,number_of_clocks
     INTEGER  ND2l,NPARAl,n_acc,no1c,nv,i
     LOGICAL(lp) package
+     do_damping=.false.
+     do_spin=.false.
+    if(state%radiation) do_damping=.true.
+    if(state%spin) do_spin=.true.
     n_rf=0
 !    call dd_p !valishev
     doing_ac_modulation_in_ptc=.false.

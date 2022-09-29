@@ -13,6 +13,8 @@ module definition
 ! GTPSA REMOVED !  use GTPSA
   implicit none
   public
+  integer,parameter::dpn=selected_real_kind(2*precision(1.e0))
+ ! integer,parameter::dpn=kind(1.e0)
   logical(lp) :: newread=.false. ,newprint =  .false. , first_time = .true.
   logical(lp) :: print77=.true. ,read77 =  .true.
   logical(lp) :: no_ndum_check = .false.
@@ -49,17 +51,28 @@ module definition
   INTEGER,PARAMETER  :: ISPIN0R=1,ISPIN1R=3
   logical(lp) :: doing_ac_modulation_in_ptc=.false.
   integer, target :: nb_ =0   ! global group index
-  integer, parameter :: ndim2t=10   ! maximum complex size
   integer, parameter :: wiggler_suntao=24
   real(dp) :: global_e =0
   integer :: bmadparser = 0
   integer,parameter :: nacmax = 3
+  integer,parameter :: nacmode = 10
+  integer, parameter :: ndim2t=6+2*nacmax   ! maximum complex size
+  integer :: start_stochastic_computation = 0
   logical :: tangent = .false.,force_rescale=.false.   ! force_rescale for vorname=HELICAL see fibre_work routine
   logical(lp),TARGET :: OLD_PACKAGE = .true.
 ! GTPSA REMOVED !   type(c_ptr)      :: d_berz
    integer(1),allocatable :: vo_berz(:)
    integer(1) ,allocatable ::  mo_gtpsa(:)
 logical :: use_quaternion_in_so3=.false.
+!  used for removing excessive cuting
+logical :: check_excessive_cutting =.true.
+logical :: switch_to_drift_kick =.true.
+integer :: limit_int0_new(3) =(/20,30,36/)    !(/4,18,36/)
+integer :: m6lim =10
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+real(dp) :: faclim =1
+integer  :: old_integrator_init =1
+
 TYPE sub_taylor
      INTEGER j(lnv)
      INTEGER min,max
@@ -81,6 +94,12 @@ TYPE sub_taylor
      REAL(DP), POINTER,dimension(:)::C  ! Coefficients C(N)
      INTEGER, POINTER,dimension(:,:)::J ! Exponents of each coefficients J(N,NV)
   END TYPE UNIVERSAL_TAYLOR
+
+  TYPE c_UNIVERSAL_TAYLOR
+     INTEGER, POINTER:: N,NV,nd2    !  Number of coeeficients and number of variables
+     complex(DP), POINTER,dimension(:)::C  ! Coefficients C(N)
+     INTEGER, POINTER,dimension(:,:)::J ! Exponents of each coefficients J(N,NV)
+  END TYPE c_UNIVERSAL_TAYLOR
   !@3 ---------------------------------------------</br>
   TYPE complextaylor
      type (taylor) r  !@1 Real part
@@ -311,12 +330,14 @@ END TYPE quaternion_8
   type rf_phasor
      real(dp) x(2)
      real(dp) om
+     real(dp) f(nacmode),phase(nacmode)
      real(dp) t
   end type rf_phasor
   !@3 ---------------------------------------------</br>
   type rf_phasor_8
      type(real_8)  x(2)  ! The two hands of the clock
      type(real_8) om     ! the omega of the modulation
+     real(dp) f(nacmode),phase(nacmode)
      real(dp) t          ! the pseudo-time
   end type rf_phasor_8
   !@3 ---------------------------------------------</br>
@@ -415,6 +436,9 @@ type c_damap
  type(c_quaternion) q
  complex(dp) x0(lnv)
  logical :: tpsa=.false.
+ !real(dpn),pointer :: db(:,:) => null(),m(:,:)=> null()
+ real(dpn),pointer :: m(:,:)=> null()
+ complex(dp), pointer :: cm(:,:)=> null()   !  to look at Yu matrix in phasors
  complex(dp) e_ij(6,6) !@1 stochastic fluctuation in radiation theory
   real(dp) sm(3,3)
   real(dp) damps(3,3)

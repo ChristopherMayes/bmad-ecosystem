@@ -57,7 +57,7 @@ type (lat_param_struct) :: param
 type (track_struct), optional :: track
 
 real(rp) p0c_start
-integer tracking_method, stm
+integer n, tracking_method, stm
 
 character(*), parameter :: r_name = 'track1'
 
@@ -193,11 +193,11 @@ case (bmad_standard$)
   if (start2_orb%species == photon$) then
     call track1_bmad_photon (start2_orb, ele, param, end_orb, err)
   else
-    call track1_bmad (start2_orb, ele, param, end_orb, err, mat6 = ele%mat6, make_matrix = make_map1)
+    call track1_bmad (start2_orb, ele, param, end_orb, err, track, mat6 = ele%mat6, make_matrix = make_map1)
     if (ele%key == beambeam$) do_spin_tracking = .false.
   endif
 
-  if (present(track)) call add_to_track(start2_orb, end_orb)
+  if (present(track) .and. ele%key /= beambeam$) call add_to_track(start2_orb, end_orb)
   if (err) return
 
 case (runge_kutta$, fixed_step_runge_kutta$) 
@@ -240,8 +240,16 @@ case default
   call out_io (s_fatal$, r_name, 'UNKNOWN TRACKING_METHOD: \i0\ ', ele%tracking_method)
   if (global_com%exit_on_error) call err_exit
   return
-
 end select
+
+!-----------------------------------------------------------------------------------
+! RF clock correction
+
+if (bmad_private%rf_clock_period > 0) then
+  n = int(end_orb%t / bmad_private%rf_clock_period)
+  end_orb%t = end_orb%t - n * bmad_private%rf_clock_period
+  end_orb%phase(1) = end_orb%phase(1) + n
+endif
 
 ! Check
 
@@ -258,9 +266,11 @@ if (do_spin_tracking) call track1_spin (start2_orb, ele, param, end_orb, make_ma
 
 if (ele%slave_status == slice_slave$) then
   lord => pointer_to_lord (ele, 1)
-  end_orb%ix_ele = lord%ix_ele
+  end_orb%ix_ele    = lord%ix_ele
+  end_orb%ix_branch = lord%ix_branch
 else
-  end_orb%ix_ele = ele%ix_ele
+  end_orb%ix_ele    = ele%ix_ele
+  end_orb%ix_branch = ele%ix_branch
 endif
 
 if (.not. time_RK_tracking) then
@@ -282,7 +292,7 @@ endif
 
 ! space charge
 
-if (param%high_energy_space_charge_on .and. do_extra) call track1_high_energy_space_charge (ele, param, end_orb)
+if (bmad_com%high_energy_space_charge_on .and. do_extra) call track1_high_energy_space_charge (ele, param, end_orb)
 
 ! check for particles outside aperture
 
@@ -291,12 +301,6 @@ call check_aperture_limit (end_orb, ele, second_track_edge$, param)
 call track1_postprocess (start2_orb, ele, param, end_orb)
 
 if (present(err_flag)) err_flag = .false.
-
-! Self consistancy check between t and z. Use unused path_len compoenent to record this.
-
-if (end_orb%species /= photon$) then
-  end_orb%path_len = end_orb%vec(5) - end_orb%beta * c_light * (ele%ref_time - end_orb%t)
-endif
 
 !--------------------------------------------------------------------
 contains

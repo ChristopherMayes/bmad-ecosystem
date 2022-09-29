@@ -42,7 +42,7 @@ module ptc_spin
   REAL(DP) :: bran_init=pi  
   logical :: locate_with_no_cavity = .false.,full_way=.true.
   integer  :: item_min=3,mfdebug
-   logical, target :: old_integrator =.true.
+  integer , target :: old_integrator =1
 
 
 
@@ -1600,6 +1600,7 @@ endif
     IF(.NOT.CHECK_STABLE) then
        CALL RESET_APERTURE_FLAG
     endif
+    if(k%stochastic) call kick_stochastic_before(c,xs)
 
     !    if(xs%u) return
     C%PARENT_FIBRE%MAG%P%DIR    => C%PARENT_FIBRE%DIR
@@ -1702,6 +1703,7 @@ endif
 !      if(C%PARENT_FIBRE%PATCH%ENERGY==5) beta=C%PARENT_FIBRE%PATCH%b0b
 !      call convert_ptc_to_bmad(xs,beta,k%time)
 !    endif
+    if(k%stochastic) call kick_stochastic_after(c,xs)
 
     xs%u=.not.check_stable
     if(xs%u) then
@@ -1869,10 +1871,20 @@ if(ki==kind10)CALL UNMAKEPOTKNOB(c%parent_fibre%MAGp%TP10,CHECK_KNOB,AN,BN,k)
     type(probe), INTENT(INOUT) :: xs
     TYPE(INTERNAL_STATE) K
 
-    if(old_integrator) then
+    if(2*old_integrator+c%parent_fibre%mag%old_integrator>0) then
      call TRACK_NODE_FLAG_probe_R(C,XS,K)
     else
-     call TRACK_NODE_FLAG_probe_quaR(C,XS,K)
+      SELECT CASE(C%parent_fibre%mag%KIND)
+CASE(KIND0,KIND1,KIND3,kind6,KIND8,KIND9,KIND11:KIND14,KIND15,kind17,KIND18,KIND19, &
+      KIND21,KIND22,KINDPA,KINDabell,kindsuperdrift)
+        call TRACK_NODE_FLAG_probe_R(C,XS,K)
+       case(KIND2,KIND4,KIND5,KIND7,KIND10,KIND16,KIND20,KINDWIGGLER)
+         call TRACK_NODE_FLAG_probe_quaR(C,XS,K)
+       CASE DEFAULT
+          WRITE(6,*) "NOT IMPLEMENTED in old_integrator bifurcation",C%parent_fibre%mag%KIND
+          stop 999
+     end select
+
     endif
 
     end SUBROUTINE TRACK_NODE_FLAG_probe_wrap_R
@@ -1881,11 +1893,33 @@ if(ki==kind10)CALL UNMAKEPOTKNOB(c%parent_fibre%MAGp%TP10,CHECK_KNOB,AN,BN,k)
     type(INTEGRATION_NODE), pointer :: C
     type(probe_8), INTENT(INOUT) :: xs
     TYPE(INTERNAL_STATE) K
-
-    if(old_integrator) then
+    if(compute_stoch_kick) then
+      c%delta_rad_in=0
+      c%delta_rad_out=0 
+    endif
+    if(2*old_integrator+c%parent_fibre%magp%old_integrator>0) then
      call TRACK_NODE_FLAG_probe_p(C,XS,K)
     else
-     call TRACK_NODE_FLAG_probe_quap(C,XS,K)
+      SELECT CASE(C%parent_fibre%magp%KIND)
+CASE(KIND0,KIND1,KIND3,kind6,KIND8,KIND9,KIND11:KIND14,KIND15,kind17,KIND18,KIND19, &
+      KIND21,KIND22,KINDPA,KINDabell,kindsuperdrift)
+        call TRACK_NODE_FLAG_probe_p(C,XS,K)
+       case(KIND2,KIND4,KIND5,KIND7,KIND10,KIND16,KIND20,KINDWIGGLER)
+
+          if(compute_stoch_kick) then
+           start_stochastic_computation=0
+            call TRACK_NODE_FLAG_probe_quap(C,XS,K)
+           start_stochastic_computation=-1
+            c%delta_rad_in = sqrt(c%delta_rad_in)
+            c%delta_rad_out= sqrt(c%delta_rad_out) 
+          else
+            call TRACK_NODE_FLAG_probe_quap(C,XS,K)
+          endif
+       CASE DEFAULT
+          WRITE(6,*) "NOT IMPLEMENTED in old_integrator bifurcation",C%parent_fibre%magp%KIND
+          stop 999
+     end select
+
     endif
     end SUBROUTINE TRACK_NODE_FLAG_probe_wrap_p
 
@@ -5679,8 +5713,57 @@ end subroutine symplectify_for_zhe0
     call kill(m)
   end subroutine extract_moments
 
+!!!!  checking symplectic global 
+subroutine checksympglobal(r,aperture,n)
+implicit none
+type(layout), intent(inout)  :: r
+type(probe) xs0
+type(probe_8) xs
+type(c_damap) idc
+type(damap) id
+real(dp) x(6),dx,norm,aperture,normt,normp
+integer n,i,nt
+type(internal_state) state
 
+state=only_4d0
 
+call init(state,1,0)
+call alloc(idc)
+call alloc(id)
+call alloc(xs)
+
+dx=aperture/n
+x=0
+ normt=0
+normp=1
+nt=0
+do i=1,n
+
+ x=0
+ x(1)=i*dx
+ x(3)=i*dx
+ idc=1
+  xs0=x
+ xs=xs0+idc
+ call propagate(r,xs,state,fibre1=1)
+ if(.not.xs%u) then
+   nt=nt+1
+  idc=xs
+  id=idc
+  call checksymp(id,norm)
+  write(6,*) i,i*dx,norm
+  normt=normt+norm
+  normp=log(norm)/log(10.0_dp)+normp
+ endif
+enddo
+ normt=normt/nt
+ normp=normp/nt
+write(6,*) normp,normt
+
+call kill(idc)
+call kill(id)
+call kill(xs)
+end subroutine checksympglobal
 
 end module ptc_spin
 

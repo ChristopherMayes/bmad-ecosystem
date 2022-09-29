@@ -1,4 +1,0 @@
-# The fortran modules provided by this target.
-provides
- aperture_by_tracking_mod.mod
- aperture_by_tracking_mpi_mod.mod

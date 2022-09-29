@@ -87,6 +87,7 @@ do ib = 0, ubound(lat%branch, 1)
   do i = 1, branch%n_ele_max - 1
     ele => branch%ele(i)
     if (ele_o_sign == -1 .and. ele%key == e_gun$) cycle
+    if ((ele_o_sign == -1 .or. orb_dir_sign == -1) .and. ele%key == beambeam$) cycle
     if (ele%key == marker$ .and. ele%name == 'END') cycle
     ele%spin_tracking_method = tracking$
 
@@ -98,6 +99,10 @@ do ib = 0, ubound(lat%branch, 1)
       if (j == custom$) cycle
       if (j == mad$) cycle   ! Ignore MAD
       if (j == taylor$ .and. lat%particle_start%direction == -1) cycle
+      if ((j == symp_lie_ptc$ .or. j == taylor$) .and. ele%key == ac_kicker$) then
+        if (.not. allocated(ele%ac_kick%frequency)) cycle
+        if (size(ele%ac_kick%frequency) /= 1) cycle
+      endif
       if ((orb_dir_sign == -1 .or. ele_o_sign == -1) .and. (j == taylor$ .or. j == linear$)) cycle
       ele%tracking_method = j
 
@@ -128,7 +133,7 @@ do ib = 0, ubound(lat%branch, 1)
 
       if (orb_dir_sign == -1 .and. .not. debug_mode) then
         start_orb%direction = -1
-        lat%absolute_time_tracking = .true.
+        bmad_com%absolute_time_tracking = .true.
       endif
 
       start_orb%species = default_tracking_species(branch%param)
@@ -174,9 +179,9 @@ do ib = 0, ubound(lat%branch, 1)
       if (j == symp_lie_ptc$) end_ptc = end_orb
 
       if (j == symp_lie_ptc$ .and. .not. debug_mode) then
-        bmad_com%ptc_use_orientation_patches = .false.
+        ptc_com%use_orientation_patches = .false.
         call track1 (start_orb, ele, branch%param, end_orb)
-        bmad_com%ptc_use_orientation_patches = .true.
+        ptc_com%use_orientation_patches = .true.
         write (1,fmt) quote(trim(out_str) // '-OD'), 'ABS 1e-10', end_orb%vec - end_ptc%vec
       endif
 
@@ -191,6 +196,16 @@ do ib = 0, ubound(lat%branch, 1)
         write (1, '(3a, t50, a, 2es18.10)') '"', trim(ele%name), ':E_Field"', 'REL 1E-07', end_orb%field
       endif
     end do
+
+    if (debug_mode .and. valid_spin_tracking_method(ele, sprint$)) then
+      ele%spin_tracking_method = sprint$
+      if (associated(ele%spin_taylor(0)%term)) deallocate (ele%spin_taylor(0)%term)
+      call track1 (start_orb, ele, branch%param, end_orb)
+      out_str = trim(ele%name) // ': Sprint dSpin'
+      isn=isn+1; write (line(isn), '(a, t50, a,  3f14.9, 4x, f14.9)') '"' // trim(out_str) // '"', tolerance_spin(out_str), &
+                                                              end_orb%spin-start_orb%spin, norm2(end_orb%spin) - norm2(start_orb%spin)
+      if (debug_mode) write(line_debug(isn), '(a40, 3f14.9, 4x, f14.9)') out_str, end_orb%spin-start_orb%spin, norm2(end_orb%spin) - norm2(start_orb%spin)
+    endif
 
     if (isn == 0) cycle
 
@@ -221,9 +236,9 @@ character(*) :: instr
 ! There can be differences between debug and non-debug output.
 
   select case (instr)
-    case("RBEND4: Bmad_Standard")                      ; tolerance = 'ABS 2E-13'
+    case("RBEND4: Bmad_Standard")                      ; tolerance = 'ABS 1E-12'
     case("RBEND4: Runge_Kutta")                        ; tolerance = 'ABS 1E-12'
-    case("RBEND4: Linear")                             ; tolerance = 'ABS 2E-13'
+    case("RBEND4: Linear")                             ; tolerance = 'ABS 1E-12'
     case("RBEND4: Time_Runge_Kutta")                   ; tolerance = 'ABS 1E-12'
     case("RBEND6: Symp_Lie_PTC")                       ; tolerance = 'ABS 1E-13'
     case("RFCAVITY1: Time_Runge_Kutta")                ; tolerance = 'ABS 2E-12'
@@ -235,11 +250,12 @@ character(*) :: instr
     case("LCAVITY1-Anti_D: Runge_Kutta")               ; tolerance = 'ABS 2e-13'
     case("RBEND4-Anti_D: Bmad_Standard")               ; tolerance = 'ABS 4e-13'
     case("RBEND4-Anti_OD: Bmad_Standard")              ; tolerance = 'ABS 4e-13'
-    case("RBEND4-Anti_O: Bmad_Standard")               ; tolerance = 'ABS 2e-13'
+    case("RBEND4-Anti_O: Bmad_Standard")               ; tolerance = 'ABS 4e-13'
     case("RBEND4-Anti_O: Runge_Kutta")                 ; tolerance = 'ABS 1e-12'
     case("RBEND4-Anti_O: Time_Runge_Kutta")            ; tolerance = 'ABS 1e-12'
     case("RBEND6-Anti_O: Symp_Lie_PTC")                ; tolerance = 'ABS 1E-13'
     case("WIGGLER_FLAT1-Anti_O: Runge_Kutta")          ; tolerance = 'ABS 2e-13'
+    case("WIGGLER_FLAT1-Anti_O: Time_Runge_Kutta")     ; tolerance = 'ABS 2e-13'
     case("LCAVITY1-Anti_OD: Runge_Kutta")              ; tolerance = 'ABS 2e-13'
 
     case("RFCAVITY1-Anti_D: Time_Runge_Kutta")         ; tolerance = 'ABS 1E-12'
@@ -254,7 +270,7 @@ character(*) :: instr
       if (index(instr, 'Runge_Kutta') /= 0) then
         tolerance = 'ABS 1e-13'
       else
-        tolerance = 'ABS 1e-14'
+        tolerance = 'ABS 2e-14'
       endif
   end select
 

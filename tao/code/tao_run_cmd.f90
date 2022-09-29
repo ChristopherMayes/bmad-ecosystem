@@ -74,8 +74,8 @@ do i = iu0, iu1
   u%calc%rad_int_for_plotting    = .false.
   u%calc%chrom_for_data          = .false.
   u%calc%chrom_for_plotting      = .false.
-  u%calc%beam_sigma_for_data     = .false.
-  u%calc%beam_sigma_for_plotting = .false.
+  u%calc%lat_sigma_for_data      = .false.
+  u%calc%lat_sigma_for_plotting  = .false.
   u%calc%spin_matrices           = .false.
   u%calc%srdt_for_data           = 0
 
@@ -83,7 +83,7 @@ do i = iu0, iu1
     if (.not. u%data(j)%useit_opt) cycle
     if (tao_rad_int_calc_needed(u%data(j)%data_type, u%data(j)%data_source)) u%calc%rad_int_for_data = .true.
     if (tao_chrom_calc_needed(u%data(j)%data_type, u%data(j)%data_source)) u%calc%chrom_for_data = .true.
-    if (tao_beam_sigma_calc_needed(u%data(j)%data_type, u%data(j)%data_source)) u%calc%beam_sigma_for_data = .true.
+    if (tao_lat_sigma_calc_needed(u%data(j)%data_type, u%data(j)%data_source)) u%calc%lat_sigma_for_data = .true.
     if (tao_spin_matrices_calc_needed(u%data(j)%data_type, u%data(j)%data_source)) u%calc%spin_matrices = .true.
     if (substr(u%data(j)%data_type,1,11) == 'expression:') s%com%have_datums_using_expressions = .true.
     u%calc%srdt_for_data = max(tao_srdt_calc_needed(u%data(j)%data_type, u%data(j)%data_source), u%calc%srdt_for_data)
@@ -103,16 +103,6 @@ if (n_data == 0) then
   call out_io (s_error$, r_name, 'No data constraints defined for the merit function!')
   abort = .true.
   return
-endif
-
-! Save time with orm analysis by turning off transfer matrix calc in
-! everything but the common universe.
-
-if (s%global%orm_analysis) then
-  s%u(:)%calc%twiss = .false.
-  s%u(ix_common_uni$)%calc%twiss = .true.
-  s%u(:)%calc%track = .false.
-  s%u(ix_common_uni$)%calc%track = .true.
 endif
 
 ! Optimize...
@@ -161,12 +151,10 @@ enddo
 ! optimization has not been updated.
 
 s%com%optimizer_running = .false.
-
 s%u(:)%calc = u_calc
 
 call tao_turn_on_special_calcs_if_needed_for_plotting ()
 
-if (s%global%orm_analysis) s%u(:)%calc%twiss = .true.
 s%u(:)%calc%lattice = .true.
 
 end subroutine

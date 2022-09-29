@@ -49,7 +49,6 @@ real(rp) :: color
 real(rp) :: r1, plot_y_min, plot_y_max, plot_color_scale, plot_x_min, plot_x_max, plot_x_size, plot_y_size
 real(rp) :: rel_tol_adaptive_tracking, abs_tol_adaptive_tracking
 !real(rp) :: ref_p0c, ref_time
-real(rp) :: dt_dummy
 integer :: outfile, namelist_file, monitor_file
 integer :: plot_every_n, species
 integer, allocatable :: omp_counter(:), omp_particle_id(:)
@@ -196,7 +195,7 @@ if (lat2_name /= '') then
 endif
 
 ! Check for absolute time tracking. If not, abort!
-if (.not. branch%lat%absolute_time_tracking ) then
+if (.not. bmad_com%absolute_time_tracking ) then
   call out_io (s_error$, r_name, 'absolute time tracking must be set to True.')
   stop
 endif
@@ -205,9 +204,7 @@ endif
 !Track through multiple elements
 
 !Import  BMAD-T style particles
-call import_time_distribution(dc_param%particle_file_name, &
-        start_particles)
-
+call import_time_distribution(dc_param%particle_file_name, start_particles)
 
 !Switch all elements to time_runge_kutta$ tracking
 do ele_id = 1, branch%n_ele_track
@@ -223,7 +220,6 @@ end do
 if (do_tally) then
   allocate(tally(branch%n_ele_track))
 endif
-
 
 !Monitor elements
 if (element_monitor_list /= '') then  
@@ -573,9 +569,8 @@ integer ix_ele
 !
 
 particle%species = species
-dt_dummy = 0
 !if s < 0, drift particle forward to s = 0
-if (particle%s < 0) call drift_orbit_time(particle, dt_dummy, 1.0_rp,  delta_s =  -particle%s)
+if (particle%s < 0) call drift_orbit_time(particle, 1.0_rp,  delta_s =  -particle%s)
   
   ! Info to screen
   !print *, 'test' 
@@ -601,7 +596,7 @@ e_tot = sqrt(pc2 + mass_of(particle%species)**2)
 particle%beta = sqrt(pc2)/e_tot
 
 
-call convert_particle_coordinates_t_to_s(particle, dt_dummy, ele, ele%ref_time)
+call convert_particle_coordinates_t_to_s(particle, ele, ele%ref_time)
 
 
 

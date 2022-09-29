@@ -579,13 +579,14 @@ case (lcavity$)
   do i = 1, 5
     call track_this_ele (orb_start, orb_end, ref_time_start, .false., err); if (err) goto 9000
     call calc_time_ref_orb_out(orb_end)
-    ele%value(p0c$) = ele%value(p0c$) * (1 + orb_end%vec(6))
+    ele%value(p0c$) = orb_end%p0c * (1 + orb_end%vec(6))
     call convert_pc_to (ele%value(p0c$), param%particle, E_tot = ele%value(E_tot$), err_flag = err)
     if (err) goto 9000
-    if (abs(orb_end%vec(6)) < bmad_com%rel_tol_tracking) exit
+    if (abs(orb_end%vec(6)) < small_rel_change$) exit
   enddo
 
   ele%value(delta_ref_time$) = ele%ref_time - ref_time_start
+  ele%time_ref_orb_out%p0c = ele%value(p0c$)  ! To prevent small roundoff errors
 
 case (custom$, hybrid$)
   ele%value(E_tot$) = E_tot_start + ele%value(delta_e_ref$)   ! Delta_ref_time is an independent attrib here.
@@ -694,18 +695,6 @@ case default
     call track_this_ele (orb_start, orb_end, ref_time_start, .false., err); if (err) goto 9000
     call calc_time_ref_orb_out(orb_end)
     ele%value(delta_ref_time$) = ele%ref_time - ref_time_start
-  endif
-
-  call ele_rad_int_cache_calc (ele, .true.)
-
-  if (ele%key == sbend$ .or. ele%key == wiggler$ .or. ele%key == undulator$) then
-    bmad_com%radiation_damping_on = .true.
-    orb1 = ele%time_ref_orb_in
-    call track1_radiation (orb1, ele, start_edge$)
-    orb2 = ele%time_ref_orb_out
-    call track1_radiation (orb2, ele, end_edge$)
-    bmad_com%radiation_damping_on = .false.
-    ele%value(dpz_rad_damp_ave$) = (orb1%vec(6) - orb_start%vec(6)) + (orb2%vec(6) - orb_end%vec(6))
   endif
 end select
 
@@ -835,7 +824,7 @@ if (ele%slave_status == super_slave$ .or. ele%slave_status == slice_slave$ .or. 
   enddo
 endif
 
-if (ele_has_offset(ele)) then
+if (ele_has_nonzero_offset(ele)) then
   call zero_ele_offsets (ele)
   has_changed = .true.
 endif

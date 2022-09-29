@@ -2,9 +2,13 @@
 ! Subroutine write_lattice_in_foreign_format (out_type, out_file_name, lat, ref_orbit, &
 !        use_matrix_model, include_apertures, dr12_drift_max, ix_start, ix_end, ix_branch, converted_lat, err)
 !
-! Subroutine to write a MAD-8, MAD-X, OPAL, SAD, or XSIF lattice file using the 
+! Subroutine to write a Elegant, MAD-8, MAD-X, OPAL, SAD, or XSIF lattice file using the 
 ! information in a lat_struct. Optionally, only part of the lattice can be generated.
 ! [XSIF is a variant of MAD8 used by SLAC.]
+!
+!=========================================================================================
+! NOTE: ELEGANT TRANSLATION IN DEVELOPMENT. PLEASE CONTACT DAVID SAGAN IF YOU WANT TO USE!
+!=========================================================================================
 !
 ! To write a Bmad lattice file, use: write_bmad_lattice_file
 !
@@ -25,7 +29,7 @@
 ! Note: wiggler elements are replaced by a drift-matrix-drift or drift-bend model.
 !
 ! Input:
-!   out_type          -- character(*): Either 'XSIF', 'MAD-8', 'MAD-X', 'SAD', or 'OPAL-T'.
+!   out_type          -- character(*): Either 'ELEGANT', 'XSIF', 'MAD-8', 'MAD-X', 'SAD', or 'OPAL-T'.
 !   out_file_name     -- character(*): Name of the mad output lattice file.
 !   lat               -- lat_struct: Holds the lattice information.
 !   ref_orbit(0:)     -- coord_struct, allocatable, optional: Referece orbit for sad_mult and patch elements.
@@ -50,7 +54,6 @@
 ! Output:
 !   converted_lat     -- lat_struct, optional: Equivalent Bmad lattice with wiggler and 
 !                           sol_quad elements replaced by their respective models.
-!                           This is only valid for MAD-8, MAD-X, and XSIF conversions.
 !   err               -- logical, optional: Set True if, say a file could not be opened.
 !-
 
@@ -66,7 +69,7 @@ implicit none
 type (lat_struct), target :: lat, lat_model, lat_out
 type (lat_struct), optional, target :: converted_lat
 type (ele_struct), pointer :: ele, ele1, ele2, lord, sol_ele, first_sol_edge
-type (ele_struct), save :: drift_ele, ab_ele, taylor_ele, col_ele, kicker_ele, null_ele, bend_ele, quad_ele
+type (ele_struct) :: drift_ele, ab_ele, taylor_ele, col_ele, kicker_ele, null_ele, bend_ele, quad_ele
 type (coord_struct) orb_start, orb_end, orb_center
 type (coord_struct), allocatable, optional :: ref_orbit(:)
 type (coord_struct), allocatable :: orbit_out(:)
@@ -76,11 +79,13 @@ type (mad_energy_struct) energy
 type (mad_map_struct) mad_map
 type (taylor_struct) taylor_a(6), taylor_b(6)
 type (taylor_struct), pointer :: taylor_ptr(:)
+type (all_pointer_struct) a_ptr
 
 real(rp), optional :: dr12_drift_max
-real(rp) field, hk, vk, tilt, limit(2), length, a, b, f, e2, beta
+real(rp) field, hk, vk, limit(2), length, a, b, f, e2, beta, r_max, r0
 real(rp), pointer :: val(:)
 real(rp) knl(0:n_pole_maxx), tilts(0:n_pole_maxx), a_pole(0:n_pole_maxx), b_pole(0:n_pole_maxx)
+real(rp) tilt, x_pitch, y_pitch, etilt, epitch, eyaw, offset(3), w_mat(3,3)
 
 integer, optional :: ix_start, ix_end, ix_branch
 integer, allocatable :: n_repeat(:), an_indexx(:)
@@ -92,13 +97,13 @@ integer :: ix_line_min, ix_line_max, n_warn_max = 10
 character(*), parameter :: r_name = "write_lattice_in_foreign_format"
 character(*) out_type, out_file_name
 character(300) line, knl_str, ksl_str
-character(40) orig_name, str
+character(40) orig_name, str, bmad_params(20), elegant_params(20)
 character(40), allocatable :: names(:)
 character(4000) line_out   ! Can be this large for taylor maps.
 character(2) continue_char, eol_char, comment_char, separator_char
 
 logical, optional :: use_matrix_model, include_apertures, err
-logical init_needed, mad_out
+logical init_needed, mad_out, err_flag
 logical parsing, warn_printed, converted, ptc_exact_model
 
 ! SAD translation
@@ -130,7 +135,7 @@ if (out_type == 'MAD-X' .or. out_type == 'OPAL-T') then
   separator_char = ','
   ix_line_max = 100
 
-elseif (out_type == 'MAD-8' .or. out_type == 'XSIF') then
+elseif (out_type == 'MAD-8' .or. out_type == 'XSIF' .or. out_type == 'ELEGANT') then
   comment_char = '!'
   continue_char = ' &'
   eol_char = ''
@@ -141,6 +146,8 @@ else
   call out_io (s_error$, r_name, 'BAD OUT_TYPE: ' // out_type)
   return
 endif
+
+if (out_type == 'ELEGANT') call out_io (s_warn$, r_name, '! NOTE: ELEGANT TRANSLATION IN DEVELOPMENT. PLEASE CONTACT DAVID SAGAN IF YOU WANT TO USE!')
 
 mad_out = .false.
 if (out_type == 'MAD-X' .or. out_type == 'MAD-8') mad_out = .true.
@@ -171,7 +178,7 @@ call out_io (s_info$, r_name, &
 ! open file
 
 if (present(err)) err = .true.
-n_taylor_order_saved = ptc_com%taylor_order_ptc
+n_taylor_order_saved = ptc_private%taylor_order_ptc
 
 iu = lunget()
 call fullfilename (out_file_name, line)
@@ -344,7 +351,7 @@ do
     quad_ele = ele
     ele%value(fringe_type$) = none$
 
-    if (ptc_com%taylor_order_ptc /= 2) call set_ptc (taylor_order = 2) 
+    if (ptc_private%taylor_order_ptc /= 2) call set_ptc (taylor_order = 2) 
 
     f_count = f_count + 1
     ie = ix_ele
@@ -377,7 +384,7 @@ do
   iv = nint(ele%value(fringe_type$))
   if (ele%key == sbend$ .and. ((mad_out .and. iv == sad_full$) .or. (out_type == 'MAD-8' .and. ele%value(dg$) /= 0))) then
 
-    if (ptc_com%taylor_order_ptc /= 1) call set_ptc (taylor_order = 1)
+    if (ptc_private%taylor_order_ptc /= 1) call set_ptc (taylor_order = 1)
 
     f_count = f_count + 1
     ie = ix_ele
@@ -443,7 +450,7 @@ do
   f = ele%value(l$) / (1 + orbit_out(ele%ix_ele)%vec(6))
   if (mad_out .and. ele%key == drift$ .and. ele%name(1:7) /= 'DRIFT_Z' .and. &
                                                abs(ele%mat6(1,2) - f) > real_option(1d-5, dr12_drift_max)) then
-    if (ptc_com%taylor_order_ptc /= 1) call set_ptc (taylor_order = 1) 
+    if (ptc_private%taylor_order_ptc /= 1) call set_ptc (taylor_order = 1) 
 
     drift_ele = ele
     drift_ele%value(l$) = -ele%value(l$)
@@ -603,7 +610,6 @@ case ('MAD-8', 'MAD-X', 'XSIF')
         ', Energy = ', re_str(1d-9*ele%value(E_TOT$)), ', Npart = ', re_str(branch_out%param%n_part), trim(eol_char)
   call write_line (line_out)
   write (iu, '(a)')
-
 end select
 
 ! write element parameters
@@ -619,11 +625,11 @@ do   ! ix_ele = 1e1, ie2
 
   val => ele%value
 
-  if (out_type == 'XSIF') then
+  if (out_type == 'XSIF' .or. out_type == 'ELEGANT') then
     if (ele%key == elseparator$) then 
       n_elsep_warn = n_elsep_warn + 1
       ele%key = drift$  ! XSIF does not have elsep elements.
-      call out_io (s_info$, r_name, 'Elseparator being converted into a drift for XSIF conversion: ' // ele%name)  
+      call out_io (s_info$, r_name, 'Elseparator being converted into a drift for ' //out_type // ' conversion: ' // ele%name)  
     endif
   endif
 
@@ -641,8 +647,314 @@ do   ! ix_ele = 1e1, ie2
  
   call find_index (ele%name, names, an_indexx, n_names, ix_match, add_to_list = .true.)
 
-  !----------
-  ! OPAL case
+  !------------------------------------
+  ! ELEGANT conversion
+
+  if (out_type == 'ELEGANT') then
+
+    bmad_params = ''
+    elegant_params = ''
+
+    select case (ele%key)
+
+    case (instrument$, detector$, monitor$)   ! Elegant
+      write (line_out, '(2a)') trim(ele%name) // ': moni'
+      bmad_params(:4) = [character(40):: 'l', 'tilt', 'x_offset', 'y_offset']
+      elegant_params(:4) = [character(40):: 'l', 'tilt', 'dx', 'dy']
+
+
+    case (drift$, pipe$)   ! Elegant
+      if (ele%csr_method == off$) then
+        write (line_out, '(2a)') trim(ele%name) // ': edrift'
+      else
+        write (line_out, '(2a)') trim(ele%name) // ': csredrift'
+      endif
+
+      bmad_params(:1) = [character(40):: 'l']
+      elegant_params(:1) = [character(40):: 'l']
+
+    case (hkicker$)   ! Elegant
+      write (line_out, '(2a)') trim(ele%name) // ': ehkick'
+      bmad_params(:6) = [character(40):: 'l', 'kick', 'tilt', 'x_offset', 'y_offset', 'z_offset']
+      elegant_params(:6) = [character(40):: 'l', 'kick', 'tilt', 'dx', 'dy', 'dz']
+
+    case (vkicker$)   ! Elegant
+      write (line_out, '(2a)') trim(ele%name) // ': evkick'
+      bmad_params(:6) = [character(40):: 'l', 'kick', 'tilt', 'x_offset', 'y_offset', 'z_offset']
+      elegant_params(:6) = [character(40):: 'l', 'kick', 'tilt', 'dx', 'dy', 'dz']
+
+    case (kicker$)   ! Elegant
+      write (line_out, '(2a)') trim(ele%name) // ': ekicker'
+      bmad_params(:7) = [character(40):: 'l', 'hkick', 'vkick', 'tilt', 'x_offset', 'y_offset', 'z_offset']
+      elegant_params(:7) = [character(40):: 'l', 'hkick', 'vkick', 'tilt', 'dx', 'dy', 'dz']
+
+    case (sbend$)   ! Elegant
+      if (ele%csr_method == off$) then
+        write (line_out, '(2a)') trim(ele%name) // ': csbend'
+      else
+        write (line_out, '(2a)') trim(ele%name) // ': csrcsbend'
+      endif
+
+      if (ele%value(x_pitch$) /= 0 .or. ele%value(y_pitch$) /= 0) line_out = trim(line_out) // ', malign_method = 2'
+
+      select case (nint(ele%value(fringe_at$)))
+      case (entrance_end$); line_out = trim(line_out) // ', edge2_effects = 0'
+      case (exit_end$);     line_out = trim(line_out) // ', edge1_effects = 0'
+      case (no_end$);       line_out = trim(line_out) // ', edge1_effects = 0, edge2_effects = 0'
+      end select
+
+      call multipole_ele_to_ab(ele, .false., ix_pole_max, a_pole, b_pole, magnetic$, include_kicks$)
+      call value_to_line (line_out, ele%value(dg$)*ele%value(rho$), 'fse_dipole', 'R')
+      call value_to_line (line_out, b_pole(0) - ele%value(dg$)*ele%value(l$), 'xkick', 'R')
+      do n = 1, 8
+        call value_to_line (line_out, b_pole(n)*factorial(n)/ele%value(l$), 'k' // int_str(n), 'R')
+      enddo
+
+
+      if (ele%value(fint$) == ele%value(fintx$)) then
+        if (ele%value(fint$) /= 0.5_rp) call value_to_line (line_out, ele%value(fint$), 'fint', 'R', .false.)
+      else
+        if (ele%value(fint$) /= 0.5_rp) call value_to_line (line_out, ele%value(fint$), 'fint1', 'R', .false.)
+        if (ele%value(fintx$) /= 0.5_rp) call value_to_line (line_out, ele%value(fintx$), 'fint2', 'R', .false.)
+      endif
+
+      bmad_params(:12) = [character(40):: 'l', 'angle', 'e1', 'e2', 'ref_tilt', 'roll', 'h1', 'h2', &
+                                                               'vkick', 'x_offset', 'y_offset', 'z_offset']
+      elegant_params(:12) = [character(40):: 'l', 'angle', 'e1', 'e2', 'tilt', 'etilt', 'h1', 'h2', 'ykick', 'dx', 'dy', 'dz']
+
+    case (quadrupole$)   ! Elegant
+      call multipole_ele_to_kt(ele, .true., ix_pole_max, knl, tilts, magnetic$, include_kicks$)
+      knl = knl / ele%value(l$)
+
+      if (knl(2) == 0) then
+        write (line_out, '(2a)') trim(ele%name) // ': kquad'
+        if (ele%value(x_pitch$) /= 0 .or. ele%value(y_pitch$) /= 0) line_out = trim(line_out) // ', malign_method = 2'
+      else
+        write (line_out, '(2a)') trim(ele%name) // ': kquse'
+        call value_to_line (line_out, knl(2)*cos(3*(tilts(2)-tilts(1)))/2, 'k2', 'R')
+      endif
+
+      tilt = tilts(1)
+      call value_to_line (line_out, knl(1), 'k1', 'R')
+
+      bmad_params(:1) = [character(40):: 'l']
+      elegant_params(:1) = [character(40):: 'l']
+
+    case (sextupole$)   ! Elegant
+      call multipole_ele_to_kt(ele, .true., ix_pole_max, knl, tilts, magnetic$, include_kicks$)
+      knl = knl / ele%value(l$)
+
+      write (line_out, '(2a)') trim(ele%name) // ': ksext'
+      if (ele%value(x_pitch$) /= 0 .or. ele%value(y_pitch$) /= 0) line_out = trim(line_out) // ', malign_method = 2'
+      call value_to_line (line_out, knl(2), 'k2', 'R')
+      call value_to_line (line_out, knl(1)*cos(0.5_rp*(tilts(1)-tilts(2))), 'k1', 'R')
+      call value_to_line (line_out, knl(1)*sin(0.5_rp*(tilts(1)-tilts(2))), 'j1', 'R')
+      call value_to_line (line_out, knl(0)*cos(tilts(0)), 'hkick', 'R')
+      call value_to_line (line_out, knl(0)*sin(tilts(0)), 'vkick', 'R')
+
+      tilt = tilts(2)
+      bmad_params(:1) = [character(40):: 'l']
+      elegant_params(:1) = [character(40):: 'l']
+
+    case (octupole$)   ! Elegant
+      call multipole_ele_to_kt(ele, .true., ix_pole_max, knl, tilts, magnetic$, include_kicks$)
+      knl = knl / ele%value(l$)
+
+      write (line_out, '(2a)') trim(ele%name) // ': koct'
+      call value_to_line (line_out, knl(3), 'k3', 'R')
+      call value_to_line (line_out, knl(0)*cos(tilts(0)), 'hkick', 'R')
+      call value_to_line (line_out, knl(0)*sin(tilts(0)), 'vkick', 'R')
+
+      tilt = tilts(3)
+      bmad_params(:1) = [character(40):: 'l']
+      elegant_params(:1) = [character(40):: 'l']
+
+    case (solenoid$)   ! Elegant
+      write (line_out, '(2a)') trim(ele%name) // ': sole'
+      bmad_params(:5) = [character(40):: 'l', 'ks', 'x_offset', 'y_offset', 'z_offset']
+      elegant_params(:5) = [character(40):: 'l', 'ks', 'dx', 'dy', 'dz']
+
+    case (taylor$)   ! Elegant
+      write (line_out, '(2a)') trim(ele%name) // ': ematrix'
+      do i = 1, 6
+        f = taylor_coef(ele%taylor(i), [0,0,0,0,0,0])
+        call value_to_line (line_out, f, 'c' // int_str(i), 'R')
+
+        do j = 1, 6
+          f = taylor_coef(ele%taylor(i), taylor_expn([j]))
+          call value_to_line (line_out, f, 'r' // int_str(i) // int_str(j), 'R')
+
+          do k = 1, j
+            f = taylor_coef(ele%taylor(i), taylor_expn([j,k]))
+            call value_to_line (line_out, f, 'r' // int_str(i) // int_str(j), 'R')
+          enddo
+        enddo
+      enddo
+
+      tilt = ele%value(tilt$)
+      bmad_params(:1) = [character(40):: 'l']
+      elegant_params(:1) = [character(40):: 'l']
+
+    case (beambeam$)   ! Elegant
+      write (line_out, '(2a)') trim(ele%name) // ': beambeam'
+      call value_to_line (line_out, strong_beam_strength(ele)*e_charge, 'charge', 'R')
+      bmad_params(:4) = [character(40):: 'x_offset', 'y_offset', 'sig_x', 'sig_y']
+      elegant_params(:4) = [character(40):: 'xcenter', 'ycenter', 'xsize', 'ysize']
+
+    case (marker$)   ! Elegant
+      write (line_out, '(2a)') trim(ele%name) // ': mark'
+      bmad_params(:2) = [character(40):: 'x_offset', 'y_offset']
+      elegant_params(:2) = [character(40):: 'dx', 'dy']
+
+    case (ab_multipole$, multipole$)   ! Elegant
+      call multipole_ele_to_kt(ele, .true., ix_pole_max, knl, tilts, include_kicks$)
+      orig_name = ele%name
+      ab_ele = ele
+      do i = 1, ix_pole_max
+        if (knl(i) == 0) cycle
+        ab_ele%name = trim(orig_name) // '__' // int_str(i)
+        write (line_out, '(2a)') trim(ab_ele%name) // ': mult'
+        call insert_element(lat_out, ab_ele, ix_ele+1, branch_out%ix_branch, orbit_out)
+        ie2 = ie2 + 1;  ix_ele = ix_ele + 1
+        call value_to_line (line_out, knl(i), 'knl', 'R')
+        call value_to_line (line_out, tilts(i), 'tilt', 'R')
+        line_out = trim(line_out) // ', order = ' // int_str(i)
+        call value_to_line (line_out, ab_ele%value(x_offset$), 'dx', 'R')
+        call value_to_line (line_out, ab_ele%value(y_offset$), 'dy', 'R')
+        call value_to_line (line_out, ab_ele%value(z_offset$), 'dz', 'R')
+        call write_line (line_out)
+      enddo
+      cycle  
+
+    case (ecollimator$, rcollimator$)   ! Elegant
+      if (ele%key == ecollimator$) then
+        write (line_out, '(2a)') trim(ele%name) // ': ecol'
+      else
+        write (line_out, '(2a)') trim(ele%name) // ': rcol'
+      endif
+      call value_to_line (line_out, ab_ele%value(l$), 'l', 'R')
+
+      r_max = (ele%value(x2_limit$) + ele%value(x1_limit$)) / 2
+      r0 = (ele%value(x2_limit$) - ele%value(x1_limit$)) / 2
+      if (ele%offset_moves_aperture) r0 = r0 + ele%value(x_offset$)
+      call value_to_line (line_out, r_max, 'x_max', 'R')
+      call value_to_line (line_out, r0, 'dx', 'R')
+
+      r_max = (ele%value(y2_limit$) + ele%value(y1_limit$)) / 2
+      r0 = (ele%value(y2_limit$) - ele%value(y1_limit$)) / 2
+      if (ele%offset_moves_aperture) r0 = r0 + ele%value(y_offset$)
+      call value_to_line (line_out, r_max, 'y_max', 'R')
+      call value_to_line (line_out, r0, 'dy', 'R')
+
+    case (wiggler$, undulator$)   ! Elegant
+      write (line_out, '(2a)') trim(ele%name) // ': wiggler'
+      bmad_params(:7) = [character(40):: 'l', 'b_max', 'x_offset', 'y_offset', 'z_offset', 'tilt', 'n_pole']
+      elegant_params(:7) = [character(40):: 'l', 'b', 'dx', 'dy', 'dz', 'tilt', 'poles']
+
+    case (rfcavity$, lcavity$)   ! Elegant
+      if (ele%key == rfcavity$) then
+        write (line_out, '(2a)') trim(ele%name) // ': rfca'
+        call value_to_line (line_out, 360.0_rp*(ele%value(phi0$)+ele%value(phi0_multipass$)), 'phase', 'R')
+      else
+        write (line_out, '(2a)') trim(ele%name) // ': rfca, change_p0 = 1'
+        call value_to_line (line_out, 360.0_rp*(ele%value(phi0$)+ele%value(phi0_multipass$))+90.0_rp, 'phase', 'R')
+      endif
+
+      bmad_params(:3) = [character(40):: 'l', 'voltage', 'rf_frequency']
+      elegant_params(:3) = [character(40):: 'l', 'volt', 'freq']
+
+    case (crab_cavity$)   ! Elegant
+      write (line_out, '(2a)') trim(ele%name) // ': rfdf'
+      call value_to_line (line_out, 360.0_rp*(ele%value(phi0$)+ele%value(phi0_multipass$)), 'phase', 'R')
+      bmad_params(:7) = [character(40):: 'l', 'voltage', 'rf_frequency', 'tilt', 'x_offset', 'y_offset', 'z_offset']
+      elegant_params(:7) = [character(40):: 'l', 'voltage', 'frequency', 'tilt', 'dx', 'dy', 'dz']
+
+    case (patch$)   ! Elegant
+      if (all([ele%value(x_pitch$), ele%value(y_pitch$), ele%value(x_offset$), ele%value(x_offset$), ele%value(x_offset$)] == 0)) then
+        write (line_out, '(2a)') trim(ele%name) // ': rotate'
+        call value_to_line (line_out, ele%value(tilt$),  'tilt', 'R')
+      else
+        write (line_out, '(2a)') trim(ele%name) // ': malign'
+        bmad_params(:5) = [character(40):: 'x_offset', 'y_offset', 'z_offset', 't_offset', 'e_tot_offset']
+        elegant_params(:5) = [character(40):: 'dx', 'dy', 'dz', 'dt', 'de']
+        if (ele%value(x_pitch$) /= 0 .or. ele%value(y_pitch$) /= 0 .or. ele%value(tilt$) /= 0) then
+          call out_io (s_warn$, r_name, 'PITCH OR TILT PARAMETERS OF A PATCH CANNOT BE TRANSLATED TO ELEGANT: ' // ele%name)
+        endif
+      endif
+
+    case (floor_shift$)   ! Elegant
+      write (line_out, '(2a)') trim(ele%name) // ': floor'
+      call value_to_line (line_out, ele%floor%r(1),  'x', 'R')
+      call value_to_line (line_out, ele%floor%r(2),  'y', 'R')
+      call value_to_line (line_out, ele%floor%r(3),  'z', 'R')
+      call value_to_line (line_out, ele%floor%theta, 'theta', 'R')
+      call value_to_line (line_out, ele%floor%phi,   'phi', 'R')
+      call value_to_line (line_out, ele%floor%psi,   'psi', 'R')
+
+!    case (match$)   ! Elegant
+!      write (line_out, '(2a)') trim(ele%name) // ': ilmatrix'
+
+    case default
+      call out_io (s_error$, r_name, 'I DO NOT KNOW HOW TO TRANSLATE ELEMENT: ' // ele%name, &
+                                     'WHICH IS OF TYPE: ' // key_name(ele%key), &
+                                     'CONVERTING TO DRIFT')
+      write (line_out, '(2a)') trim(ele%name) // ': drift'
+      bmad_params(:1) = [character(40):: 'l']
+      elegant_params(:1) = [character(40):: 'l']
+    end select
+
+    !------
+
+    select case (ele%key)
+    case (sbend$, patch$, drift$)
+      ! Pass
+
+    case (quadrupole$, sextupole$, octupole$, taylor$)
+      x_pitch = ele%value(x_pitch$)
+      y_pitch = ele%value(y_pitch$)
+      call floor_angles_to_w_mat(x_pitch, y_pitch, tilt, w_mat)
+
+      if (x_pitch == 0 .or. y_pitch == 0) then
+        epitch = -y_pitch  ! alpha_x
+        eyaw = x_pitch     ! alpha_y
+        etilt = tilt       ! alpha_z
+      else
+        epitch = -atan2(w_mat(2,3), w_mat(3,3))
+        etilt = -atan2(w_mat(1,2), w_mat(1,1))
+        eyaw = -atan2(w_mat(1,3), w_mat(2,3)/sin(epitch))
+      endif
+
+      offset = matmul(w_mat, [ele%value(x_offset$), ele%value(y_offset$), ele%value(z_offset$)])
+      call value_to_line (line_out, etilt, 'tilt', 'R')
+      call value_to_line (line_out, epitch, 'pitch', 'R')
+      call value_to_line (line_out, eyaw, 'yaw', 'R')
+      call value_to_line (line_out, offset(1), 'dx', 'R')
+      call value_to_line (line_out, offset(2), 'dy', 'R')
+      call value_to_line (line_out, offset(3), 'dz', 'R')
+
+    case (instrument$, detector$, monitor$, hkicker$, vkicker$, kicker$)  ! Has tilt but not pitches.
+      if (ele%value(x_pitch$) /= 0 .or. ele%value(y_pitch$) /= 0) then
+        call out_io (s_warn$, r_name, 'X_PITCH OR Y_PITCH PARAMETERS OF A ' // trim(key_name(ele%key)) // ' CANNOT BE TRANSLATED TO ELEGANT: ' // ele%name)
+      endif
+
+    case default
+      if (ele%value(x_pitch$) /= 0 .or. ele%value(y_pitch$) /= 0 .or. ele%value(tilt$) /= 0) then
+        call out_io (s_warn$, r_name, 'TILT, X_PITCH OR Y_PITCH PARAMETERS OF A ' // trim(key_name(ele%key)) // ' CANNOT BE TRANSLATED TO ELEGANT: ' // ele%name)
+      endif
+    end select
+
+    do i = 1, size(bmad_params)
+      if (bmad_params(i) == '') exit
+      call pointer_to_attribute (ele, upcase(bmad_params(i)), .true., a_ptr, err_flag)
+      call value_to_line (line_out, a_ptr%r, elegant_params(i), 'R')
+    enddo
+
+    call write_line(line_out)
+    cycle
+  endif
+
+  !------------------------------------
+  ! OPAL conversion
   
   if (out_type == 'OPAL-T') then
 
@@ -689,7 +1001,7 @@ do   ! ix_ele = 1e1, ie2
   endif
 
   !-----------------------------------
-  ! For anything else but OPAL
+  ! For anything else but OPAL and ELEGANT
 
   select case (ele%key)
 
@@ -896,7 +1208,7 @@ do   ! ix_ele = 1e1, ie2
                       'A LATTICE WITH A SAD_MULT OR PATCH ELEMENT')           
         cycle
       endif
-      if (ptc_com%taylor_order_ptc /= 2) call set_ptc (taylor_order = 2) 
+      if (ptc_private%taylor_order_ptc /= 2) call set_ptc (taylor_order = 2) 
       call ele_to_taylor (ele, branch%param, orbit_out(ix_ele-1), .true., orbital_taylor = taylor_ptr)
     endif
 
@@ -1224,7 +1536,7 @@ call deallocate_lat_pointers (lat_model)
 
 ! Restore ptc settings
 
-if (n_taylor_order_saved /= ptc_com%taylor_order_ptc) call set_ptc (taylor_order = n_taylor_order_saved) 
+if (n_taylor_order_saved /= ptc_private%taylor_order_ptc) call set_ptc (taylor_order = n_taylor_order_saved) 
 ptc_com%exact_model = ptc_exact_model
 
 close(iu)

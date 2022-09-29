@@ -75,6 +75,24 @@ do_print = logic_option (.true., err_print_flag)
 call str_upcase (a_name, attrib_name)
 if (present(ix_attrib)) ix_attrib = 0
 
+!
+
+if (ele%key == def_ptc_com$) then
+  select case (a_name)
+  case ('VERTICAL_KICK');                             a_ptr%r => ptc_com%vertical_kick
+  case ('CUT_FACTOR');                                a_ptr%r => ptc_com%cut_factor
+  case ('PRINT_INFO_MESSAGES');                       a_ptr%l => ptc_com%print_info_messages
+  case ('USE_ORIENTATION_PATCHES');                   a_ptr%l => ptc_com%use_orientation_patches
+  case ('OLD_INTEGRATOR');                            a_ptr%i => ptc_com%old_integrator
+  case ('EXACT_MODEL', 'PTC_EXACT_MODEL');            a_ptr%l => ptc_com%exact_model
+  case ('EXACT_MISALIGN', 'PTC_EXACT_MISALIGN');      a_ptr%l => ptc_com%exact_misalign
+  case ('MAX_FRINGE_ORDER', 'PTC_MAX_FRINGE_ORDER');  a_ptr%i => ptc_com%max_fringe_order
+  case default; goto 9000
+  end select
+  err_flag = .false.
+  return
+endif
+
 !--------------------
 ! If a controller with a defined list of variables
 
@@ -380,13 +398,13 @@ endif
 
 if (a_name(1:12) == 'FREQUENCIES(') then
   if (.not. associated(ele%ac_kick)) goto 9400
-  if (.not. allocated(ele%ac_kick%frequencies)) goto 9450
-  n = get_this_index(a_name, 12, err, 1, size(ele%ac_kick%frequencies)); if (err) goto 9460
+  if (.not. allocated(ele%ac_kick%frequency)) goto 9450
+  n = get_this_index(a_name, 12, err, 1, size(ele%ac_kick%frequency)); if (err) goto 9460
 
   select case (a_name)
-  case ('%FREQ'); a_ptr%r => ele%ac_kick%frequencies(n)%f
-  case ('%AMP');  a_ptr%r => ele%ac_kick%frequencies(n)%amp
-  case ('%PHI');  a_ptr%r => ele%ac_kick%frequencies(n)%phi
+  case ('%FREQ'); a_ptr%r => ele%ac_kick%frequency(n)%f
+  case ('%AMP');  a_ptr%r => ele%ac_kick%frequency(n)%amp
+  case ('%PHI');  a_ptr%r => ele%ac_kick%frequency(n)%phi
   case default;   goto 9470
   end select
 
@@ -435,6 +453,7 @@ case ('CMAT_11');         a_ptr%r => ele%c_mat(1,1)
 case ('CMAT_12');         a_ptr%r => ele%c_mat(1,2)
 case ('CMAT_21');         a_ptr%r => ele%c_mat(2,1)
 case ('CMAT_22');         a_ptr%r => ele%c_mat(2,2)
+case ('MODE_FLIP');       a_ptr%l => ele%mode_flip
 case ('X_POSITION');      a_ptr%r => ele%floor%r(1)
 case ('Y_POSITION');      a_ptr%r => ele%floor%r(2)
 case ('Z_POSITION');      a_ptr%r => ele%floor%r(3)
@@ -671,6 +690,8 @@ case ('PHASE_TROMBONE');                 a_ptr%r => ele%value(phase_trombone$)
 case ('MATCH_END');                      a_ptr%r => ele%value(match_end$)
 case ('MATCH_END_ORBIT');                a_ptr%r => ele%value(match_end_orbit$)
 case ('FLEXIBLE');                       a_ptr%r => ele%value(flexible$)
+case ('MODE_FLIP0');                     a_ptr%r => ele%value(mode_flip0$)
+case ('MODE_FLIP1');                     a_ptr%r => ele%value(mode_flip1$)
 case ('X_REF');                          a_ptr%r => ele%taylor(1)%ref
 case ('PX_REF');                         a_ptr%r => ele%taylor(2)%ref
 case ('Y_REF');                          a_ptr%r => ele%taylor(3)%ref
@@ -678,14 +699,14 @@ case ('PY_REF');                         a_ptr%r => ele%taylor(4)%ref
 case ('Z_REF');                          a_ptr%r => ele%taylor(5)%ref
 case ('PZ_REF');                         a_ptr%r => ele%taylor(6)%ref
 case ('SYMPLECTIFY');                    a_ptr%l => ele%symplectify
-case ('ABSOLUTE_TIME_TRACKING');         a_ptr%l => branch%lat%absolute_time_tracking
+case ('ABSOLUTE_TIME_TRACKING');         a_ptr%l => bmad_com%absolute_time_tracking
+case ('ABSOLUTE_TIME_REF_SHIFT');        a_ptr%l => bmad_com%absolute_time_ref_shift
 case ('TAYLOR_MAP_INCLUDES_OFFSETS');    a_ptr%l => ele%taylor_map_includes_offsets
 case ('OFFSET_MOVES_APERTURE');          a_ptr%l => ele%offset_moves_aperture
 case ('FIELD_MASTER');                   a_ptr%l => ele%field_master
 case ('SCALE_MULTIPOLES');               a_ptr%l => ele%scale_multipoles
 case ('MULTIPOLES_ON');                  a_ptr%l => ele%multipoles_on
 case ('IS_ON');                          a_ptr%l => ele%is_on
-case ('HIGH_ENERGY_SPACE_CHARGE_ON');    a_ptr%l => branch%param%high_energy_space_charge_on
 !  attrib_type = is_integer$
 case ('N_SLICE');                        a_ptr%r => ele%value(n_slice$)
 case ('MULTIPASS_REF_ENERGY');           a_ptr%r => ele%value(multipass_ref_energy$)
@@ -725,11 +746,6 @@ case ('PARTICLE')
   else
     a_ptr%i => branch%param%particle
   endif
-
-case ('OLD_INTEGRATOR');                            a_ptr%l => ptc_com%old_integrator
-case ('EXACT_MODEL', 'PTC_EXACT_MODEL');            a_ptr%l => ptc_com%exact_model
-case ('EXACT_MISALIGN', 'PTC_EXACT_MISALIGN');      a_ptr%l => ptc_com%exact_misalign
-case ('MAX_FRINGE_ORDER', 'PTC_MAX_FRINGE_ORDER');  a_ptr%i => ptc_com%max_fringe_order
 
 ! No corresponding attribute in element.
 case ('TAYLOR_ORDER')
@@ -861,7 +877,7 @@ return
 9460 continue
 if (do_print) call out_io (s_error$, r_name, &
         'ATTRIBUTE: ' // trim(attrib_name) // ' HAS INDEX OUT OF RANGE. VALID RANGE IS FROM 1 TO ', &
-                                                                      int_str(size(ele%ac_kick%frequencies)), &
+                                                                      int_str(size(ele%ac_kick%frequency)), &
         'FOR ELEMENT: ' // ele%name)
 return
 

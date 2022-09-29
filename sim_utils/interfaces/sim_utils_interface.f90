@@ -176,6 +176,12 @@ function djb_hash (str, old_hash) result (hash)
   integer, optional :: old_hash
 end function
 
+function djb_str_hash (in_str) result (hash_str)
+  implicit none
+  character(*) :: in_str
+  character(6) :: hash_str
+end function
+
 subroutine doubleup_quotes (str_in, str_out, quote)
   character(*) str_in
   character(*) str_out
@@ -547,7 +553,7 @@ function nametable_bracket_indexx (nametable, name, n_match) result (ix_max)
   import
   implicit none
   type (nametable_struct) nametable
-  character(40) name
+  character(*) name
   integer ix_max
   integer, optional :: n_match
 end function
@@ -598,10 +604,10 @@ function outer_product (a, b) result (c)
   real(rp) c(size(a), size(b))
 end function
 
-subroutine parse_fortran_format (format_str, multiplyer, power, code, width, digits)
+subroutine parse_fortran_format (format_str, n_repeat, power, descrip, width, digits)
   implicit none
-  integer multiplyer, power, width, digits
-  character(*) format_str, code
+  integer n_repeat, power, width, digits
+  character(*) format_str, descrip
 end subroutine
 
 subroutine pointer_to_locations(string, array, num, ix_min, ix_max, names, exact_case, print_err)

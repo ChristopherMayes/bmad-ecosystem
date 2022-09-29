@@ -1,4 +1,4 @@
-\chapter{Lattice File Format}
+\chapter{Lattice File Statements}
 \label{c:lat.file}
 \index{lattice files|hyperbf}
 
@@ -77,15 +77,13 @@ A single line in a lattice file is limited to 500 characters. Commands have no r
 the number of lines they may be continued over and there is no limit to the length of a command.
 
 \index{lattice files!name syntax}
-Names of constants, elements, lines, etc. are limited to 40
-characters. The first character must be a letter (\vn{A} --- \vn{Z}).
-The other characters may be a letter, a digit (\vn{0} --- \vn{9}) or
-an underscore (\vn{_}). Other characters may appear but should be avoided
-since they are used by Bmad for various purposes. For example, the 
-backslash (\vn{\B}) character is used to by Bmad when forming the names of
-superposition slaves (\sref{s:super}) and dots (\vn{.}) are used by Bmad 
-when creating names of \vn{tagged} elements (\sref{s:tag}). Also use of
-special characters may make the lattice files less portable to non-Bmad programs.
+Names of constants, elements, lines, etc. are limited to 40 characters. The first character must be
+a letter (\vn{A} --- \vn{Z}).  The other characters may be a letter, a digit (\vn{0} --- \vn{9}) or
+an underscore (\vn{_}). Other characters may appear but should be avoided since they are used by
+Bmad for various purposes. For example, the backslash (\vn{\B}) character is used to by Bmad when
+forming the names of superposition slaves (\sref{s:super}) and dots (\vn{.}) are used by Bmad when
+creating names of \vn{tagged} elements (\sref{s:tag}). Also use of special characters may make the
+lattice files less portable to non-Bmad programs.
 
 \index{parameter statement}
 \index{parameter statement}
@@ -105,60 +103,50 @@ The following example constructs a linear lattice with two elements:
   t: line = (q, d)
   use, t 
 \end{example}
-here \vn{parameter[geometry]} (\sref{s:param}) is set to \vn{open}
-which specifies that the lattice is not circular. In this case, the beginning 
-Twiss parameters need to be specified and this is done by the \vn{beginning}
-statements (\sref{s:beginning}). A quadrupole named \vn{q}
-and a drift element named \vn{d} are specified
-and the entire lattice consists of element \vn{q} followed by element \vn{d}.
+here \vn{parameter[geometry]} (\sref{s:param}) is set to \vn{open} which specifies that the lattice
+is not circular. In this case, the beginning Twiss parameters need to be specified and this is done
+by the \vn{beginning} statements (\sref{s:beginning}). A quadrupole named \vn{q} and a drift element
+named \vn{d} are specified and the entire lattice consists of element \vn{q} followed by element
+\vn{d}.
 
 %----------------------------------------------------------------------------
 \section{Digested Files}
 \label{s:digested}
 \index{digested files}
 
-Normally the \bmad parser routine will create what is called a
-``digested file'' after it has parsed a lattice file so that when a
-program is run and the same lattice file is to be read in again, to save
-time, the digested file can be used to load in the lattice information.
-This digested file is in binary format and is not human readable. The
-digested file will contain the transfer maps for all the elements. 
-Using a digested file can save considerable time if some of the
-elements in the lattice need to have Taylor maps computed.
-(this occurs typically with map--type wigglers).
+Normally the \bmad parser routine will create what is called a ``digested file'' after it has parsed
+a lattice file so that when a program is run and the same lattice file is to be read in again, to
+save time, the digested file can be used to load in the lattice information.  This digested file is
+in binary format and is not human readable. The digested file will contain the transfer maps for all
+the elements.  Using a digested file can save considerable time if some of the elements in the
+lattice need to have Taylor maps computed.  (this occurs typically with map--type wigglers).
 
-\bmad creates the digested file in the same area as the lattice file.
-If \bmad is not able to create a digested file (typically because it
-does not have write permission in the directory), an error message will
-be generated but otherwise program operation will be normal.
+\bmad creates the digested file in the same area as the lattice file.  If \bmad is not able to
+create a digested file (typically because it does not have write permission in the directory), an
+error message will be generated but otherwise program operation will be normal.
 
-Digested files contain the names of the lattice files used to create
-them. If a lattice file has been modified since the digested file has
-been created then the lattice files will be reread and a new
-digested file will be generated. 
+Digested files contain the names of the lattice files used to create them. If a lattice file has
+been modified since the digested file has been created then the lattice files will be reread and a
+new digested file will be generated.
 
 \index{ran}
 \index{ran_gauss}
-Note: If any of the random number functions (\sref{s:functions}) are
-used in the process of creating the lattice, the digested file will be
-ignored. In this case, each time the lattice is read into a program,
-different random numbers will be generated for expressions that use such
-random numbers.
+Note: If any of the random number functions (\sref{s:functions}) are used in the process of creating
+the lattice, the digested file will be ignored. In this case, each time the lattice is read into a
+program, different random numbers will be generated for expressions that use such random numbers.
 
-Digested files can also be used for easy transport of lattices between
-programs or between sessions of a program. For example, using one
-program you might read in a lattice, make some adjustments (say to model
-shifts in magnet positions) and then write out a digested version of the
-lattice. This adjusted lattice can now be read in by another program.
+Digested files can also be used for easy transport of lattices between programs or between sessions
+of a program. For example, using one program you might read in a lattice, make some adjustments (say
+to model shifts in magnet positions) and then write out a digested version of the lattice. This
+adjusted lattice can now be read in by another program.
 
 %---------------------------------------------------------------------------
 \section{Element Sequence Definition}
 
 \index{line}\index{use statement|hyperbf}
-A \vn{line} defines a sequence of elements. \vn{lines} may contain
-other \vn{lines} and so a hierarchy may be established. One line is
-selected, via a \vn{use} statement, that defines the lattice. For
-example:
+A \vn{line} defines a sequence of elements. \vn{lines} may contain other \vn{lines} and so a
+hierarchy may be established. One line is selected, via a \vn{use} statement, that defines the
+lattice. For example:
 \begin{example}
   l3: line = (l1, l2)   ! Concatenate two lines
   l1: line = (a, b, c)  ! Line with 3 elements
@@ -173,11 +161,9 @@ In this case the lattice would be
 details.
 
 \index{superimpose}
-The \vn{superimpose} construct allows elements to be placed in a
-lattice at a definite longitudinal position. What happens is that
-after a lattice is expanded, there is a reshuffling of the elements to
-accommodate any new superimpose elements. See \sref{s:super} for more
-details.
+The \vn{superimpose} construct allows elements to be placed in a lattice at a definite longitudinal
+position. What happens is that after a lattice is expanded, there is a reshuffling of the elements
+to accommodate any new superimpose elements. See \sref{s:super} for more details.
 
 %---------------------------------------------------------------------------
 \section{Lattice Elements}
@@ -243,26 +229,40 @@ used for to compose names for superposition (\sref{s:super}) and multipass (\sre
 slave elements.
 
 \index{reserved names}
-\index{beam}\index{particle_start}\index{beginning}
-\index{end}\index{parameter}\index{root}
+\index{beam}\index{no_digested}\index{root}
+\index{beginning}\index{no_superimpose}\index{slice_lattice}
+\index{call}\index{parameter}\index{start_branch_at}
+\index{calc_reference_orbit}\index{parser_debug}\index{superimpose}
+\index{combine_consecutive_elements}\index{particle_start}\index{title}
+\index{debug_marker}\index{print}\index{use}
+\index{end_file}\index{redef}\index{use_local_lat_file}
+\index{expand_lattice}\index{remove_elements}\index{write_digested}
+\index{merge_elements}\index{return}
 There is a short list of names that cannot be used as an element, line or list name. These reserved names are:
 \begin{example}
-  beam
-  particle_start
-  beginning
-  debug_marker
-  end
-  no_digested
-  parameter
-  parser_debug
-  print
-  root
-  title
-  use
-  write_digested
+  beam                             no_digested                  root
+  beginning                        no_superimpose               slice_lattice
+  call                             parameter                    start_branch_at
+  calc_reference_orbit             parser_debug                 superimpose
+  combine_consecutive_elements     particle_start               title
+  debug_marker                     print                        use
+  end_file                         redef                        use_local_lat_file
+  expand_lattice                   remove_elements              write_digested
+  merge_elements                   return
 \end{example}
 Note: The one exception is if \vn{end} is used to define a \vn{marker}. This exception is allowed
 since \bmad uses the \vn{end} name to define a marker in any case.
+
+It is perfectly acceptable for multiple lattice elements to have the same name. Example:
+\begin{example}
+  q: quadrupole, ...
+  aline: line = (5*q)
+  use, aline
+\end{example}
+This will produce a lattice with five elements named ``\vn{q}''. The exception is \vn{group}
+(\sref{s:group}) and \vn{overlay} (\sref{s:overlay}) controller elements will always have unique
+names. It is important to keep in mind that elements with the same name do not necessarily have
+the same parameter values. See Section~\sref{s:ele.match} for an example. 
 
 %---------------------------------------------------------------------------
 \section{Matching to Lattice Element Names}
@@ -977,8 +977,14 @@ The following intrinsic functions are recognized by \bmad: \hfil\break
   \vn{tan}(x), \vn{cot}(x)      & Tangent and cotangent                          \\
   \vn{sinc}(x)                  & Sin(x)/x Function                              \\
   \vn{asin}(x), \vn{acos}(x)    & Arc sine and Arc cosine                        \\
-  \vn{atan}(x)                  & Arc Tangent                                    \\
-  \vn{atan2}(y, x)              & Arc Tangent of y/x                             \\
+  \vn{atan}(x)                  & Arc tangent                                    \\
+  \vn{atan2}(y, x)              & Arc tangent of y/x                             \\
+
+  \vn{sinh}(x), \vn{cosh}(x)    & Hyperbolic sine and cosine                     \\
+  \vn{tanh}(x), \vn{coth}(x)    & Hyperbolic tangent and cotangent               \\
+  \vn{asinh}(x), \vn{acosh}(x)  & Hyperbolic arc sine and Arc cosine             \\
+  \vn{atanh}(x), \vn{acoth}(x)  & Hyperbolic arc tangent and cotangent           \\
+
   \vn{abs}(x)                   & Absolute Value                                 \\
   \vn{factorial}(n)             & Factorial                                      \\
   \vn{ran}()                    & Random number between 0 and 1                  \\
@@ -986,7 +992,7 @@ The following intrinsic functions are recognized by \bmad: \hfil\break
   \vn{ran_gauss}(sig_cut)       & Gaussian distributed random number             \\
   \vn{int}(x)                   & Nearest integer with magnitude less then x     \\
   \vn{nint}(x)                  & Nearest integer to x                           \\
-  \vn{sign}(x)                  & 1 if x positive, -1 if negagive, 0 if zero     \\
+  \vn{sign}(x)                  & 1 if x positive, -1 if negative, 0 if zero     \\
   \vn{floor}(x)                 & Nearest integer less than x                    \\
   \vn{ceiling}(x)               & Nearest integer greater than x                 \\
   \vn{mass_of}(A)               & Mass of particle A                             \\
@@ -1119,8 +1125,8 @@ The \vn{print} statement is useful to remind someone using the lattice of import
 \section{Title Statement}
 \index{title statement|hyperbf}
 
-The \vn{title} statement sets a title string which can be used by a program. 
-For consistency with \mad there are two possible syntaxes
+The \vn{title} statement sets a title string which can be used by a program.  For consistency with
+\mad there are two possible syntaxes
 \begin{example}
   title, <String>
 \end{example}
@@ -1140,14 +1146,12 @@ For example
 \label{s:call}
 \index{call statement|hyperbf}
 
-It is frequently convenient to separate the lattice definition into
-several files.  Typically there might be a file (or files) that define
-the layout of the lattice (something that doesn't change often) and a
-file (or files) that define magnet strengths (something that changes
-more often).  The \vn{call} is used to read in separated lattice
-files. The syntax is
+It is frequently convenient to separate the lattice definition into several files.  Typically there
+might be a file (or files) that define the layout of the lattice (something that doesn't change
+often) and a file (or files) that define magnet strengths (something that changes more often).  The
+\vn{call} is used to read in separated lattice files. The syntax is
 \begin{example}
-  call, filename = <String>
+  call, filename = <file-name>
 \end{example}
 Example:
 \begin{example}
@@ -1155,25 +1159,23 @@ Example:
   call, filename = "/nfs/cesr/lat/my_layout.bmad"  ! Absolute pathname
   call, filename = "$LATDIR/my_layout.bmad"        ! Absolute pathname
 \end{example}
-\bmad will read the called file until a \vn{return} or \vn{end_file}
-statement is encountered or the end of the file is reached.
+Environment variables in the file name will be expanded. \bmad will read the called file until a
+\vn{return} or \vn{end_file} statement is encountered or the end of the file is reached.
 
-For filenames that have a relative pathname, the called file will be
-searched for relative to the directory of the calling file.  Thus, in
-the above example, if the file containing the call statements is in the
-directory \vn{/path/to/lat_dir}, the first call will open the file:
+For filenames that have a relative pathname, the called file will be searched for relative to the
+directory of the calling file.  Thus, in the above example, if the file containing the call
+statements is in the directory \vn{/path/to/lat_dir}, the first call will open the file:
 \begin{example}
   /path/to/lat_dir/../layout/my_layout.bmad 
 \end{example}
-To call a file relative to the current working directory, use the
-environment variable \vn{PWD}. Example:
+To call a file relative to the current working directory, use the environment variable
+\vn{PWD}. Example:
 \begin{example}
   call, filename = $PWD/here.bmad
 \end{example}
 
-Where a called file is searched for may be modified by using a
-\vn{use_local_lat_file} statement. See Section~\sref{s:use.loc} for
-more details.
+Where a called file is searched for may be modified by using a \vn{use_local_lat_file}
+statement. See Section~\sref{s:use.loc} for more details.
 
 %--------------------------------------------------------------------------
 \section{Inline Call}
@@ -1182,24 +1184,17 @@ more details.
 
 Any lattice elements will have a set of attributes that need to be defined.  As a convenience, it is
 possible to segregate an element attribute or attributes into a separate file and then ``call'' this
-file using an ``inline call''. The inline call has three forms. In an element definition, the inline
-call has the form
+file using an ``inline call''. The inline call has three forms:
 \begin{example}
-  <ele_name>: <ele_type>, ..., call::<file_name>, ...
-\end{example}
-or
-\begin{example}
-  <ele_name>: <ele_type>, ..., <attribute_name> = call::<file_name>, ...
-\end{example}
-where \vn{<attribute_name>} is the name of the attribute and \vn{<file_name>} is the name of the
-where the attribute structure is given.  The third form of the inline call occurs when an element
-attribute is redefined and has the form
-\begin{example}
+  <ele_name>: <ele_type>, ..., call::<file_name>, ...                       ! or
+  <ele_name>: <ele_type>, ..., <attribute_name> = call::<file_name>, ...    ! or
   <ele_name>[<attribute_name>] = call::<file_name>
 \end{example}
+where \vn{<attribute_name>} is the name of the attribute and \vn{<file_name>} is the name of the
+where the attribute structure is given. The Environment variables in the file name will be expanded.
 Example:
 \begin{example}
-  c: crystal, call::my_curvature.bmad, h_misalign = call::my_surface.bmad, ...
+  c: crystal, call::$AB/my_curvature.bmad, h_misalign = call::my_surface.bmad, ...
 \end{example}  
 
 For \vn{grid_fields}, which can take some time to parse, a \vn{HDF5} binary file can to created and then
@@ -1237,6 +1232,18 @@ it \vn{new.bmad}, which can be situated in any directory, has two lines in it:
 \end{example}
 The second new file is the modified \vn{sub.bmad} and it must be in the directory from which the
 program is run.
+
+%--------------------------------------------------------------------------
+\section{No_Superimpose Statement}
+\label{s:no.sup}
+\index{no_superimpose statement}
+
+In certain cases it is useful to turn off superposition (\sref{s:super}). The \vn{no_superposition}
+statement will do this. To turn off all superpositioning, this statement can appear anywhere as long
+as it is before any \vn{expand_lattice} (\sref{s:expand.lat}) statement. If the lattice has an
+\vn{expand_lattice} statement, and the \vn{no_superposition} statement appears after, the
+\vn{no_superposition} statement will only block superpositions that are defined after the
+\vn{no_superposition} statement.
 
 %--------------------------------------------------------------------------
 \section{Return and End_File Statements}
@@ -1406,6 +1413,24 @@ The \vn{combine_consecutive_elements} statement must come after lattice expansio
 In this case the finished line will will have a single \vn{q1} element whose length will be twice the length of q1
 
 %--------------------------------------------------------------------------
+\section{Remove_Elements Statement}
+\label{s:remove.ele}
+
+The \vn{remove_elements} statement is used to remove elements from the lattice. The
+\vn{remove_elements} statement must come after lattice expansion (\sref{s:expand}). The syntax of
+the \vn{remove_elements} statement is
+\begin{example}
+  remove_elements <element-list>
+\end{example}
+where \vn{<element-list>} is a list of elements (\sref{s:ele.match}). For example
+\begin{example}
+  expand_lattice              ! Lattice expansion must happen first
+  remove_elements overlay::*
+\end{example}
+In this example, all overlay elements are to be removed. This is useful, for example, when direct control
+of overlay slave parameters is desired.
+
+%--------------------------------------------------------------------------
 \section{Slice_Lattice Statement}
 \label{s:slice}
 
@@ -1449,7 +1474,14 @@ branch. Example:
   ... etc ...
 \end{example}
 
-Also see the \vn{start_branch_at} statement (\sref{s:start.branch}).
+To create a lattice slice that wraps around the lattice ends, that is, joins a section at the end of
+the lattice followed by a section at the beginning of the lattice, use a \vn{start_branch_at}
+statement before a slice_lattice statement. Example:
+\begin{example}
+  expand_lattice
+  start_branch_at Q9
+  slice_lattice Q9:Q1   ! With Q1 being before Q9 in the original lattice.
+\end{example}
 
 %--------------------------------------------------------------------------
 \section{Start_Branch_At Statement}
@@ -1496,7 +1528,6 @@ Also see the \vn{slice_lattice} statement (\sref{s:slice}).
 \label{s:debug}
 \index{write_digested statement}
 \index{no_digested statement}
-\index{no_superimpose statement}
 \index{parser_debug statement}
 \index{debug_marker statement}
 \index{no_digested statement}
@@ -1507,7 +1538,6 @@ these statements are generally only used by programmers.  These statements are:
 \begin{example}
   debug_marker
   no_digested
-  no_superimpose
   parser_debug
   write_digested
 \end{example}
@@ -1520,9 +1550,6 @@ The \vn{no_digested} statement if present, will prevent \bmad from
 creating a digested file (\sref{s:digested}). That is, the lattice file will always
 be parsed when a program is run. The \vn{write_digested} statement will cancel a
 \vn{no_digested} statement.
-
-The \vn{no_superimpose} statement is used to suppress superpositions
-(\sref{s:super}). This is useful for debugging purposes.
 
 The \vn{parser_debug} statement will cause information about the lattice to be printed out at the
 terminal. The syntax is

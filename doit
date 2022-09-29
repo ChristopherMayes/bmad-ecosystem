@@ -1,3 +1,17 @@
+rm -rf   bmad
+rm -rf   bsim
+rm -rf   build_system
+rm -rf   cpp_bmad_interface
+rm -rf   examples
+rm -rf   forest
+rm -rf   lux
+rm -rf   mad_tpsa
+rm -rf   regression_tests
+rm -rf   sim_utils
+rm -rf   tao
+rm -rf   util
+rm -rf   util_programs
+
 cp -r ~/bmad_dist/bmad  bmad
 cp -r ~/bmad_dist/bsim  bsim
 cp -r ~/bmad_dist/build_system  build_system
