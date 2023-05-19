@@ -22,7 +22,6 @@
 
 recursive subroutine make_mat6 (ele, param, start_orb, end_orb, err_flag)
 
-use symp_lie_mod, only: symp_lie_bmad
 use bookkeeper_mod, only: attribute_bookkeeper
 use mad_mod, only: make_mat6_mad
 use high_energy_space_charge_mod, except_dummy => make_mat6
@@ -70,6 +69,22 @@ if (bmad_com%auto_bookkeeper) call attribute_bookkeeper (ele)
 
 mat6_calc_method = ele%mat6_calc_method
 if (.not. ele%is_on) mat6_calc_method = bmad_standard$
+if (mat6_calc_method == auto$) then
+  select case (ele%tracking_method)
+  case (bmad_standard$, linear$);   mat6_calc_method = bmad_standard$
+  case (custom$);                   mat6_calc_method = custom$
+  case (mad$);                      mat6_calc_method = mad$
+  case (symp_lie_bmad$);            mat6_calc_method = symp_lie_bmad$
+  case (symp_lie_ptc$);             mat6_calc_method = symp_lie_ptc$
+  case (taylor$);                   mat6_calc_method = taylor$
+  case (runge_kutta$, fixed_step_runge_kutta$, time_runge_kutta$, fixed_step_time_runge_kutta$)
+    mat6_calc_method = tracking$
+  case default
+    call out_io (s_fatal$, r_name, 'UNKNOWN TRACKING_METHOD: \i0\ ', ele%tracking_method)
+    if (global_com%exit_on_error) call err_exit
+    return
+  end select
+endif
 
 ele%map_ref_orb_in = a_start_orb
 
@@ -77,9 +92,10 @@ rad_fluct_save = bmad_com%radiation_fluctuations_on
 bmad_com%radiation_fluctuations_on = .false.
 
 ! If mat6(6,6) = 0 then %mat6 has not yet been computed. In this case ignore the setting of static_linear_map.
-! Exception: Slice_slave is always recomputed.
+! Exceptions: A slice_slave is always recomputed. Also a match element does not have a static_linear_map attrib.
 
-if (is_true(ele%value(static_linear_map$)) .and. ele%mat6(6,6) /= 0 .and. ele%slave_status /= slice_slave$) then
+if (is_true(ele%value(static_linear_map$)) .and. ele%mat6(6,6) /= 0 .and. &
+                           ele%slave_status /= slice_slave$ .and. ele%key /= match$) then
   ! Just track if needed and do not modify ele%mat6
   if (present(end_orb)) call track1(a_start_orb, ele, param, end_orb)
   if (present(err_flag)) err_flag = .false.
@@ -114,7 +130,8 @@ case (symp_lie_ptc$)
   call make_mat6_symp_lie_ptc (ele, param, a_start_orb, a_end_orb)
 
 case (symp_lie_bmad$)
-  call symp_lie_bmad (ele, param, a_start_orb, a_end_orb, mat6 = ele%mat6, make_matrix = .true.)
+  a_end_orb = a_start_orb
+  call symp_lie_bmad (ele, param, a_end_orb, mat6 = ele%mat6, make_matrix = .true.)
 
 case (tracking$)
   call make_mat6_tracking (ele, param, a_start_orb, a_end_orb, err)

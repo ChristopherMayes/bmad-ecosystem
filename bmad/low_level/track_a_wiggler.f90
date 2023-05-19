@@ -16,7 +16,7 @@
 
 subroutine track_a_wiggler (orbit, ele, param, mat6, make_matrix)
 
-use fringe_mod, except_dummy => track_a_wiggler
+use bmad_interface, except_dummy => track_a_wiggler
 
 implicit none
 
@@ -53,10 +53,10 @@ z_start = orbit%vec(5)
 t_start = orbit%t
 
 n_step = max(nint(ele%value(l$) / ele%value(ds_step$)), 1)
-r_step = 1.0_rp / n_step
+r_step = real(orbit%time_dir, rp) / n_step
 step_len = ele%value(l$) * r_step
 
-length = ele%value(l$)
+length = orbit%time_dir * ele%value(l$)
 mc2_rel = mass_of(orbit%species) / orbit%p0c
 
 if (ele%value(l_period$) == 0) then
@@ -80,8 +80,8 @@ endif
 
 call offset_particle (ele, set$, orbit, mat6 = mat6, make_matrix = make_matrix)
 
-if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  param%particle, ele, orbit, magnetic$, r_step/2,   mat6, make_matrix)
-if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, param%particle, ele, orbit, electric$, step_len/2, mat6, make_matrix)
+if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  ele, orbit, magnetic$, r_step/2,   mat6, make_matrix)
+if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, ele, orbit, electric$, step_len/2, mat6, make_matrix)
 
 ! Body
 
@@ -181,11 +181,11 @@ do i = 1, n_step
   !
 
   if (i == n_step) then
-    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  param%particle, ele, orbit, magnetic$, r_step/2,   mat6, make_matrix)
-    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, param%particle, ele, orbit, electric$, step_len/2, mat6, make_matrix)
+    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  ele, orbit, magnetic$, r_step/2,   mat6, make_matrix)
+    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, ele, orbit, electric$, step_len/2, mat6, make_matrix)
   else
-    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  param%particle, ele, orbit, magnetic$, r_step,   mat6, make_matrix)
-    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, param%particle, ele, orbit, electric$, step_len, mat6, make_matrix)
+    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  ele, orbit, magnetic$, r_step,   mat6, make_matrix)
+    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, ele, orbit, electric$, step_len, mat6, make_matrix)
   endif
 enddo
 
@@ -193,12 +193,12 @@ call offset_particle (ele, unset$, orbit, mat6 = mat6, make_matrix = make_matrix
 
 ! Add in term to take care of the fact that the particle's motion undulates
 
-orbit%t = t_start + length / (c_light * beta_ref) + (z_start - orbit%vec(5)) / (c_light * orbit%beta)
+orbit%t = t_start + orbit%direction*length / (c_light * beta_ref) + (z_start - orbit%vec(5)) / (c_light * orbit%beta)
 
 if (field_ele%field_calc == helical_model$) then
-  factor = ele%value(l$) * (kz * ele%value(osc_amplitude$))**2 / 2 
+  factor = length * (kz * ele%value(osc_amplitude$))**2 / 2 
 else
-  factor = ele%value(l$) * (kz * ele%value(osc_amplitude$))**2 / 4
+  factor = length * (kz * ele%value(osc_amplitude$))**2 / 4
 endif
 
 orbit%t = orbit%t + factor / (c_light * orbit%beta * rel_p**2)

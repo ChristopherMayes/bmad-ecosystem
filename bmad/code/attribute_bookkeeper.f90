@@ -47,7 +47,7 @@ real(rp) knl(0:n_pole_maxx), tilt(0:n_pole_maxx), eps6
 real(rp) kick_magnitude, bend_factor, quad_factor, radius0, step_info(7), dz_dl_max_err
 real(rp) a_pole(0:n_pole_maxx), b_pole(0:n_pole_maxx)
 
-integer i, j, ix, n, n_div, ixm, ix_pole_max, particle, geometry, i_max, status
+integer i, j, ix, ig, n, n_div, ixm, ix_pole_max, particle, geometry, i_max, status
 
 character(20) ::  r_name = 'attribute_bookkeeper'
 
@@ -123,7 +123,7 @@ endif
 if (.not. associated(pointer_to_girder(ele)) .and. has_orientation_attributes(ele) &
                                                   .and. ele%slave_status /= multipass_slave$) then
   select case (ele%key)
-  case (sbend$)
+  case (sbend$, rf_bend$)
     val(roll_tot$)     = val(roll$)
     val(ref_tilt_tot$) = val(ref_tilt$)
   case (crystal$, mirror$, multilayer_mirror$)
@@ -191,9 +191,11 @@ if (ele%field_master) then
   case (sol_quad$)
     val(ks$) = factor * val(Bs_field$)
     val(k1$) = factor * val(B1_gradient$)
+  case (rf_bend$)
+    val(g$)     = factor * val(B_field$)
   case (sbend$)
     val(g$)     = factor * val(B_field$)
-    val(dg$) = factor * val(dB_field$)
+    val(dg$)    = factor * val(dB_field$)
     val(k1$)    = factor * val(B1_gradient$)
     val(k2$)    = factor * val(B2_gradient$)
   case (hkicker$, vkicker$)
@@ -229,9 +231,11 @@ else
   case (sol_quad$)
     val(Bs_field$)    = factor * val(ks$)
     val(B1_gradient$) = factor * val(k1$)
+  case (rf_bend$)
+    val(B_field$)     = factor * val(g$)
   case (sbend$)
     val(B_field$)     = factor * val(g$)
-    val(dB_field$) = factor * val(dg$)
+    val(dB_field$)    = factor * val(dg$)
     val(B1_gradient$) = factor * val(k1$)
     val(B2_gradient$) = factor * val(k2$)
   case (hkicker$)
@@ -257,84 +261,96 @@ if (attribute_index(ele, 'DS_STEP') > 0 .and. val(p0c$) > 0) then  ! If this is 
   ! Set ds_step and/or num_steps if not already set.
 
   if (val(ds_step$) == 0 .and. val(num_steps$) == 0) then
-    select case (ele%key)
+    if (ele%field_calc == fieldmap$ .and. ele%tracking_method /= bmad_standard$ .and. associated(ele%gen_grad_map)) then
+      n = ele%gen_grad_map(1)%iz1 + 1 - ele%gen_grad_map(1)%iz0
+      if (nint(val(integrator_order$)) /= 6) val(integrator_order$) = 4
+      if (nint(val(integrator_order$)) == 4) then
+        val(num_steps$) = max(1, nint((n-1)/4.0_rp))
+      else 
+        val(num_steps$) = max(1, nint((n-1)/7.0_rp))
+      endif
 
-    case (drift$, pipe$, ecollimator$, rcollimator$, instrument$, monitor$)
-      val(num_steps$) = 1
-      val(ds_step$) = val(l$)
+      val(ds_step$) = val(l$) / val(num_steps$)
 
-    case (wiggler$, undulator$) 
-      if (val(l_period$) /= 0) val(ds_step$) = val(l_period$) / 20
+    else
+      select case (ele%key)
+      case (drift$, pipe$, ecollimator$, rcollimator$, instrument$, monitor$)
+        val(num_steps$) = 1
+        val(ds_step$) = val(l$)
 
-    case (sbend$, quadrupole$, sextupole$)
-      if (val(l$) /= 0) then
-        call multipole_ele_to_kt (ele, .false., ix, knl, tilt, magnetic$, include_kicks$)
-        knl = abs(knl)
-        bend_factor = knl(0) / val(l$)
-        radius0 = ele%value(r0_mag$)
-        if (radius0 == 0) radius0 = 0.01   ! Use a 1 cm scale default
+      case (wiggler$, undulator$) 
+        if (val(l_period$) /= 0) val(ds_step$) = val(l_period$) / 20
 
-        select case (ele%key)
-        case (sbend$)
-          bend_factor = bend_factor + max(abs(val(g$)), abs(val(g$) + val(dg$)))
-          quad_factor = knl(1) + knl(2) * radius0 + ele%value(l$) * bend_factor**2
-        case (quadrupole$)
-          ! The factor of 50 here is empirical based upon simulations with the canonical
-          ! CESR bmad_L9a18A000-_MOVEREC lattice.
-          quad_factor = 50 * (knl(1) + val(l$) * bend_factor**2)
-        case (sextupole$)
-          quad_factor = knl(2) * radius0 + val(l$) * bend_factor**2
-        end select
-
-        if (associated(ele%a_pole_elec)) then
-          radius0 = ele%value(r0_elec$)
+      case (sbend$, quadrupole$, sextupole$)
+        if (val(l$) /= 0) then
+          call multipole_ele_to_kt (ele, .false., ix, knl, tilt, magnetic$, include_kicks$)
+          knl = abs(knl)
+          bend_factor = knl(0) / val(l$)
+          radius0 = ele%value(r0_mag$)
           if (radius0 == 0) radius0 = 0.01   ! Use a 1 cm scale default
-          call multipole_ele_to_ab (ele, .false., ix_pole_max, a_pole, b_pole, electric$)
-          bend_factor = bend_factor + (abs(a_pole(0)) + abs(b_pole(0))) / ele%value(p0c$)
-          quad_factor = quad_factor + (abs(a_pole(1)) + abs(b_pole(1)) + radius0 * (abs(a_pole(2)) + abs(b_pole(2)))) / ele%value(p0c$)
+
+         select case (ele%key)
+         case (sbend$)
+           bend_factor = bend_factor + max(abs(val(g$)), abs(val(g$) + val(dg$)))
+           quad_factor = knl(1) + knl(2) * radius0 + ele%value(l$) * bend_factor**2
+         case (quadrupole$)
+           ! The factor of 50 here is empirical based upon simulations with the canonical
+           ! CESR bmad_L9a18A000-_MOVEREC lattice.
+           quad_factor = 50 * (knl(1) + val(l$) * bend_factor**2)
+         case (sextupole$)
+           quad_factor = knl(2) * radius0 + val(l$) * bend_factor**2
+         end select
+
+         if (associated(ele%a_pole_elec)) then
+           radius0 = ele%value(r0_elec$)
+           if (radius0 == 0) radius0 = 0.01   ! Use a 1 cm scale default
+           call multipole_ele_to_ab (ele, .false., ix_pole_max, a_pole, b_pole, electric$)
+           bend_factor = bend_factor + (abs(a_pole(0)) + abs(b_pole(0))) / ele%value(p0c$)
+           quad_factor = quad_factor + (abs(a_pole(1)) + abs(b_pole(1)) + radius0 * (abs(a_pole(2)) + abs(b_pole(2)))) / ele%value(p0c$)
+         endif
+
+          ! check_bend is a PTC routine
+          ix = nint(val(integrator_order$))
+          if (ix /= 2 .and. ix /= 4 .and. ix /= 6) val(integrator_order$) = 0  ! Reset if current value is not valid
+         call check_bend (val(l$), quad_factor, bend_factor, dz_dl_max_err, step_info, ixm)
+          if (val(integrator_order$) == 0) then
+            ! Since num_steps is used by Bmad routines, do not use order 6 which can give two few steps for Bmad.
+            ixm = min(ixm, 4)
+            val(integrator_order$) = ixm
+          else
+            ixm = val(integrator_order$)
+          endif
+          val(num_steps$) = max(nint(step_info(ixm+1)), 1)
+          val(ds_step$) = abs(val(l$)) / val(num_steps$)
         endif
 
-        ! check_bend is a PTC routine
-        ix = nint(val(integrator_order$))
-        if (ix /= 2 .and. ix /= 4 .and. ix /= 6) val(integrator_order$) = 0  ! Reset if current value is not valid
-        call check_bend (val(l$), quad_factor, bend_factor, dz_dl_max_err, step_info, ixm)
-        if (val(integrator_order$) == 0) then
-          ! Since num_steps is used by Bmad routines, do not use order 6 which can give two few steps for Bmad.
-          ixm = min(ixm, 4)
-          val(integrator_order$) = ixm
-        else
-          ixm = val(integrator_order$)
-        endif
-        val(num_steps$) = max(nint(step_info(ixm+1)), 1)
-        val(ds_step$) = abs(val(l$)) / val(num_steps$)
-      endif
+      case (ac_kicker$, kicker$, hkicker$, vkicker$)
+        if (val(l$) /= 0) then
+          if (ele%key == ac_kicker$ .or. ele%key == kicker$) then
+            kick_magnitude = sqrt(val(hkick$)**2 + val(vkick$)**2) / val(l$)
+          else
+            kick_magnitude = val(kick$) / val(l$)
+          endif
 
-    case (ac_kicker$, kicker$, hkicker$, vkicker$)
-      if (val(l$) /= 0) then
-        if (ele%key == ac_kicker$ .or. ele%key == kicker$) then
-          kick_magnitude = sqrt(val(hkick$)**2 + val(vkick$)**2) / val(l$)
-        else
-          kick_magnitude = val(kick$) / val(l$)
+          ix = nint(val(integrator_order$))
+          if (ix /= 2 .and. ix /= 4 .and. ix /= 6) val(integrator_order$) = 0  ! Reset if current value is not valid
+          call check_bend (val(l$), 0.0_rp, kick_magnitude, dz_dl_max_err, step_info, ixm)
+          if (val(integrator_order$) == 0) then
+            val(integrator_order$) = ixm
+          else
+            ixm = val(integrator_order$)
+          endif
+          val(num_steps$) = max(nint(step_info(ixm+1)), 1)
+          val(ds_step$) = abs(val(l$)) / val(num_steps$)
         endif
 
-        ix = nint(val(integrator_order$))
-        if (ix /= 2 .and. ix /= 4 .and. ix /= 6) val(integrator_order$) = 0  ! Reset if current value is not valid
-        call check_bend (val(l$), 0.0_rp, kick_magnitude, dz_dl_max_err, step_info, ixm)
-        if (val(integrator_order$) == 0) then
-          val(integrator_order$) = ixm
-        else
-          ixm = val(integrator_order$)
+      case (lcavity$, rfcavity$, crab_cavity$, rf_bend$)
+        if (val(l$) /= 0) then
+          val(num_steps$) = 10
+          val(ds_step$) = abs(val(l$)) / val(num_steps$)
         endif
-        val(num_steps$) = max(nint(step_info(ixm+1)), 1)
-        val(ds_step$) = abs(val(l$)) / val(num_steps$)
-      endif
-
-    case (lcavity$, rfcavity$, crab_cavity$)
-      if (val(l$) /= 0) then
-        val(num_steps$) = 10
-        val(ds_step$) = abs(val(l$)) / val(num_steps$)
-      endif
-    end select
+      end select
+    endif
   endif
 
   if (val(ds_step$) <= 0) then
@@ -344,9 +360,8 @@ if (attribute_index(ele, 'DS_STEP') > 0 .and. val(p0c$) > 0) then  ! If this is 
       val(ds_step$) = abs(val(l$)) / val(num_steps$)
     endif
   endif
-   
-  val(num_steps$) = max(1, nint(abs(val(l$) / val(ds_step$))))
 
+  val(num_steps$) = max(1, nint(abs(val(l$) / val(ds_step$))))
 endif
 
 !----------------------------------
@@ -424,6 +439,12 @@ case (crystal$, multilayer_mirror$, mirror$, detector$, sample$, diffraction_pla
 ! E_Gun
 
 case (e_gun$)
+  if (val(rf_frequency$) /= 0) then
+    val(rf_wavelength$) = c_light / val(rf_frequency$)
+  else
+    val(rf_wavelength$) = 0
+  endif
+
   if (ele%lord_status /= multipass_lord$) then
     if (val(gradient$) /= ele%old_value(gradient$) .or. val(l$) /= ele%old_value(l$)) then
       call set_ele_status_stale (ele, ref_energy_group$)
@@ -431,6 +452,9 @@ case (e_gun$)
       val(voltage_err$) = val(gradient_err$) * val(l$)
     endif
   endif
+
+  val(voltage_tot$)  = val(voltage$)  + val(voltage_err$)
+  val(gradient_tot$) = val(gradient$) + val(gradient_err$)
 
 ! Elseparator
 
@@ -456,6 +480,15 @@ case (elseparator$)
       val(e_field$) = sqrt(val(hkick$)**2 + val(vkick$)**2) * e_factor / val(l$)
       val(voltage$) = val(e_field$) * val(gap$) 
     endif
+  endif
+
+! EM_field
+
+case (em_field$)
+  if (val(rf_frequency$) /= 0) then
+    val(rf_wavelength$) = c_light / val(rf_frequency$)
+  else
+    val(rf_wavelength$) = 0
   endif
 
 ! Lcavity
@@ -488,6 +521,9 @@ case (lcavity$)
       val(l_active$) = val(l$)
     endif
   endif
+
+  val(voltage_tot$)  = val(voltage$)  + val(voltage_err$)
+  val(gradient_tot$) = val(gradient$) + val(gradient_err$)
 
 ! Patch
 
@@ -536,6 +572,53 @@ case (rfcavity$)
     val(gradient$) = val(voltage$) / val(l$)
   endif
 
+! rf_bend
+
+case (rf_bend$)
+
+  if (associated(branch) .and. val(e_tot$) /= 0) then
+    beta = ele%value(p0c$) / ele%value(e_tot$)
+    time = branch%param%total_length / (c_light * beta)
+    if (time /= 0) then
+      if (ele%value(rf_frequency$) <= 0) then
+        val(rf_frequency$) = val(harmon$) / time
+      else
+        val(harmon$) = val(rf_frequency$) * time
+      endif
+    endif
+  endif
+
+  if (val(rf_frequency$) /= 0) then
+    val(rf_wavelength$) = c_light / val(rf_frequency$)
+  else
+    val(rf_wavelength$) = 0
+  endif
+
+  ! multipass_slaves will inherit from lord
+  if (ele%slave_status /= multipass_slave$) then
+    if (val(rf_frequency$) /= 0 .and. ele%field_calc == bmad_standard$ .and. nint(ele%value(cavity_type$)) == standing_wave$) then
+      val(l_active$) = 0.5_rp * val(rf_wavelength$) * nint(val(n_cell$))
+    else
+      val(l_active$) = val(l$)
+    endif
+  endif
+
+  val(angle$) = val(l$) * val(g$)
+
+  if (val(g$) == 0) then
+    val(rho$) = 0
+    val(l_chord$) = val(l$)
+    val(l_sagitta$) = 0
+  else
+    val(rho$) = 1 / val(g$)
+    val(l_chord$) = 2 * val(rho$) * sin(val(angle$)/2)
+    val(l_sagitta$) = -val(rho$) * cos_one(val(angle$)/2)
+  endif
+
+  if (ele_value_has_changed(ele, [g$], [1e-10_rp], .false.)) then
+    call set_ele_status_stale (ele, floor_position_group$)
+  endif
+
 ! sad_mult
 
 case (sad_mult$)
@@ -574,6 +657,9 @@ case (sbend$)
   if (ele_value_has_changed(ele, [g$], [1e-10_rp], .false.)) then
     call set_ele_status_stale (ele, floor_position_group$)
   endif
+
+  val(g_tot$)       = val(g$)       + val(dg$)
+  val(b_field_tot$) = val(b_field$) + val(db_field$)
 
 ! Sol_quad
 
@@ -718,9 +804,9 @@ if (non_offset_changed .or. (offset_changed .and. ele%taylor_map_includes_offset
   endif
 endif
 
-! Make stale ele%rad_int_cache if allocated
+! Make stale ele%rad_map if allocated
 
-if (associated(ele%rad_int_cache)) ele%rad_int_cache%stale = .true.  ! Forces recalc
+if (associated(ele%rad_map)) ele%rad_map%stale = .true.  ! Forces recalc
 
 if (allocated(ele%multipole_cache)) then
   ele%multipole_cache%ix_pole_mag_max = invalid$ ! Forces recalc

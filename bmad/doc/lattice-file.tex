@@ -424,8 +424,8 @@ where
 \begin{example}
   branch   ! Optional branch name or index.
   class    ! Optional element class name ("quadrupole", "sbend", etc.)
-  ele1     ! Starting element of the range.
-  ele2     ! Ending element of the range. 
+  ele1     ! Starting element of the range which includes ele1.
+  ele2     ! Ending element of the range which includes ele2. 
 \end{example}
 For example:
 \begin{example}
@@ -436,6 +436,9 @@ For example:
   sbend::q1:q5     ! All sbend elements between q1 and q5 including q1 and q5 if they. 
                    ! are sbends. Notice that q1 and q5 do not have to be sbends
 \end{example}
+if the element index of \vn{ele1} is greater than \vn{ele2} then the range wraps around the end of
+the lattice. For example, if branch0 has 360 tracking elements (\sref{s:lord.slave}), the range
+\vn{321:72} is equivalent to \vn{372:360, 0:72}.
 
 With a comma delimited list of names, a tilde prefix can be used to remove elements from the list.
 Adding and subtracting elements is done left to right. For example:
@@ -452,6 +455,14 @@ With a list of names, an ampersand ``\vn{\&}'' can be used to form the intersect
   q* \& quad::*          ! Equivalent to "quadrupole::q*".
   q* \& quad::* b1       ! Equivalent to "quadrupole::q*, b1".
 \end{example}
+
+When lattice expansion occurs during parsing of a lattice (\sref{s:expand.lat}), all \vn{rbend}
+elements are converted to \vn{sbend} elements (\sref{s:bend}) but there is a \vn{sub_key} element
+parameter that is used so \bmad knows which bend elements were defined as \vn{rbend}s in the lattice
+file. After lattice expansion, the string \vn{sbend::*} will match to all bend elements irregardless
+of whether a bend was defined to be a \vn{sbend} or a \vn{rbend}. On the other hand, after lattice
+expansion the string \vn{rbend::*} will match to all bend elements that were defined as \vn{rbend}s
+before expansion.
 
 %---------------------------------------------------------------------------
 \section{Lattice Element Attributes}
@@ -1016,7 +1027,7 @@ with an absolute value greater than \vn{cut}. If \vn{cut} is non-positive, it is
 \vn{ran_gauss(-1)} is equivalent to \vn{ran_gauss()}.
 
 \index{expand_lattice}
-If an element is used multiple times in a lattice, and if \vn{ran} or \vn{gauss_ran} is used to set
+If an element is used multiple times in a lattice, and if \vn{ran} or \vn{ran_gauss} is used to set
 an attribute value of this element, then to have all instances of the element have different
 attribute values the setting of the attribute must be after the lattice has been expanded
 (\sref{s:expand}). For example:
@@ -1055,9 +1066,18 @@ The \vn{mass_of}, \vn{charge_of}, and \vn{anomalous_moment_of} functions give th
   chg2 = charge_of(He++)           ! Same as previous line
   chg3 = charge_of(species(He++))  ! Same as previous line
 \end{example}
-The \vn{species} function is needed in the definition of \vn{my_particle} so that \bmad knows that
-the string ``He++'' represents a type of particle. Inside functions like \vn{mass_of}, the use of
-\vn{species} is optional since, in this case, \bmad can correctly parse the argument.
+The \vn{species} function is needed in the definition of \vn{my_particle} in the above example so
+that \bmad knows that the string ``He++'' represents a type of particle. Inside functions like
+\vn{mass_of}, the use of \vn{species} is optional since, in this case, \bmad can correctly parse the
+argument. 
+
+The value returned by the \vn{mass_of} function accounts for the ionization state of a particle in
+that there is a correction for the change in the number of electrons a particle has.  Thus the
+values of \vn{mass_of{\#3He}} will be heavier than \vn{mass_of{\#3He++}} by two electron masses.
+This correction only involves multiples of the electron mass and variations in the particle mass due
+to electron binding energies is not accounted for. These binding energy corrections are generally
+very small. If the isotopic state is not specified for an atom, the average weighted by the natural
+abundance is used.
 
 %-----------------------------------------------------------------------------
 \section{Statement Order}
@@ -1446,10 +1466,11 @@ the \vn{slice_lattice} statement is
 where \vn{<element-list>} is a list of elements (\sref{s:ele.match}). For example
 \begin{example}
   expand_lattice           ! Lattice expansion must happen first
-  slice_lattice q1##2:357
+  slice_lattice q1##2:357,end
 \end{example}
 In this example, all elements outside of the range from element \vn{q1\#\#2} (the second instance of
-\vn{q1} in the lattice) to element with index number 357 are discarded. The exception is that lord
+\vn{q1} in the lattice) to element with index number 357 are discarded except for the element named
+\vn{end} (which is typically the last element in any lattice branch). Additionally, the lord
 elements (\sref{s:lord.slave}) of any elements that remain are retained and the \vn{beginning}
 element at the start of any branch is also retained.
 
@@ -1488,15 +1509,21 @@ statement before a slice_lattice statement. Example:
 \label{s:start.branch}
 
 The \vn{start_branch_at} statement is used to shift the starting point of a lattice branch while
-keeping the relative order of the elements the same. This shifting only applies to elements in the
-tracking part of the lattice (\sref{s:lord.slave}). The \vn{BEGINNING} element of the branch
-(\sref{s:use}) and any lord elements are unaffected. The \vn{start_branch_at} statement must come
-after lattice expansion (\sref{s:expand}). The syntax of the \vn{start_branch_at} statement is
+keeping the relative order of the elements the same. The syntax of the \vn{start_branch_at}
+statement is
 \begin{example}
-  start_branch_at <lattice-element>
+  start_branch_at <lattice-element>                    ! or
+  start_branch_at, move_end_marker <lattice-element>
 \end{example}
-where \vn{<lattice-element>} is the name or index of a lattice element to be moved to the start
-of the branch the element is in. For example
+where \vn{<lattice-element>} is the name or index of a lattice element to be moved to the start of
+the branch the element is in. The \vn{start_branch_at} statement must come after lattice expansion
+(\sref{s:expand}).
+
+The shifting only applies to elements in the tracking part of the lattice (\sref{s:lord.slave}). The
+\vn{BEGINNING} element of the branch (\sref{s:use}) and any lord elements are unaffected. The
+\vn{end} marker element (\sref{s:branch.construct}), if it is present (that is, if no
+\vn{parameter[no_end_marker]} is used), will also remain at the end of the branch except if the
+\vn{move_end_marker} option is used with \vn{start_branch_at}. For example:
 \begin{example}
   expand_lattice           ! Lattice expansion must happen first
   start_branch_at Q3
@@ -1505,14 +1532,21 @@ In this example, the elements in the lattice branch containing \vn{Q3} would be 
 \vn{Q3} element is the first element in the branch. Thus, if the lattice branch originally consisted
 of the elements
 \begin{example}
-  Q1,  Q2,  Q3,  Q4,  Q5,  Q6
+  Beginning, Q1,  Q2,  Q3,  Q4,  Q5,  Q6, End
 \end{example}
 then the shifted lattice would be
 \begin{example}
-  Q3,  Q4,  Q5,  Q6, Q1,  Q2
+  Beginning, Q3,  Q4,  Q5,  Q6, Q1,  Q2, End
 \end{example}
 Elements that originally come before the new starting point are always wrapped around to the end of
-the branch. 
+the branch. If the move_end_marker is present:
+\begin{example}
+  start_branch_at, move_end_marker Q3
+\end{example}
+then the shifted lattice would be
+\begin{example}
+  Beginning, Q3,  Q4,  Q5,  Q6, End, Q1,  Q2
+\end{example}
 
 Also see the \vn{slice_lattice} statement (\sref{s:slice}).
 

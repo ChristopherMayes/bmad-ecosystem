@@ -10,6 +10,7 @@ type (coord_struct) :: orb0
 type (coord_struct) :: p1, p2
 type (beam_init_struct) :: beam_init
 type (bunch_struct) :: bunch, bunch_init, bunch0, bunch2
+type (bunch_params_struct) bparams
 
 real(rp) dz, z0
 
@@ -35,6 +36,7 @@ elseif (nargs > 1) then
 endif
 
 call bmad_parser (lat_file, lat)
+call ran_seed_put(123456)
 
 open (1, file = 'output.now')
 
@@ -121,8 +123,8 @@ enddo
 
 beam_init%n_particle = 100
 beam_init%random_engine = 'quasi'
-beam_init%a_norm_emit = 1e-12
-beam_init%b_norm_emit = 1e-12
+beam_init%a_norm_emit = 3e-9
+beam_init%b_norm_emit = 1e-9
 beam_init%dPz_dz = 0.0
 beam_init%bunch_charge = 1 !100.0e-12
 beam_init%sig_pz = 1e-12
@@ -131,14 +133,32 @@ beam_init%sig_z = 5.99585e-3  ! 200 ps * cLight
 call init_bunch_distribution (lat%ele(0), lat%param, beam_init, 0, bunch_init)
 bunch = bunch_init
 
+call calc_bunch_params(bunch_init, bparams, err_flag)
+write (1, '(a, 6es16.8)') '"BP-Charge" ABS 1E-8', bparams%charge_live, bparams%charge_tot
+write (1, '(a, 6es16.8)') '"BP-ST" ABS 1E-8', bparams%s, bparams%t
+write (1, '(a, 6es16.8)') '"BP-Centroid" ABS 1E-8', bparams%centroid%vec
+write (1, '(a, 6es16.8)') '"BP-Sig1" ABS 1E-8', bparams%sigma(1,:)
+write (1, '(a, 6es16.8)') '"BP-Sig2" ABS 1E-8', bparams%sigma(2,:)
+write (1, '(a, 6es16.8)') '"BP-Sig3" ABS 1E-8', bparams%sigma(3,:)
+write (1, '(a, 6es16.8)') '"BP-Sig4" ABS 1E-8', bparams%sigma(4,:)
+write (1, '(a, 6es16.8)') '"BP-Sig5" ABS 1E-8', bparams%sigma(5,:)
+write (1, '(a, 6es16.8)') '"BP-Sig6" ABS 1E-8', bparams%sigma(6,:)
+write (1, '(a, 6es16.8)') '"BP-Amode" ABS 1E-8', bparams%a%beta, bparams%a%alpha, bparams%a%emit, bparams%a%norm_emit
+write (1, '(a, 6es16.8)') '"BP-Bmode" ABS 1E-8', bparams%b%beta, bparams%b%alpha, bparams%b%emit, bparams%b%norm_emit
+write (1, '(a, 6es16.8)') '"BP-Xmode" ABS 1E-8', bparams%x%beta, bparams%x%alpha, bparams%x%emit, bparams%x%norm_emit
+write (1, '(a, 6es16.8)') '"BP-Ymode" ABS 1E-8', bparams%y%beta, bparams%y%alpha, bparams%y%emit, bparams%y%norm_emit
+write (1, '(a, 6es16.8)') '"BP-Zmode" ABS 1E-8', bparams%z%beta, bparams%z%alpha, bparams%z%emit, bparams%z%norm_emit
+
+!
+
 call track1_bunch (bunch, ele, err_flag)
 
 bmad_com%sr_wakes_on = .false.
 bunch0 = bunch_init
 call track1_bunch (bunch0, ele, err_flag)
 
-write (1, '(a, 6es18.9)') '"SR-P20" REL 1E-8' , bunch%particle(20)%vec - bunch0%particle(20)%vec
-write (1, '(a, 6es18.9)') '"SR-P40" REL 1E-8' , bunch%particle(40)%vec - bunch0%particle(40)%vec
+write (1, '(a, 6es18.9)') '"SR-P20" REL 1E-8', bunch%particle(20)%vec - bunch0%particle(20)%vec
+write (1, '(a, 6es18.9)') '"SR-P40" REL 1E-8', bunch%particle(40)%vec - bunch0%particle(40)%vec
 
 ! Long range wake test
 
@@ -164,8 +184,8 @@ do n = 1, 3
   enddo
 enddo
 
-write (1, '(a, 6es18.9)') '"LR-P20" REL 1E-8' , bunch%particle(20)%vec - bunch0%particle(20)%vec
-write (1, '(a, 6es18.9)') '"LR-P40" REL 1E-8' , bunch%particle(40)%vec - bunch0%particle(40)%vec
+write (1, '(a, 6es18.9)') '"LR-P20" ABS 1E-19' , bunch%particle(20)%vec - bunch0%particle(20)%vec
+write (1, '(a, 6es18.9)') '"LR-P40" ABS 1E-19' , bunch%particle(40)%vec - bunch0%particle(40)%vec
 
 ! Long range wake with superimposed element.
 

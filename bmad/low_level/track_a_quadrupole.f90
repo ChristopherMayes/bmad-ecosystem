@@ -16,7 +16,7 @@
 
 subroutine track_a_quadrupole (orbit, ele, param, mat6, make_matrix)
 
-use fringe_mod, except_dummy => track_a_quadrupole
+use bmad_interface, except_dummy => track_a_quadrupole
 
 implicit none
 
@@ -38,18 +38,18 @@ logical drifting
 !
 
 start_orb = orbit
-orientation = ele%orientation * start_orb%direction
+orientation = ele%orientation * start_orb%direction * start_orb%time_dir
 rel_tracking_charge = rel_tracking_charge_to_mass(start_orb, param%particle)
 charge_dir = rel_tracking_charge * orientation
-length = time_direction() * ele%value(l$)
+length = orbit%time_dir * ele%value(l$)
 
-call multipole_ele_to_ab (ele, .false., ix_mag_max, an,      bn,      magnetic$, include_kicks$, b1)
+call multipole_ele_to_ab (ele, .false., ix_mag_max,  an,      bn,      magnetic$, include_kicks$, b1)
 call multipole_ele_to_ab (ele, .false., ix_elec_max, an_elec, bn_elec, electric$)
 
 n_step = 1
 if (ix_mag_max > -1 .or. ix_elec_max > -1) n_step = max(nint(abs(length) / ele%value(ds_step$)), 1)
 
-r_step = time_direction() / n_step
+r_step = real(orbit%time_dir, rp) / n_step
 step_len = ele%value(l$) * r_step
 if (length == 0) n_step = 0
 
@@ -66,8 +66,8 @@ endif
 
 ! Multipole kicks. Notice that the magnetic multipoles have already been normalized by the length.
 
-if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  param%particle, ele, orbit, magnetic$, r_step/2,   mat6, make_matrix)
-if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, param%particle, ele, orbit, electric$, step_len/2, mat6, make_matrix)
+if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  ele, orbit, magnetic$, r_step/2,   mat6, make_matrix)
+if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, ele, orbit, electric$, step_len/2, mat6, make_matrix)
 
 ! Body
 
@@ -107,8 +107,8 @@ do i = 1, n_step
   !
 
   orbit%vec(5) = orbit%vec(5) + &
-                  dz_x(1) * orbit%vec(1)**2 + dz_x(2) * orbit%vec(1) * orbit%vec(2) + dz_x(3) * orbit%vec(2)**2 + &
-                  dz_y(1) * orbit%vec(3)**2 + dz_y(2) * orbit%vec(3) * orbit%vec(4) + dz_y(3) * orbit%vec(4)**2 
+                 (dz_x(1) * orbit%vec(1)**2 + dz_x(2) * orbit%vec(1) * orbit%vec(2) + dz_x(3) * orbit%vec(2)**2 + &
+                  dz_y(1) * orbit%vec(3)**2 + dz_y(2) * orbit%vec(3) * orbit%vec(4) + dz_y(3) * orbit%vec(4)**2)
 
   orbit%vec(1:2) = matmul(kmat(1:2,1:2), orbit%vec(1:2))
   orbit%vec(3:4) = matmul(kmat(3:4,3:4), orbit%vec(3:4))
@@ -120,11 +120,11 @@ do i = 1, n_step
   endif
 
   if (i == n_step) then
-    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  param%particle, ele, orbit, magnetic$, r_step/2,   mat6, make_matrix)
-    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, param%particle, ele, orbit, electric$, step_len/2, mat6, make_matrix)
+    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  ele, orbit, magnetic$, r_step/2,   mat6, make_matrix)
+    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, ele, orbit, electric$, step_len/2, mat6, make_matrix)
   else
-    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  param%particle, ele, orbit, magnetic$, r_step,   mat6, make_matrix)
-    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, param%particle, ele, orbit, electric$, step_len, mat6, make_matrix)
+    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  ele, orbit, magnetic$, r_step,   mat6, make_matrix)
+    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, ele, orbit, electric$, step_len, mat6, make_matrix)
   endif
 
 enddo
@@ -139,7 +139,7 @@ endif
 
 call offset_particle (ele, unset$, orbit, set_hvkicks = .false., mat6 = mat6, make_matrix = make_matrix)
 
-orbit%t = start_orb%t + time_direction() * (orbit%direction*ele%value(delta_ref_time$) + (start_orb%vec(5) - orbit%vec(5)) / (orbit%beta * c_light))
+orbit%t = start_orb%t + orbit%direction*orbit%time_dir*ele%value(delta_ref_time$) + (start_orb%vec(5) - orbit%vec(5)) / (orbit%beta * c_light)
 
 !
 

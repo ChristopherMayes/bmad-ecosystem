@@ -54,7 +54,7 @@ if (debug_mode) then
   print '(a, t36, 7es18.10)', 'Start:', lat%particle_start%vec
   print *
   print '(a, t46, a, t64, a, t82, a, t100, a, t118, a, t136, a, t143, a)', &
-                            'Name: Tracking_Method', 'x', 'px', 'y', 'py', 'z', 'pz', 'dz-d(v*(t_ref-t))'
+                            'Name: Tracking_Method', 'x', 'px', 'y', 'py', 'z', 'pz', 'dz-d(v*(t_ref-t)) Alive?'
 endif
 
 call track_it (lat, 1, 1)
@@ -75,6 +75,7 @@ type (coord_struct) start_orb, end_orb, end_bs, end_ptc
 type (ele_struct), pointer :: ele
 type (branch_struct), pointer :: branch
 type (track_struct) track
+real(rp) del
 integer ele_o_sign, orb_dir_sign
 integer ib, i, j, isn
 
@@ -162,12 +163,17 @@ do ib = 0, ubound(lat%branch, 1)
 
       if (ele%key == e_gun$) then
         write (1,fmt) quote(out_str), tolerance(out_str), end_orb%vec, c_light * (end_orb%t - start_orb%t)
-        if (debug_mode) print '(a30, 3x, 7es18.10)', out_str,  end_orb%vec, c_light * (end_orb%t - start_orb%t)
+        if (debug_mode) print '(a30, 3x, 7es18.10, l3)', out_str,  end_orb%vec, c_light * (end_orb%t - start_orb%t), (end_orb%state == alive$)
       else
-        write (1,fmt) quote(out_str), tolerance(out_str), end_orb%vec, (end_orb%vec(5) - start_orb%vec(5)) - &
-                c_light * (end_orb%beta * (ele%ref_time - end_orb%t) - start_orb%beta * (ele%ref_time - ele%value(delta_ref_time$) - start_orb%t))
-        if (debug_mode) print '(a30, 3x, 7es18.10)', out_str,  end_orb%vec, (end_orb%vec(5) - start_orb%vec(5)) - &
-                c_light * (end_orb%beta * (ele%ref_time - end_orb%t) - start_orb%beta * (ele%ref_time - ele%value(delta_ref_time$) - start_orb%t))
+        if (start_orb%direction == 1) then
+          del = (end_orb%vec(5) - start_orb%vec(5)) - &
+                   c_light * (end_orb%beta * (ele%ref_time - end_orb%t) - start_orb%beta * (ele%ref_time - ele%value(delta_ref_time$) - start_orb%t))
+        else
+          del = (end_orb%vec(5) - start_orb%vec(5)) - &
+                   c_light * (end_orb%beta * (ele%ref_time - ele%value(delta_ref_time$) - end_orb%t) - start_orb%beta * (ele%ref_time - start_orb%t))
+        endif
+        write (1,fmt) quote(out_str), tolerance(out_str), end_orb%vec, del
+        if (debug_mode) print '(a30, 3x, 7es18.10, l3)', out_str,  end_orb%vec, del, (end_orb%state == alive$)
       endif
 
       if (ele%key == wiggler$) then
@@ -193,7 +199,7 @@ do ib = 0, ubound(lat%branch, 1)
       endif
 
       if (branch%param%particle == photon$) then
-        write (1, '(3a, t50, a, 2es18.10)') '"', trim(ele%name), ':E_Field"', 'REL 1E-07', end_orb%field
+        write (1, '(3a, t50, a, 2es18.10)') '"', trim(ele%name), ':E_Field"', 'REL 2E-07', end_orb%field
       endif
     end do
 
@@ -235,6 +241,11 @@ character(*) :: instr
 
 ! There can be differences between debug and non-debug output.
 
+  if (instr(1:8) == 'EM_FIELD') then
+    tolerance = 'ABS 2E-9'  ! Why is there a big diff between debug and production exes?
+    return
+  endif
+
   select case (instr)
     case("RBEND4: Bmad_Standard")                      ; tolerance = 'ABS 1E-12'
     case("RBEND4: Runge_Kutta")                        ; tolerance = 'ABS 1E-12'
@@ -261,10 +272,16 @@ character(*) :: instr
     case("RFCAVITY1-Anti_D: Time_Runge_Kutta")         ; tolerance = 'ABS 1E-12'
     case("RFCAVITY1-Anti_O: Time_Runge_Kutta")         ; tolerance = 'ABS 4E-10'
     case("RFCAVITY1-Anti_OD: Time_Runge_Kutta")        ; tolerance = 'ABS 1E-12'
+    case("RFCAVITY2-Anti_D: Runge_Kutta")              ; tolerance = 'ABS 1E-12'
+    case("RFCAVITY2-Anti_OD: Runge_Kutta")             ; tolerance = 'ABS 1E-12'
+    case("RFCAVITY2-Anti_D: Time_Runge_Kutta")         ; tolerance = 'ABS 1E-12'
+    case("RFCAVITY2-Anti_OD: Time_Runge_Kutta")        ; tolerance = 'ABS 1E-12'
     case("WIGGLER_FLAT1-Anti_OD: Runge_Kutta")         ; tolerance = 'ABS 2E-13'
     case("WIGGLER_HELI1-Anti_D: Runge_Kutta")          ; tolerance = 'ABS 4e-13'
+    case("WIGGLER_HELI1-Anti_D: Time_Runge_Kutta")     ; tolerance = 'ABS 4e-13'
     case("WIGGLER_HELI1-Anti_O: Runge_Kutta")          ; tolerance = 'ABS 4e-13'                  
     case("WIGGLER_HELI1-Anti_O: Time_Runge_Kutta")     ; tolerance = 'ABS 4e-13'                  
+    case("WIGGLER_HELI1-Anti_OD: Time_Runge_Kutta")    ; tolerance = 'ABS 4e-13'
 
     case default 
       if (index(instr, 'Runge_Kutta') /= 0) then

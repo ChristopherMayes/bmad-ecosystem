@@ -50,7 +50,7 @@ use bmad_interface, dummy => twiss_and_track_intra_ele
 implicit none
 
 type (coord_struct), optional :: orbit_start, orbit_end
-type (coord_struct) orb_at_end
+type (coord_struct) orb_at_start, orb_at_end
 type (ele_struct), optional, target :: ele_start, ele_end
 type (ele_struct), target :: ele
 type (lat_param_struct) param
@@ -58,7 +58,7 @@ type (ele_struct), target :: runt
 type (ele_struct), pointer :: ele_p, slave
 
 real(rp) l_start, l_end, mat6(6,6), vec0(6), l0, l1, s_start, s_end, dlength
-integer ie, species
+integer ie, species, dir
 
 logical track_upstream_end, track_downstream_end, do_upstream, do_downstream, err_flag
 logical track_up, track_down, length_ok
@@ -69,6 +69,8 @@ character(*), parameter :: r_name = 'twiss_and_track_intra_ele'
 !
 
 if (present(err)) err = .true.
+dir = 1
+if (present(orbit_start)) dir = orbit_start%time_dir * orbit_start%direction  ! Direction particle is being propagated.
 
 ! If a super_lord then must track through the slaves.
 
@@ -100,16 +102,20 @@ call transfer_ele(ele, runt, .true.)
 if (ele%value(l$) == 0) then
   do_upstream = .true.
   do_downstream = .true.
-else
+elseif (dir == 1) then
   do_upstream = (track_upstream_end .and. abs(l_start) < bmad_com%significant_length)
   if (present(orbit_start)) do_upstream = (do_upstream .and. orbit_start%location /= inside$)
   do_downstream = (track_downstream_end .and. abs(l_end - ele%value(l$)) < bmad_com%significant_length)
+else
+  do_downstream = (track_downstream_end .and. abs(l_start - ele%value(l$)) < bmad_com%significant_length)
+  if (present(orbit_start)) do_downstream = (do_downstream .and. orbit_start%location /= inside$)
+  do_upstream = (track_upstream_end .and. abs(l_end) < bmad_com%significant_length)
 endif
 
 ! Special case: tracking though the whole element.
 ! Otherwise: Construct a "runt" element to track through.
 
-dlength = l_end - l_start
+dlength = dir * (l_end - l_start)
 
 ele_p => null()
 if (present(ele_end)) then
@@ -122,24 +128,38 @@ if (.not. associated(ele_p)) then
   if (do_upstream .and. do_downstream) then
     ele_p => ele
   else
-    call create_element_slice (runt, ele, dlength, l_start, param, do_upstream, do_downstream, err_flag, ele_start)
-    if (err_flag) return
+    call create_element_slice (runt, ele, dlength, min(l_start, l_end), param, do_upstream, do_downstream, err_flag, ele_start)
+    if (err_flag) then
+      if (present(orbit_end)) orbit_end%state = lost$
+      return
+    endif
     ele_p => runt
   endif
 endif
 
 ! Now track. 
 ! Must take care if orbit_start and orbit_end are the same actual argument so use temporary orb_at_end.
+! Also: In an lcavity, and depending upon how orbit_start was created (EG: with RK tracking), orbit_start%p0c may correspond
+! to ele%value(p0c$) and not runt%value(p0c_start$). If so, shift orbit_start%p0c. Only shift if orbit_start%p0c is
+! equal to ele%value(p0c$) to minimize the possibility of papering over a bug in the calling code.
 
 if (present(orbit_start)) then
   species = orbit_start%species
+  orb_at_start = orbit_start
+  if (ele_p%value(p0c_start$) /= ele%value(p0c$) .and. &
+                      .not. significant_difference(orbit_start%p0c, ele%value(p0c$), rel_tol = small_rel_change$)) then
+    select case (dir)
+    case (1);    call reference_energy_correction(ele_p, orb_at_start, upstream_end$)
+    case (-1);   call reference_energy_correction(ele_p, orb_at_start, downstream_end$)
+    end select
+  endif
 else
   species = default_tracking_species(param)
 endif
 
 if (present(ele_end) .and. species /= photon$) then
   if (present(orbit_start)) then
-    call make_mat6 (ele_p, param, orbit_start, orb_at_end, err_flag = err_flag)
+    call make_mat6 (ele_p, param, orb_at_start, orb_at_end, err_flag = err_flag)
     if (present(orbit_end)) then
       orbit_end = orb_at_end
       orbit_end%ix_ele = ele%ix_ele  ! Since ele_p%ix_ele gets set to -2 to indicate it is a slice.
@@ -155,11 +175,23 @@ if (present(ele_end) .and. species /= photon$) then
   if (err_flag) return
 
 elseif (present(orbit_end)) then  ! and not present(ele_start)
-  orbit_end = orbit_start
-  orbit_end%s = ele_p%s_start
+  orbit_end = orb_at_start
+  select case (dir)
+  case (1);   orbit_end%s = ele_p%s_start
+  case (-1);  orbit_end%s = ele_p%s
+  end select
+
   call track1 (orbit_end, ele_p, param, orbit_end)
-  orbit_end%ix_ele = ele%ix_ele  ! Since ele_p%ix_ele gets set to -2 to indicate it is a slice.
-  if (.not. do_downstream) orbit_end%location = inside$
+
+  select case (dir)
+  case (1)
+    orbit_end%ix_ele = ele%ix_ele;   ! Since ele_p%ix_ele gets set to -2 to indicate it is a slice.
+    if (.not. do_downstream) orbit_end%location = inside$
+  case (-1)  
+    orbit_end%ix_ele = ele%ix_ele;   ! Since ele_p%ix_ele gets set to -2 to indicate it is a slice.
+    if (.not. do_upstream) orbit_end%location = inside$
+  end select
+
   if (present(ele_end)) then
     if (logic_option(.false., compute_floor_coords)) call ele_geometry (ele_start%floor, ele_p, ele_p%floor)
     if (.not. associated(ele_p, ele_end)) call transfer_ele(ele_p, ele_end, .true.)

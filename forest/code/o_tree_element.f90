@@ -47,6 +47,7 @@ module tree_element_MODULE
   integer, private, parameter :: nfac=20
   real(dp), private :: fac(0:nfac)
   integer :: nbe=8
+ 
   integer :: n_rf=0  !number of modulation clocks in the simulation
   integer :: modulationtype=0 ! 0 is the full blown and internal anf externa field, 1 is simple one on external field only without cos(theta)
   
@@ -247,12 +248,12 @@ CONTAINS
 
   SUBROUTINE  real_8REAL_8(S1,S2)
     implicit none
-    type (real_8),INTENT(in)::S2(ndd)
-    type (real_8),INTENT(inOUT)::S1(ndd)
+    type (real_8),INTENT(in)::S2(:)
+    type (real_8),INTENT(inOUT)::S1(:)
     integer i
 
 
-    do i=1,ndd
+    do i=1,size(s1)  !ndd
        s1(i)=s2(i)
     enddo
   END SUBROUTINE real_8REAL_8
@@ -807,12 +808,12 @@ CONTAINS
     P%AC%X(2)=0.0_dp
     P%AC%t=0.0_dp
     p%e_ij=0.0_dp
-    p%damps=0.0_dp
+!    p%damps=0.0_dp
 !    p%t_bks=0
 !    p%t_bks0=0
 
-    p%b_kin=0.0_dp
-    p%d_spin=0.0_dp
+ !   p%b_kin=0.0_dp
+ !   p%d_spin=0.0_dp
  
 
   END    subroutine EQUAL_PROBE8_REAL6
@@ -847,11 +848,10 @@ CONTAINS
     p8%use_q=P%use_q
     P8%e=P%e
     P8%x0=P%x0
-    P8%damps=P%damps
-    P8%b_kin=P%b_kin
-    p8%d_spin=p%d_spin
-!    p8%t_bks=p%t_bks
-!    p8%t_bks0=p%t_bks0
+!    P8%damps=P%damps
+!    P8%b_kin=P%b_kin
+!    p8%d_spin=p%d_spin
+ 
 
   END subroutine EQUAL_PROBE8_PROBE8
 
@@ -868,8 +868,8 @@ CONTAINS
     ENDDO
     P8%om=P%om
     P8%t=P%t
-    P8%f=P%f
-    P8%phase=P%phase
+!    P8%f=P%f
+!    P8%phase=P%phase
 
   END subroutine EQUAL_RF8_RF8
 
@@ -884,8 +884,8 @@ CONTAINS
     ENDDO
     P8%om=P%om
     P8%t=P%t
-    P8%f=P%f
-    P8%phase=P%phase
+   ! P8%f=P%f
+   ! P8%phase=P%phase
   END subroutine EQUAL_RF8_RF
 
   subroutine EQUAL_RF_RF8(P,P8)
@@ -899,8 +899,8 @@ CONTAINS
     ENDDO
     P%om=P8%om
     P%t=P8%t
-    P%f=P8%f
-    P%phase=P8%phase
+!    P%f=P8%f
+!    P%phase=P8%phase
   END subroutine EQUAL_RF_RF8
 
 
@@ -1056,12 +1056,11 @@ CONTAINS
     r%use_q=use_quaternion
     r%e=0
     r%x0=0
-    r%damps=0
-!    r%t_bks=0
-!    r%t_bks0=0
+!    r%damps=0
+ 
 
-    r%b_kin=0
-    r%d_spin=0
+!    r%b_kin=0
+!    r%d_spin=0
   END    subroutine EQUAL_IDENTITY_probe_8
 
 
@@ -1275,10 +1274,10 @@ CONTAINS
     do i=1,2
        call print(s%x(i),mfi)
     enddo
-    write(mfi,*) ' Harmonic amplitude and phase '
-    do i=1,size(s%f)
-       write(mfi,*) s%f(i),s%phase(i)
-    enddo
+ !   write(mfi,*) ' Harmonic amplitude and phase '
+  !  do i=1,size(s%f)
+ !      write(mfi,*) s%f(i),s%phase(i)
+ !   enddo
 
   END subroutine print_rf_phasor_8
 
@@ -1296,10 +1295,10 @@ CONTAINS
     do i=1,2
         write(mfi,*)s%x(i),mfi 
     enddo
-    write(mfi,*) ' Harmonic amplitude and phase '
-    do i=1,size(s%f)
-       write(mfi,*) s%f(i),s%phase(i)
-    enddo
+!    write(mfi,*) ' Harmonic amplitude and phase '
+!    do i=1,size(s%f)
+!       write(mfi,*) s%f(i),s%phase(i)
+!    enddo
   END subroutine print_rf_phasor
 
   subroutine print_spinor_8(S,MF)
@@ -1425,12 +1424,10 @@ CONTAINS
     r%use_q=use_quaternion
     r%e=0
     r%x0=0
-    r%damps=0
-!    r%t_bks=0
- !  r%t_bks0=0
-
-    r%b_kin=0
-    r%d_spin=0
+!    r%damps=0
+ 
+!    r%b_kin=0
+!    r%d_spin=0
   END    subroutine ALLOC_probe_8
 
   subroutine ALLOC_rf_phasor_8(R)
@@ -1442,9 +1439,9 @@ CONTAINS
        CALL alloc(R%X(I))
     ENDDO
     CALL alloc(R%om)
-    r%f=0
-    r%phase=0
-    r%f(1)=1
+  !  r%f=0
+ !   r%phase=0
+!    r%f(1)=1
 !    CALL alloc(R%t)
 
   END    subroutine ALLOC_rf_phasor_8
@@ -1499,12 +1496,11 @@ end subroutine alloc_probes_8
     r%u=.false.
     r%e=0
     r%x0=0
-    r%damps=0
-!    r%t_bks=0
- !   r%t_bks0=0
+!    r%damps=0
 
-    r%b_kin=0
-    r%d_spin=0
+
+ !   r%b_kin=0
+ !   r%d_spin=0
   END    subroutine KILL_probe_8
 
   subroutine kill_rf_phasor_8(R)
@@ -1517,8 +1513,8 @@ end subroutine alloc_probes_8
     ENDDO
     CALL KILL(R%om)
 !    CALL KILL(R%t)
-    r%f=0
-    r%phase=0
+!    r%f=0
+!    r%phase=0
   END    subroutine kill_rf_phasor_8
 
 

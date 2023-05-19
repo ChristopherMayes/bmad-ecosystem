@@ -65,8 +65,8 @@ type (cylindrical_map_struct), pointer :: cl_map
 type (cylindrical_map_term1_struct), pointer :: cl_term
 type (grid_field_struct), pointer :: g_field
 type (grid_field_pt1_struct), pointer :: g_pt
-type (taylor_field_struct), pointer :: t_field
-type (taylor_field_plane1_struct), pointer :: t_term
+type (gen_grad_map_struct), pointer :: gg_map
+type (gen_grad1_struct), pointer :: gg
 type (wall3d_struct), pointer :: wall3d
 type (wall3d_section_struct), pointer :: section
 type (wall3d_vertex_struct), pointer :: v
@@ -81,7 +81,7 @@ type (rad_map_struct), pointer :: rm0, rm1
 
 integer, optional, intent(in) :: type_mat6, twiss_out, type_field
 integer, optional, intent(out) :: n_lines
-integer ia, im, i1, i, j, n, is, ix, iw, ix2_attrib, iv, ic, nl2, l_status, a_type, default_val
+integer ia, im, i1, ig, i, j, n, is, ix, iw, ix2_attrib, iv, ic, nl2, l_status, a_type, default_val
 integer nl, nt, n_term, n_att, attrib_type, n_char, iy, particle, ix_pole_max, lb(2), ub(2)
 integer id1, id2, id3
 
@@ -162,8 +162,8 @@ if (ele%sub_key /= 0) then
 endif
 
 if (ele%key /= girder$ .and. ele%key /= ramper$) then
-  nl=nl+1; write (li(nl), '(3(a, f14.6))')  'S_start, S:',  ele%s_start, ',', ele%s
-  nl=nl+1; write (li(nl), '(a, es14.6)') 'Ref_time:', ele%ref_time
+  nl=nl+1; write (li(nl), '(2(a, f14.6))')  'S_start, S:',  ele%s_start, ',', ele%s
+  nl=nl+1; write (li(nl), '(2(a, es14.6))') 'Ref_time_start, Ref_time:', ele%value(ref_time_start$), ',', ele%ref_time
 endif
 
 nl=nl+1; li(nl) = ''
@@ -206,6 +206,8 @@ do ia = 1, num_ele_attrib$
   case ('DARWIN_WIDTH_SIGMA', 'DARWIN_WIDTH_PI')
     attrib2 = ele_attribute_struct(a_name, dependent$, is_real$, 'eV', -1, ele%value(ia) / ele%value(dbragg_angle_de$))
   case ('DBRAGG_ANGLE_DE'); attrib2 = ele_attribute_struct(a_name, dependent$, is_real$, 'deg/eV', -1, ele%value(ia) * 180 / pi)
+  case ('DPHI_A', 'DPHI_B')
+    attrib2 = ele_attribute_struct(a_name, dependent$, is_real$, 'rad/2pi', -1, ele%value(ia) * 1.0_rp / twopi)
   case default
     if (index(a_name, 'ANGLE') /= 0 .and. a_name /= 'CRITICAL_ANGLE_FACTOR') then
       attrib2 = ele_attribute_struct(a_name, dependent$, is_real$, 'deg', -1, ele%value(ia) * 180 / pi)
@@ -418,7 +420,7 @@ if (associated(ele%cartesian_map)) then
         name = attribute_name(ele, ct_map%master_parameter)
       endif
 
-      nl=nl+1; write (li(nl), '(a, i0)')      '  Cartesian_map mode #: ', im
+      nl=nl+1; write (li(nl), '(a, i0)')      '  Cartesian_map mode #', im
       nl=nl+1; write (li(nl), '(2a)')         '    From file:        ', trim(ct_map%ptr%file)
       nl=nl+1; write (li(nl), '(2a)')         '    field_type        ', trim(em_field_type_name(ct_map%field_type))
       nl=nl+1; write (li(nl), '(2a)')         '    master_parameter: ', trim(name)
@@ -462,7 +464,7 @@ if (associated(ele%cylindrical_map)) then
         name = attribute_name(ele, cl_map%master_parameter)
       endif
 
-      nl=nl+1; write (li(nl), '(a, i0)')      '  Cylindrical_map mode #:', im
+      nl=nl+1; write (li(nl), '(a, i0)')      '  Cylindrical_map mode #', im
       nl=nl+1; write (li(nl), '(2a)')         '    From file:        ', trim(cl_map%ptr%file)
       nl=nl+1; write (li(nl), '(2a)')         '    master_parameter: ', trim(name)
       nl=nl+1; write (li(nl), '(a, i0)')      '    harmonic:         ', cl_map%harmonic
@@ -483,6 +485,51 @@ if (associated(ele%cylindrical_map)) then
       if (size(cl_map%ptr%term) > nl2) then
         nl=nl+1; write (li(nl), '(a, i0, a)') '     .... etc ... (#Terms = ', size(cl_map%ptr%term), ')' 
       endif
+    enddo
+  endif
+endif
+
+! Gen_Grad_field
+
+if (associated(ele%gen_grad_map)) then
+  if (integer_option(no$, type_field) == no$) then
+    nl=nl+1; write (li(nl), '(a, i5)') 'Number of Gen_Grad_field modes:', size(ele%gen_grad_map)
+  else
+    nl2 = 10; if (type_field == all$) nl2 = 999
+    nl=nl+1; li(nl) = ''
+    if (ele%field_calc == bmad_standard$) then
+      nl=nl+1; li(nl) = 'Gen_Grad_field: [NOT USED SINCE FIELD_CALC = BMAD_STANDARD]'
+    else
+      nl=nl+1; li(nl) = 'Gen_Grad_field:'
+    endif
+    do im = 1, size(ele%gen_grad_map)
+      gg_map => ele%gen_grad_map(im)
+      if (gg_map%master_parameter == 0) then
+        name = '<None>'
+      else
+        name = attribute_name(ele, gg_map%master_parameter)
+      endif
+
+      nl=nl+1; write (li(nl), '(2a)')         '  field_type:        ', em_field_type_name(gg_map%field_type)
+      nl=nl+1; write (li(nl), '(a, es16.8)')  '  field_scale:       ', gg_map%field_scale
+      nl=nl+1; write (li(nl), '(a, 3es16.8)') '  r0:                ', gg_map%r0
+      nl=nl+1; write (li(nl), '(a, es16.8)')  '  dz:                ', gg_map%dz
+      nl=nl+1; write (li(nl), '(a, 2i5)')     '  iz0, iz1:          ', gg_map%iz0, gg_map%iz1
+      nl=nl+1; write (li(nl), '(2a)')         '  master_parameter:  ', trim(name)
+      nl=nl+1; write (li(nl), '(2a)')         '  ele_anchor_pt:     ', anchor_pt_name(gg_map%ele_anchor_pt)
+      nl=nl+1; write (li(nl), '(a, l1)')      '  curved_ref_frame   ', gg_map%curved_ref_frame
+      do ig = 1, size(gg_map%gg)
+        gg => gg_map%gg(ig)
+        nl=nl+1; write (li(nl), '(4x, i0, a, i0, 2x, a)') ig, ': Curve m = ', gg%m, expression_op_name(gg%sincos)
+        nl=nl+1; write (li(nl), '(9x, a)') 'Z  Derivs....'
+        do n = lbound(gg%deriv,1), ubound(gg%deriv,1)
+          if (n - lbound(gg%deriv,1) > 10) then
+            nl=nl+1; li(nl) = '      ... etc. ...'
+            exit
+          endif
+          nl=nl+1; write(li(nl), '(i10, f10.6, 99es14.6)') n, n*gg_map%dz, gg%deriv(n, 0:gg%n_deriv_max)
+        enddo
+      enddo
     enddo
   endif
 endif
@@ -508,7 +555,7 @@ if (associated(ele%grid_field)) then
         name = attribute_name(ele, g_field%master_parameter)
       endif
 
-      nl=nl+1; write (li(nl), '(a, i0)')      '  Grid_field mode #:', im
+      nl=nl+1; write (li(nl), '(a, i0)')      '  Grid_field mode #', im
       nl=nl+1; write (li(nl), '(2a)')         '    From file:          ', trim(g_field%ptr%file)
       nl=nl+1; write (li(nl), '(2a)')         '    field_type:         ', em_field_type_name(g_field%field_type)
       nl=nl+1; write (li(nl), '(2a)')         '    geometry:           ', grid_field_geometry_name(g_field%geometry)
@@ -586,43 +633,6 @@ if (associated(ele%grid_field)) then
   endif
 endif
 
-! Taylor_field
-
-if (associated(ele%taylor_field)) then
-  if (integer_option(no$, type_field) == no$) then
-    nl=nl+1; write (li(nl), '(a, i5)') 'Number of Taylor_field modes:', size(ele%taylor_field)
-  else
-    nl2 = 10; if (type_field == all$) nl2 = 999
-    nl=nl+1; li(nl) = ''
-    if (ele%field_calc == bmad_standard$) then
-      nl=nl+1; li(nl) = 'Taylor_field: [NOT USED SINCE FIELD_CALC = BMAD_STANDARD]'
-    else
-      nl=nl+1; li(nl) = 'Taylor_field:'
-    endif
-    do im = 1, size(ele%taylor_field)
-      t_field => ele%taylor_field(im)
-      if (t_field%master_parameter == 0) then
-        name = '<None>'
-      else
-        name = attribute_name(ele, t_field%master_parameter)
-      endif
-
-      nl=nl+1; write (li(nl), '(a, i0)')      '  Taylor_field mode #:', im
-      nl=nl+1; write (li(nl), '(2a)')         '    From file:         ', trim(t_field%ptr%file)
-      nl=nl+1; write (li(nl), '(2a)')         '    field_type:        ', em_field_type_name(t_field%field_type)
-      nl=nl+1; write (li(nl), '(a, es16.8)')  '    field_scale:       ', t_field%field_scale
-      nl=nl+1; write (li(nl), '(a, es16.8)')  '    dz:                ', t_field%dz
-      nl=nl+1; write (li(nl), '(a, 3es16.8)') '    r0:                ', t_field%r0
-      nl=nl+1; write (li(nl), '(2a)')         '    master_parameter:  ', trim(name)
-      nl=nl+1; write (li(nl), '(2a)')         '    ele_anchor_pt:     ', anchor_pt_name(t_field%ele_anchor_pt)
-      nl=nl+1; write (li(nl), '(a, l1)')      '    curved_ref_frame   ', t_field%curved_ref_frame
-      nl=nl+1; write (li(nl), '(a, l1)')      '    canonical_tracking ', t_field%canonical_tracking
-      nl=nl+1; write (li(nl), '(a, i0)')      '    n_link:            ', t_field%ptr%n_link
-      nl=nl+1; write (li(nl), '(a, i0)')      '    n_plane:           ', size(t_field%ptr%plane)
-    enddo
-  endif
-endif
-
 ! ac_kick
 
 if (associated(ele%ac_kick)) then
@@ -650,19 +660,19 @@ endif
 
 ! Radiation kick values
 
-if (logic_option(.false., type_rad_kick) .and. associated(ele%rad_int_cache)) then
-  rm0 => ele%rad_int_cache%rm0
-  rm1 => ele%rad_int_cache%rm1
+if (logic_option(.false., type_rad_kick) .and. associated(ele%rad_map)) then
+  rm0 => ele%rad_map%rm0
+  rm1 => ele%rad_map%rm1
 
   nl=nl+1; li(nl) = ''
   nl=nl+1; li(nl) = 'Matrices used for radiation stochastic and damping kicks:'
   nl=nl+1; write (li(nl), '(23x, a, 41x, a)') '1st half of element', '2nd half of element'
   nl=nl+1; li(nl) = 'Damping mat:'
   do i = 1, 6
-    nl=nl+1; write (li(nl), '(2x, 6es10.2, 5x, 6es10.2)') rm0%damp_mat(i,:), rm1%damp_mat(i,:)
+    nl=nl+1; write (li(nl), '(2x, 6es10.2, 5x, 6es10.2)') rm0%damp_dmat(i,:), rm1%damp_dmat(i,:)
   enddo
   nl=nl+1; li(nl) = 'Damping vec:'
-  nl=nl+1; write (li(nl), '(2x, 6es10.2, 5x, 6es10.2)') rm0%damp_vec(:), rm1%damp_vec(:)
+  nl=nl+1; write (li(nl), '(2x, 6es10.2, 5x, 6es10.2)') rm0%xfer_damp_vec(:), rm1%xfer_damp_vec(:)
   nl=nl+1; li(nl) = 'Damping ref_orb:'
   nl=nl+1; write (li(nl), '(2x, 6es10.2, 5x, 6es10.2)') rm0%ref_orb(:), rm1%ref_orb(:)
   nl=nl+1; li(nl) = 'Stochastic mat:'
@@ -936,9 +946,9 @@ if (associated(lat) .and. logic_option(.true., type_control)) then
 
   if (associated(ele%control)) then
     nl=nl+1; li(nl) = 'Control Variables:'
-    n_att = maxval(len_trim(ele%control%var%name))
 
     if (ele%lord_status == group_lord$) then
+      n_att = maxval(len_trim(ele%control%var%name))
       do im = 1, size(ele%control%var)
         a_name = ele%control%var(im)%name
         nl=nl+1; write (li(nl), '(i5, 3x, 2a, es15.7, 11x, 3a, es15.7)')  im, &
@@ -947,8 +957,7 @@ if (associated(lat) .and. logic_option(.true., type_control)) then
       enddo
     else  ! overlay_lord or ramper_lord
       do im = 1, size(ele%control%var)
-        nl=nl+1; write (li(nl), '(i5, 3x, 2a, es15.7)')  im, &
-                      ele%control%var(im)%name, '  =', ele%control%var(im)%value
+        nl=nl+1; write (li(nl), '(i5, 3x, 2a, es15.7)')  im, ele%control%var(im)%name, '  =', ele%control%var(im)%value
       enddo
     endif
 
@@ -957,22 +966,8 @@ if (associated(lat) .and. logic_option(.true., type_control)) then
     print_it = .true.
     do is = 1, ele%n_slave
       slave => pointer_to_slave (ele, is, ctl)
-      if (allocated(ctl%stack)) then
-        if (nl + size(ctl%stack) + 100 > size(li)) call re_allocate(li, nl + size(ctl%stack) + 100)
-        do im = 1, size(ctl%stack)
-          if (ctl%stack(im)%type == end_stack$) exit
-          if (ctl%stack(im)%type /= variable$) cycle
-          if (ctl%stack(im)%name == '') cycle
-          if (any(ctl%stack(im)%name == physical_const_list%name)) cycle
-          call find_index(ctl%stack(im)%name, str_index, ix, add_to_list = .true., has_been_added = has_been_added)
-          if (.not. (has_been_added)) cycle  ! Avoid duuplicates
-          if (print_it) then
-            nl=nl+1; li(nl) = 'Named Constants:'
-            print_it = .false.
-          endif
-          nl=nl+1; write (li(nl), '(8x, 2a, es15.7)') trim(ctl%stack(im)%name), ' = ', ctl%stack(im)%value
-        enddo
-      endif
+      if (.not. allocated(ctl%stack)) cycle
+      call print_these_constants(nl, li, ctl, print_it, str_index)
     enddo
   endif
 
@@ -999,6 +994,13 @@ if (associated(lat) .and. logic_option(.true., type_control)) then
       enddo
 
     case (ramper_lord$)
+      print_it = .true.
+      do ix = 1, size(ele%control%ramp)
+        ctl => ele%control%ramp(ix)
+        if (.not. allocated(ctl%stack)) cycle
+        call print_these_constants(nl, li, ctl, print_it, str_index)
+      enddo
+
       nl=nl+1; write (li(nl), '(a, i4)') 'Slaves:'
       nl=nl+1; li(nl) = '   Ele_Name            Attribute         Expression'
       do ix = 1, size(ele%control%ramp)
@@ -1024,6 +1026,7 @@ if (associated(lat) .and. logic_option(.true., type_control)) then
       else ! Group
         nl=nl+1; write (li(nl), '(a, i4)') 'Slaves: [Attrib_Value = Value of the controlled attribute, Expression_Val = Value calculated by this Group element.]'
       endif
+
       nl=nl+1; li(nl) = ' Ele_Loc   Ele_Name';  li(nl)(n_char+14:) = 'Attribute         Attrib_Value  Expression_Val     Expression'
       do ix = 1, ele%n_slave
         slave => pointer_to_slave (ele, ix, ctl)
@@ -1380,33 +1383,33 @@ character(*) attrib_name
 character(40) a_name, a2_name
 logical is_2nd_col_attrib
 
-character(41), parameter :: att_name(80) = [character(40):: 'X_PITCH', 'Y_PITCH', 'X_OFFSET', &
+character(41), parameter :: att_name(83) = [character(40):: 'X_PITCH', 'Y_PITCH', 'X_OFFSET', &
                 'Y_OFFSET', 'Z_OFFSET', 'REF_TILT', 'TILT', 'ROLL', 'X1_LIMIT', 'Y1_LIMIT', &
-                'FB1', 'FQ1', 'LORD_PAD1', 'HKICK', 'VKICK', 'FRINGE_TYPE', 'DS_STEP', 'R0_MAG', &
-                'KS', 'K1', 'K2', 'G', 'DG', 'H1', 'E1', 'FINT', 'HGAP', &
+                'FB1', 'FQ1', 'LORD_PAD1', 'HKICK', 'VKICK', 'KICK', 'FRINGE_TYPE', 'DS_STEP', 'R0_MAG', &
+                'KS', 'K1', 'K2', 'G', 'DG', 'G_TOT', 'H1', 'E1', 'FINT', 'HGAP', &
                 'L_CHORD', 'PTC_FIELD_GEOMETRY', 'AUTOSCALE_AMPLITUDE', 'FIELD_AUTOSCALE', 'COUPLER_AT', &
-                'VOLTAGE', 'PHI0', 'N_CELL', 'X_GAIN_ERR', 'X_GAIN_CALIB', 'X_OFFSET_CALIB', &
+                'VOLTAGE', 'VOLTAGE_TOT', 'PHI0', 'N_CELL', 'X_GAIN_ERR', 'X_GAIN_CALIB', 'X_OFFSET_CALIB', &
                 'BETA_A', 'ALPHA_A', 'CRAB_X1', 'CRAB_X2', 'CRAB_TILT', 'PX_APERTURE_WIDTH2', 'PY_APERTURE_WIDTH2', &
                 'PZ_APERTURE_WIDTH2', 'Z_APERTURE_WIDTH2', 'CMAT_11', 'CMAT_21', 'X_DISPERSION_ERR', &
                 'X_DISPERSION_CALIB', 'K1X', 'RF_FREQUENCY', 'UPSTREAM_ELE_DIR', 'SIG_X', &
-                'BETA_A0', 'BETA_B0', 'ALPHA_A0', 'ALPHA_B0', 'DPHI_A', 'ETA_X0', 'ETAP_X0', &
+                'BETA_A0', 'BETA_B0', 'ALPHA_A0', 'ALPHA_B0', 'ETA_X0', 'ETAP_X0', &
                 'ETA_Y0', 'ETAP_Y0', 'MATCH_END_INPUT', 'X0', 'PX0', 'Y0', 'PY0', 'Z0', 'PZ0', &
                 'MATCH_END_ORBIT_INPUT', 'C11_MAT0', 'C12_MAT0', 'C21_MAT0', 'C22_MAT0', 'PHASE_TROMBONE_INPUT', &
-                'MODE_FLIP0', 'BETA_A_STRONG', 'BETA_B_STRONG']
+                'MODE_FLIP0', 'BETA_A_STRONG', 'BETA_B_STRONG', 'REF_TIME_START']
 
-character(41), parameter :: att2_name(80) = [character(40):: 'X_PITCH_TOT', 'Y_PITCH_TOT', 'X_OFFSET_TOT', &
+character(41), parameter :: att2_name(83) = [character(40):: 'X_PITCH_TOT', 'Y_PITCH_TOT', 'X_OFFSET_TOT', &
                 'Y_OFFSET_TOT', 'Z_OFFSET_TOT', 'REF_TILT_TOT', 'TILT_TOT', 'ROLL_TOT', 'X2_LIMIT', 'Y2_LIMIT', &
-                'FB2', 'FQ2', 'LORD_PAD2', 'BL_HKICK', 'BL_VKICK', 'FRINGE_AT', 'NUM_STEPS', 'R0_ELEC', &
-                'BS_FIELD', 'B1_GRADIENT', 'B2_GRADIENT', 'B_FIELD', 'DB_FIELD', 'H2', 'E2', 'FINTX', 'HGAPX', &
+                'FB2', 'FQ2', 'LORD_PAD2', 'BL_HKICK', 'BL_VKICK', 'BL_KICK', 'FRINGE_AT', 'NUM_STEPS', 'R0_ELEC', &
+                'BS_FIELD', 'B1_GRADIENT', 'B2_GRADIENT', 'B_FIELD', 'DB_FIELD', 'B_FIELD_TOT', 'H2', 'E2', 'FINTX', 'HGAPX', &
                 'L_SAGITTA', 'PTC_FRINGE_GEOMETRY', 'AUTOSCALE_PHASE', 'PHI0_AUTOSCALE', 'COUPLER_STRENGTH', &
-                'GRADIENT', 'PHI0_MULTIPASS', 'CAVITY_TYPE', 'Y_GAIN_ERR', 'Y_GAIN_CALIB', 'Y_OFFSET_CALIB', &
+                'GRADIENT', 'GRADIENT_TOT', 'PHI0_MULTIPASS', 'CAVITY_TYPE', 'Y_GAIN_ERR', 'Y_GAIN_CALIB', 'Y_OFFSET_CALIB', &
                 'BETA_B', 'ALPHA_B', 'CRAB_X3', 'CRAB_X4', 'CRAB_X5', 'PX_APERTURE_CENTER', 'PY_APERTURE_CENTER', &
                 'PZ_APERTURE_CENTER', 'Z_APERTURE_CENTER', 'CMAT_12', 'CMAT_22', 'Y_DISPERSION_ERR', &
                 'Y_DISPERSION_CALIB', 'K1Y', 'RF_WAVELENGTH', 'DOWNSTREAM_ELE_DIR', 'SIG_Y', &
-                'BETA_A1', 'BETA_B1', 'ALPHA_A1', 'ALPHA_B1', 'DPHI_B', 'ETA_X1', 'ETAP_X1', &
+                'BETA_A1', 'BETA_B1', 'ALPHA_A1', 'ALPHA_B1', 'ETA_X1', 'ETAP_X1', &
                 'ETA_Y1', 'ETAP_Y1', 'MATCH_END', 'X1', 'PX1', 'Y1', 'PY1', 'Z1', 'PZ1', &
                 'MATCH_END_ORBIT', 'C11_MAT1', 'C12_MAT1', 'C21_MAT1', 'C22_MAT1', 'PHASE_TROMBONE', &
-                'MODE_FLIP1', 'ALPHA_A_STRONG', 'ALPHA_B_STRONG']
+                'MODE_FLIP1', 'ALPHA_A_STRONG', 'ALPHA_B_STRONG', 'DELTA_REF_TIME']
 
 ! Exceptional cases
 
@@ -1525,5 +1528,37 @@ else
 endif
 
 end function cmplx_re_str
+
+!--------------------------------------------------------------------------
+! contains
+
+subroutine print_these_constants(nl, li, ctl, print_it, str_index)
+
+type (control_struct), pointer :: ctl
+type (str_index_struct) str_index
+
+integer nl
+logical print_it
+character(200), allocatable, target :: li(:)
+
+!
+
+if (nl + size(ctl%stack) + 100 > size(li)) call re_allocate(li, nl + size(ctl%stack) + 100)
+
+do im = 1, size(ctl%stack)
+  if (ctl%stack(im)%type == end_stack$) return
+  if (ctl%stack(im)%type /= variable$) cycle
+  if (ctl%stack(im)%name == '') cycle
+  if (any(ctl%stack(im)%name == physical_const_list%name)) cycle
+  call find_index(ctl%stack(im)%name, str_index, ix, add_to_list = .true., has_been_added = has_been_added)
+  if (.not. (has_been_added)) cycle  ! Avoid duuplicates
+  if (print_it) then
+    nl=nl+1; li(nl) = 'Named Constants:'
+    print_it = .false.
+  endif
+  nl=nl+1; write (li(nl), '(8x, 2a, es15.7)') trim(ctl%stack(im)%name), ' = ', ctl%stack(im)%value
+enddo
+
+end subroutine print_these_constants
 
 end subroutine type_ele

@@ -68,6 +68,16 @@ sometimes convenient to start \tao without the plotting window. In this case, th
 can be used on the startup command line. In a \tao initialization file, display of the plot window can be set
 using the \vn{global%plot_on} parameter set in the \vn{tao_params} namelist (\sref{s:globals}).
 
+In some cases, the screen resolution reported to \tao can be off. This has happened with some high
+resolution displays where the reported resolution is 96 dpi when in fact the actual resolution is
+much larger. In such a case, the size of the plot window created by \tao will be off. This can be
+corrected by setting \vn{plot_page%size} appropriately but this in turn can create font size
+problems. To avoid this problem, the environmental variable \vn{ACC_DPI_RESOLUTION} can be set to
+the correct resolution before running \tao. The shell command line would be something like
+\begin{example}
+  > export ACC_DPI_RESOLUTION=168
+\end{example}
+
 The \vn{plot page} has a border within which \vn{regions} (\sref{s:region.def}) are defined. The area withing
 the plot page border is called the \vn{plot area}
 
@@ -346,8 +356,11 @@ Wave analysis plotting (\sref{c:wave}).
 \label{s:axes}
 
 Data graphs (\sref{s:graph.types}) have three axes as shown in \fig{f:plot.axes}. The bottom axis is
-called \vn{x}, and the left and right axes are called \vn{y} and \vn{y2} respectively. The \vn{qp_axis_struct}
-structure (\sref{s:qp.axis}) is used to store axis parameters.
+called \vn{x}, and the left and right axes are called \vn{y} and \vn{y2} respectively. The
+\vn{qp_axis_struct} structure (\sref{s:qp.axis}) is used to store axis parameters which can be
+accessed via the \vn{graph%x}, \vn{graph%y}, and \vn{graph%y2} components in the
+\vn{tao_template_graph} namelist (\sref{s:template}) or by using the \vn{set graph} command
+(\sref{s:set.graph}.
 
 The \vn{scale} command (\sref{s:scale}) can be used to set the vertical axes. The \vn{x_scale}
 (\sref{s:x.scale}) command can be used to set the horizontal axis.
@@ -357,6 +370,13 @@ axis. However, if any curve of a given graph has \vn{curve%use_y2} set to \vn{Tr
 axis will have an independent second scale. In this case, the \vn{y2} axis numbers will be
 drawn. Notice that simply giving the \vn{y2} axis a label does {\em not} make the \vn{y2} axis scale
 independent of the \vn{y} axis scale.
+
+The following \vn{tao_plot_page} namelist (\sref{s:plot.page}) parameters affect the drawing of the axes:
+\begin{example}
+  text_height = 12              ! In points. Scales the height of all text
+  axis_number_text_scale = 0.9  ! Relative to text_height
+  axis_label_text_scale = 1.0   ! Relative to text_height
+\end{example}
 
 %-----------------------------------------------------------------
 \section{Curve}

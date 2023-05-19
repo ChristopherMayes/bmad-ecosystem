@@ -1111,6 +1111,7 @@ CONTAINS
        ALLOCATE(EL%C4%A);EL%C4%A=0.0_dp;
        ALLOCATE(EL%C4%R);EL%C4%R=1.0_dp;
        ALLOCATE(EL%C4%always_on);EL%C4%always_on=my_false;
+       ALLOCATE(EL%C4%xprime);EL%C4%xprime=my_false;
        ALLOCATE(EL%C4%PH(N_CAV4_F));EL%C4%PH=0.0_dp;
        ALLOCATE(EL%C4%t);EL%C4%t=0.0_dp;
 
@@ -1461,6 +1462,7 @@ CONTAINS
        !       IF(EL%P%NMUL==0) CALL ZERO_ANBN(EL,1)
        !       EL%mu%AN=>EL%AN
        !       EL%mu%BN=>EL%BN
+   !     write(6,*) "set family ", el%p%nst,el%p%method
        CALL POINTERS_pancake(EL%pa,T) !,angc,xc,dc,h) !,t_ax,t_ay)
     CASE(KINDabell)
        if(.not.ASSOCIATED(EL%ab)) THEN
@@ -1603,6 +1605,7 @@ CONTAINS
        ALLOCATE(EL%C4%A);CALL ALLOC(EL%C4%A);EL%C4%A=0.0_dp;
        ALLOCATE(EL%C4%R);CALL ALLOC(EL%C4%R);EL%C4%R=1.0_dp;
        ALLOCATE(EL%C4%always_on);EL%C4%always_on=my_false;
+       ALLOCATE(EL%C4%xprime);EL%C4%xprime=my_false;
        ALLOCATE(EL%C4%PH(N_CAV4_F));CALL ALLOC(EL%C4%PH,N_CAV4_F);
        ALLOCATE(EL%C4%t);EL%C4%t=0.0_dp;
     CASE(KIND21)
@@ -2278,7 +2281,8 @@ fringe,permfringe,bend_like,fint,hgap)
     EL%p%EDGE=EDGE
   endif
 
-
+   write(6,*) "change_settings_magnetr :fint and hgap need to be   arrays of 2"
+  stop
   END SUBROUTINE change_settings_magnetr
 
  
@@ -2335,6 +2339,8 @@ fringe,permfringe,bend_like,fint,hgap)
     EL%p%EDGE=EDGE
   endif
 
+   write(6,*) "change_settings_magnetp :fint and hgap need to be   arrays of 2"
+  stop
 
   END SUBROUTINE change_settings_magnetp
 
@@ -3613,6 +3619,7 @@ nullify(EL%filef,el%fileb);
        ELP%C4%R=EL%C4%R
        ELP%C4%A=EL%C4%A
        ELP%C4%Always_on=EL%C4%Always_on
+       EL%C4%xprime=EL%C4%xprime
     ENDIF
 
     IF(EL%KIND==kindsuperdrift) THEN         !
@@ -4010,6 +4017,7 @@ nullify(EL%filef,el%fileb);
        ELP%C4%R=EL%C4%R
        ELP%C4%A=EL%C4%A
        ELP%C4%Always_on=EL%C4%Always_on
+       EL%C4%xprime=EL%C4%xprime
     ENDIF
 
     IF(EL%KIND==kindsuperdrift) THEN         !
@@ -4421,6 +4429,7 @@ nullify(EL%filef,el%fileb);
        ELP%C4%R=EL%C4%R
        ELP%C4%A=EL%C4%A
        ELP%C4%Always_on=EL%C4%Always_on
+       EL%C4%xprime=EL%C4%xprime
     ENDIF
 
 

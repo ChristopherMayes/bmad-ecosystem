@@ -917,7 +917,7 @@ if (sec2%patch_in_region) then
 
   if (present(origin)) then
     floor%r = r0
-    floor = coords_floor_to_local_curvilinear (floor, ele, status, relative_to_upstream = .true.)
+    floor = coords_floor_to_local_curvilinear (floor, ele, status, relative_to = upstream_end$)
     origin = floor%r
     if (ele%key /= patch$) origin(3) = origin(3) + ele%value(l$)
   endif
@@ -987,7 +987,7 @@ else
     ! is, for a horizontal bend, ds * (1 + x/rho) where ds is the length along the reference 
     ! trajectory, x is the transverse displacement, and rho is the bend radius.
 
-    if (ele%key == sbend$) then
+    if (ele%key == sbend$ .or. ele%key == rf_bend$) then
       if (ele%value(ref_tilt_tot$) == 0) then
         disp = position(1) 
       else
@@ -1059,7 +1059,7 @@ real(rp) r(3)
 
 local%r = r
 call mat_make_unit(local%w)
-floor = coords_local_curvilinear_to_floor(local, ele, relative_to_upstream = .true.)
+floor = coords_local_curvilinear_to_floor(local, ele, relative_to = upstream_end$)
 
 end function this_coords_to_floor
 
@@ -1141,7 +1141,7 @@ end function pointer_to_wall3d
 ! Routine to return the suitable postion to be used in calling wall3d_d_radius
 !
 ! This routine assumes that if in a patch the coordinates of orbit are with respect 
-! to the downstream end if orbit%direction = 1 and vice versa.
+! to the downstream end if orbit%direction*orbit%time_dir = 1 and vice versa.
 !
 ! Input:
 !   orbit       -- coord_struct: Particle position.
@@ -1165,7 +1165,7 @@ real(rp) position(6), r_vec(3), ww(3,3)
 
 if (ele%key == patch$) then 
   ! Must transform to entrance coordinates.
-  if (orbit%direction == 1) then
+  if (orbit%direction*orbit%time_dir == 1) then
     call floor_angles_to_w_mat (ele%value(x_pitch$), ele%value(y_pitch$), ele%value(tilt$), w_mat = ww)
     r_vec = [orbit%vec(1), orbit%vec(3), orbit%s - ele%s]
     position(1:5:2) = matmul(ww, r_vec) + [ele%value(x_offset$), ele%value(y_offset$), ele%value(z_offset$)]
@@ -1175,7 +1175,7 @@ if (ele%key == patch$) then
   endif
 
 else
-  position = [orbit%vec(1:4), orbit%s-ele%s_start, 1.0_rp * orbit%direction]
+  position = [orbit%vec(1:4), orbit%s-ele%s_start, 1.0_rp * orbit%direction*orbit%time_dir]
 endif
 
 end function wall3d_to_position

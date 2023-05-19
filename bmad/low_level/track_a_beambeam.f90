@@ -25,7 +25,7 @@
 
 subroutine track_a_beambeam (orbit, ele, param, track, mat6, make_matrix)
 
-use fringe_mod, except_dummy => track_a_beambeam
+use bmad_interface, except_dummy => track_a_beambeam
 use super_recipes_mod, only: super_zbrent
 implicit none
 
@@ -79,13 +79,15 @@ if (ele%value(species_strong$) /= real_garbage$ .and. ele%value(e_tot_strong$) >
 else
   beta_strong = ele%value(p0c$) / ele%value(E_tot$)
 endif
-s0 = abs(particle_rf_time(orbit, ele, rf_freq = ele%value(repetition_frequency$)) * c_light * beta_strong)
+s0 = 0.1_rp * ele%value(sig_z$) + &
+        abs(particle_rf_time(orbit, ele, rf_freq = ele%value(repetition_frequency$)) * c_light * beta_strong)
 
 call offset_particle (ele, set$, orbit, s_pos = s_lab, s_out = s_body, set_spin = .true., mat6 = mat6, make_matrix = make_matrix)
 
 n_slice = max(1, nint(ele%value(n_slice$)))
 allocate(z_slice(n_slice))
 call bbi_slice_calc (ele, n_slice, z_slice)
+if (orbit%time_dir == -1) z_slice = z_slice(n_slice:1:-1)
 
 do i = 1, n_slice
   z = z_slice(i)        ! Distance along strong beam axis. Positive z_slice is the tail of the strong beam.
@@ -118,7 +120,7 @@ do i = 1, n_slice
   ratio = sig_y / sig_x
   call bbi_kick (x_pos, y_pos, ratio, k0_x, k0_y)
 
-  coef = bbi_const / n_slice
+  coef = orbit%time_dir * bbi_const / n_slice
   orbit%vec(2) = orbit%vec(2) + k0_x * coef
   orbit%vec(4) = orbit%vec(4) + k0_y * coef
 
@@ -132,7 +134,7 @@ do i = 1, n_slice
     call bbi_kick (x_pos+del, y_pos, ratio, k_xx2, k_yx2)
     call bbi_kick (x_pos, y_pos+del, ratio, k_xy2, k_yy2)
 
-    dcoef = bbi_const / (ele%value(n_slice$) * del)
+    dcoef = orbit%time_dir * bbi_const / (ele%value(n_slice$) * del)
     mat21 = dcoef * (k_xx2 - k_xx1) / (2 * sig_x)
     mat23 = dcoef * (k_xy2 - k_xy1) / (2 * sig_y)
     mat41 = dcoef * (k_yx2 - k_yx1) / (2 * sig_x)

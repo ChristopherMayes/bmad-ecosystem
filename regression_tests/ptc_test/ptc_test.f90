@@ -113,7 +113,7 @@ call bmad_parser ('figure_8.bmad', lat)
 call lat_to_ptc_layout (lat)
 
 bmad_com%spin_tracking_on = .true.
-call ptc_one_turn_map_at_ele (lat%ele(2), orbit%vec, prb, ptc_state, order = 2)
+call ptc_one_turn_map_at_ele (lat%ele(2), orbit%vec, prb, ptc_state)
 
 orb_taylor = prb%x
 spin_taylor = prb%q%x
@@ -135,8 +135,8 @@ do i = 1, 2
   j = ixd(i)
   call sort_taylor_terms(spin_taylor(ixd(i)), tlr)
   do k = 1, size(tlr%term)
-    write (1, '(a, i0, a, i0, a, f20.12, 6i3)') '"SpinMap-', ixd(i), '-', k, '" ABS 1E-7', &
-                                                                           tlr%term(k)%coef, tlr%term(k)%expn
+    write (1, '(a, i0, a, i0, a, 2x, a, 6i3)') '"SpinMap-', ixd(i), '-', k, '" ABS 1E-7', &
+                                                real_str(tlr%term(k)%coef,14), tlr%term(k)%expn
   enddo
 enddo
 
@@ -169,7 +169,7 @@ bmad_com%radiation_damping_on = .false.
 call bmad_parser ('single_quad.bmad', lat)
 
 ele => lat%ele(1)
-call ele_to_fibre(ele, ele%ptc_fibre, lat%param, .true.)
+call ele_to_fibre(ele, ele%ptc_fibre, lat%param, .true., err_flag)
 x(1) = lat%particle_start%vec(1)
 x(3) = lat%particle_start%vec(3)
 z = lat%particle_start%vec(5)
@@ -336,8 +336,10 @@ do j = 1, num_ele_attrib$
   call set_flags_for_changed_attribute(ele, ele%value(j))
 enddo
 
-call multipole_init(ele, all$)
-ele%b_pole(4) = ele%b_pole(3) + 1
+if (has_attribute(ele, 'A0') .or. ele%key == multipole$) then
+  call multipole_init(ele, all$)
+  ele%b_pole(4) = ele%b_pole(3) + 1
+endif
 
 call attribute_bookkeeper (ele, .true.)
 
@@ -359,6 +361,7 @@ character(*) str
 do j = 1, num_ele_attrib$
   attrib = attribute_info(ele, j)
   if (attrib%name == null_name$) cycle
+  if (attrib%state == private$) cycle
   call check_if_value_different (str, ele, j, ele%value(j), ele2%value(j))
 enddo
 

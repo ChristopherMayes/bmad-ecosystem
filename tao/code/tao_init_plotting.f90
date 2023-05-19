@@ -415,7 +415,7 @@ do  ! Loop over plot files
     default_curve%symbol%color = ''
     default_curve%line%color = ''
 
-    plot%x = qp_axis_struct(null_name$, re_g$, re_g$, re_g$, re_g$, re_g$, re_g$, re_g$, re_g$, re_g$, &
+    plot%x = qp_axis_struct(null_name$, re_g$, re_g$, re_g$, re_g$, re_g$, re_g$, re_g$, re_g$, re_g$, re_g$, re_g$, &
                 null_name$, int_g$, int_g$, int_g$, int_g$, int_g$, null_name$, null_name$, &
                 int_g$, int_g$, .true., .true.)
 
@@ -736,7 +736,7 @@ do  ! Loop over plot files
           stop
         endif
 
-        i_uni = tao_universe_number (crv%ix_universe)
+        i_uni = tao_universe_index (crv%ix_universe)
         if (i_uni > ubound(s%u, 1)) then
           call out_io (s_warn$, r_name, &
                           'CURVE OF PLOT: ' // plot%name, &
@@ -2080,7 +2080,7 @@ if (all(s%plot_page%template%name /= 'energy')) then
 
   crv => grph%curve(1)
   crv%g => grph
-  crv%data_type     = 'orbit.e_tot'
+  crv%data_type     = 'orbit.energy'
 endif
 
 !---------------
@@ -2310,6 +2310,24 @@ if (all(s%plot_page%template%name /= 'lat_layout')) then
   grph%x%minor_div_max      = 6
   grph%y%min         = -1
   grph%y%max         =  1
+endif
+
+!---------------
+! kinetic energy
+
+if (all(s%plot_page%template%name /= 'kinetic')) then
+  call default_plot_init (np, plt, default_plot_g1c1)
+  plt%name                 = 'kinetic'
+  plt%description          = 'Kinetic Energy'
+
+  grph => plt%graph(1)
+  grph%p => plt
+  grph%title         = 'Kinetic Energy'
+  grph%y%label       = 'K [eV]'
+
+  crv => grph%curve(1)
+  crv%g => grph
+  crv%data_type     = 'orbit.kinetic'
 endif
 
 !---------------
@@ -3021,6 +3039,8 @@ if (ax_in%type        /= null_name$) ax_out%type        = ax_in%type
 if (ax_in%bounds      /= null_name$) ax_out%bounds      = ax_in%bounds
 
 if (ax_in%min            /= real_garbage$) ax_out%min            = ax_in%min
+if (ax_in%max            /= real_garbage$) ax_out%eval_max       = ax_in%max
+if (ax_in%min            /= real_garbage$) ax_out%eval_min       = ax_in%min
 if (ax_in%max            /= real_garbage$) ax_out%max            = ax_in%max
 if (ax_in%tick_min       /= real_garbage$) ax_out%tick_min       = ax_in%tick_min
 if (ax_in%tick_max       /= real_garbage$) ax_out%tick_max       = ax_in%tick_max
@@ -3136,7 +3156,7 @@ do  ! Loop over all patterns
   !
 
   pat => s%plot_page%pattern(nn+1)
-  pat%name = upcase(name)
+  pat%name = name
 
   do jpt = size(pt), 1, -1
     if (pt(jpt)%s /= real_garbage$) exit

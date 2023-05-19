@@ -653,7 +653,7 @@ do
 
   ! If the bend has a roll then put kicker elements just before and just after
 
-  if (ele%key == sbend$ .and. val(roll$) /= 0) then
+  if ((ele%key == sbend$) .and. val(roll$) /= 0) then
     j_count = j_count + 1
     write (kicker_ele%name,   '(a, i0)') 'ROLL_Z', j_count
     kicker_ele%value(hkick$) =  val(angle$) * (1 - cos(val(roll$))) / 2
@@ -993,8 +993,6 @@ do ix_ele = ie1, ie2
       if (val(eps_step_scale$) /= 1) call value_to_line (line_out, val(eps_step_scale$), 'EPS', 'R', .true., .false.)
       call value_to_line (line_out, val(x_offset_mult$), 'DX', 'R', .true., .false.)
       call value_to_line (line_out, val(y_offset_mult$), 'DY', 'R', .true., .false.)
-      call value_to_line (line_out, val(x_pitch_mult$), 'CHI1', 'R', .true., .false.)
-      call value_to_line (line_out, val(y_pitch_mult$), 'CHI2', 'R', .true., .false.)
       if (val(x1_limit$) == val(y1_limit$)) then
         call value_to_line (line_out, val(x1_limit$), 'RADIUS', 'R', .true., .false.)
       else

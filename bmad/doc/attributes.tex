@@ -46,8 +46,8 @@ Table~\ref{t:dependent} are the independent variables they are calculated from.
 \end{table}
 
 For electric and magnetic field strength parameters, the \vn{field_master} parameter
-(\sref{s:field.master}) can be used to determine if the be normalized or unnormalized,
-values are dependent or independent.
+(\sref{s:field.master}) can be used to determine if the be normalized or unnormalized, values are
+dependent or independent.
 
 \index{lattice!expansion}\index{harmon}\index{delta_e}\index{gradient}
 \index{rho}\index{g}\index{angle}\index{rf_frequency}
@@ -150,11 +150,11 @@ There are three string labels associated with any element:
 \end{example}
 The \vn{type} and \vn{alias} attributes can be up to 40 characters in length and \vn{descrip} can be
 up to 200 characters. If the attribute string does not contain a blank, comma, or a semicolon, the
-quotation marks may be omitted.
+quotation marks may be omitted. Unlike the element name, these strings are not converted to upper case.
 
-\bmad routines do not use these labels directly. Rather these labels have a number of purposes. For
-example, a \bmad based program that is used as an online machine model could associate a label
-string with a machine database element to facilitate machine control.
+These labels have a number of purposes. For example, a \bmad based program that is used as an online
+machine model could associate a label string with a machine database element to facilitate machine
+control. Also these labels can be used with pattern matching when selecting elements (\sref{s:ele.match}).
 
 Example:
 \begin{example}
@@ -163,7 +163,7 @@ Example:
 \end{example}
 
 %-----------------------------------------------------------------
-\section{Group, Overlay and Ramper Element Syntax}
+\section{Group, Overlay, and Ramper Element Syntax}
 \label{s:go.syntax}
 \index{group!syntax}\index{overlay!syntax}
 \index{gang|hyperbf}
@@ -209,6 +209,17 @@ variables and the slave attributes. Example:
   gr1: group = \{q1[k1]:-tan(a)*b, q2[tilt]:b^2\}, var = \{a, b\}
 \end{example}
 
+The function \vn{ran()} and \vn{ran_gauss()} may be used in expressions with \vn{ramper} elements but
+may not be used for other types of controllers. These functions can be useful with long-term tracking
+to simulate such things as ground noise or RF jitter. Example
+\begin{example}
+  rf_noise: ramper = \{rfcavity::*[phi0]: 1e-4*ran_gauss()\}, var = \{ \}
+\end{example}
+Notice that the expression does not depend upon any variables and the variable list is empty. An empty
+variable list is permissible only if all slave expressions involve \vn{ran()} or \vn{ran_gauss()}.
+With an empty variable list, \bmad will define a variable for the \vn{ramper} called \vn{null} to serve
+as a place holder for bookkeeping purposes. 
+
 To define an expression based \vn{controller} element, two lists are needed: One list defines the
 slave attributes along with the arithmetic expressions used for computing the value of the slave
 attributes. The other list defines the variables within the \vn{controller} element that can be
@@ -248,12 +259,12 @@ The method used to interpolate between the knot points is determined by the sett
 \vn{interpolate} parameter which may be one of
 \begin{example}
   linear      ! Linear interpolation.
-  spline      ! Cubic spline interpolation (default).
+  cubic       ! Cubic spline interpolation (default).
 \end{example}
 For variable values outside of the range specified by \vn{x_knot}, the slave parameter value will be
 extrapolated using the interpolation function calculated from the three points nearest the end. That
 is, extrapolation will be linear if \vn{interpolate} is set to \vn{linear} and will be cubic if
-\vn{interpolate} is set to \vn{spline}. For the cubic spline, extrapolation is only permitted over a
+\vn{interpolate} is set to \vn{cubic}. For the cubic spline, extrapolation is only permitted over a
 distance outside the x_knot range equal to the difference between the value of the x_knot end point
 and its neighbor point. Thus in the above example, extrapolation will be allowed in the intervals
 $[-0.7, 0.0]$ and $[1.0, 1.7]$.
@@ -323,6 +334,12 @@ unity. Example:
 This is equivalent to
 \begin{example}
   gr1: group = \{b1[angle]:angle, b3[angle]:-pi*angle\}, var = \{angle\}
+\end{example}
+The exception is when \vn{ran()} or \vn{ran_gauss()} functions are present in the expression.  In
+this case, the expression will \vn{not} be modified. Example:
+\begin{example}
+  quake: ramper = \{*[y_offset]: 1e-3*ran_gauss()\}, var = \{ \}
+  quake: ramper = \{*[y_offset]: 1e-3*ran_gauss()\}, var = \{time\}  ! Equivalent to above
 \end{example}
 
 Arithmetic expressions may themselves contain element attributes.
@@ -482,15 +499,18 @@ affect the physical element and not the reference orbit. However, the orientatio
 some other elements, like the \vn{fiducial} element, do affect the reference orbit. To sort all this
 out, lattice elements can be divided into seven classes:
   \begin{enumerate}
-  \item\vn{Straight line elements} (\sref{s:straight.orient}) \Newline
+%
+\item\vn{Straight line elements} (\sref{s:straight.orient}) \Newline
 Straight line elements are elements where the reference orbit is a straight line. Examples include
 \vn{quadrupoles}, and \vn{sextupoles} as well as zero length elements like \vn{markers}.
-  \item\vn{Dipole bends} (\sref{s:bend.orient}) \Newline
+%
+\item\vn{Dipole bends} (\sref{s:bend.orient}) \Newline
 Dipole bends are:
 \begin{example}
   sbend \& rbend
 \end{example}
-  \item\vn{Photon reflecting elements} (\sref{s:photon.orient}) \Newline
+%
+\item\vn{Photon reflecting elements} (\sref{s:photon.orient}) \Newline
 The reflecting elements are
 \begin{example}
   crystal
@@ -499,16 +519,20 @@ The reflecting elements are
 \end{example}
 These elements have a kink in the reference orbit at the nominal
 element surface.
-  \item\vn{Reference orbit manipulator elements} (\sref{s:manip.orient}) \Newline
+%
+\item\vn{Reference orbit manipulator elements} (\sref{s:manip.orient}) \Newline
 Elements that are used to manipulate the reference orbit are
 \begin{example}
   fork \& photon_fork
   floor_shift
   patch
 \end{example}
-  \item\vn{Fiducial Element} (\sref{s:fiducial.orient}) \Newline
-  \item\vn{Girder Elements} (\sref{s:girder.orient}) \Newline
-  \item\vn{Control Elements} \Newline
+%
+\item\vn{Fiducial Element} (\sref{s:fiducial.orient}) \Newline
+%
+\item\vn{Girder Elements} (\sref{s:girder.orient}) \Newline
+%
+\item\vn{Control Elements} \Newline
 Control elements are elements that control attributes of other
 elements. The control elements are:
 \begin{example}
@@ -606,7 +630,7 @@ for a bend with \vn{ref_tilt} = 0. That is, the bend is in the $x-z$ plane.}
   \label{f:roll}
 \end{figure}
 
-The orientation attributes for \vn{sbend} and \vn{rbend} elements is
+The orientation attributes for \vn{sbend}, \vn{rbend} and \vn{rf_bend} elements is
 \begin{example}
   x_offset = <Real>
   y_offset = <Real>
@@ -1150,8 +1174,40 @@ the entrance and exit reference orbit.}
 \end{figure}
 
 %-----------------------------------------------------------------
+\section{X-Ray Reflectivity Tables}
+\label{s:reflect}
+
+Reflectivity tables are used to define reflectivity propabilities as functions of incidence angle and
+photon energy for \vn{crystal} and \vn{mirror} elements.
+
+The general syntax is:
+\begin{example}
+  m: mirror, reflectivity_table = \{
+    ! A reflection table
+    \{
+      angles = (<ang1, <ang2, ... <angN>), 
+      p_reflect = <energy1>, (<P_11>, <P_12>, <P_13>, ..., <P_1N>), 
+      p_reflect = <energy2>, (<P_21>, <P_22>, <P_23>, ..., <P_2N>), 
+      ...
+      p_reflect = ...,
+    \}
+    ! Another reflection table
+    \{
+      angles = (...), 
+      p_reflect = ...,
+      ...
+    \}
+  \}
+\end{example}
+Multiple tables are used in case
+angles array must be first in table. angles in radians, energy in eV, angle and energy points do not need to be evenly spaced. probabilities between 0 and 1. For particles outside the range of angles, the probability is taken to be zero. 
+
+
+For \vn{crystal} elements, angles are always with respect to the Bragg angle for the energy.
+
+%-----------------------------------------------------------------
 \section{Surface Properties for X-Ray elements}
-\label{s:s.curve}
+\label{s:surface}
 
 The following X-ray elements have a surface which X-rays impinge upon:
 \begin{example}
@@ -1306,6 +1362,7 @@ the center of the $(i,j)$ pixel is:
 
 The different grid types are:
 \begin{description}
+%
 \item[Displacement grid] \Newline
 The general syntax for a \vn{displacement} grid is:
 \begin{example}
@@ -1787,20 +1844,21 @@ attribute set to one of:
 \end{example}
 A section is called ``clear'' or ``opaque'' depending upon the setting of its \vn{type} attribute.
 The first section $s_1$ must be labeled \vn{clear}. Each \vn{clear} section has zero or more
-associated \vn{opaque} sections. An opaque section $s_j$ is associated with clear section $s_i$ if
-and only if $i$ is less than $j$, and all the sections $k$ between $i$ and $j$ (that is, $i < k < j$)
-are opaque sections. For example, if the \vn{wall} defines 6 sections:
+associated \vn{opaque} sections that follow the \vn{clear} section. An opaque section $s_j$ is
+associated with clear section $s_i$ if and only if $i$ is less than $j$, and all the sections $k$
+between $i$ and $j$ (that is, $i < k < j$) are opaque sections. For example, if the \vn{wall}
+defines 6 sections:
 \begin{example}
-  $s_1$   Clear
-  $s_2$   Clear
-  $s_3$   Opaque
-  $s_4$   Opaque
-  $s_5$   Clear
-  $s_6$   Opaque
+  \(s_1\)   Clear
+  \(s_2\)   Clear
+  \(s_3\)   Opaque
+  \(s_4\)   Opaque
+  \(s_5\)   Clear
+  \(s_6\)   Opaque
 \end{example}
-Then clear section $s_1$ does not have any associated opaque sections, clear section $s_2$ has two
-associated opaque section $s_3$ and $s_4$, and clear section $s_5$ has one associated opaque section
-$s_6$.
+with this arrangement, clear section $s_1$ does not have any associated opaque sections, clear section
+$s_2$ has two associated opaque section $s_3$ and $s_4$, and clear section $s_5$ has one associated
+opaque section $s_6$.
 
 Each \vn{section} covers an area specified by the vertex list associated with the \vn{section}. To
 decide if a particle is transmitted, each clear section, starting from $s_1$, is tested to see if
@@ -1828,21 +1886,21 @@ sections.
 An example geometry is shown in \fig{f:diff.plate}A. A wall that constructs this geometry is:
 \begin{example}
   z_plate: diffraction_plate, wall = \{
-    section = \{          ! $s_1$ 
+    section = \{          ! \(s_1\) 
       type = clear,
       v(1) = \{0, 0, 0.03, 0.013\},
-    section = \{          ! $s_2$
+    section = \{          ! \(s_2\)
       type = opaque,
       v(1) = \{0, 0, 0.005\},
-    section = \{          ! $s_3$
+    section = \{          ! \(s_3\)
       type = opaque,
       r0 = (0.02, 0.00),
       v(1) = \{0, 0, 0.005\} \}
-    section = \{          ! $s_4$
+    section = \{          ! \(s_4\)
       type = clear, 
       v(1) = \{0.04, 0\}, v(2) = \{0.04, 0.022\},
       v(3) = \{0, 0.03\},
-    section = \{          ! $s_5$
+    section = \{          ! \(s_5\)
       type = opaque,
       v(1) = \{0.032, 0.016\},
 \end{example}
@@ -2042,22 +2100,20 @@ fields. Specifying a custom field is done by using custom code and linking this 
 \bmad into a program. That is, custom fields are defined outside of the \bmad software
 (\sref{s:integ}).
 
-\index{cylindrical_map}\index{cartesian_map}\index{grid_field}\index{taylor_field}
+\index{cylindrical_map}\index{cartesian_map}\index{grid_field}\index{gen_grad_map}
 The other way to specify a complicated field is to use a ``\vn{field map}''. There
 are four types of field maps:
 \begin{example}
   cartesian_map       ! \sref{s:cart.map}
   cylindrical_map     ! \sref{s:cylind.map}
   grid_field          ! \sref{s:grid.field}
-  taylor_field        ! \sref{s:taylor.field}
+  gen_grad_map        ! \sref{s:gen.grad.map}
 \end{example}
 Essentially, \vn{cylindrical_map} and \vn{cartesian_map} define fields using a set of
 functions with user defined coefficients with the functions formulated to obey Maxwell's
 equations. The \vn{grid_field} type defines the field on a grid of points and
 interpolation is used to evaluate the field in between the points. Finally, the
-\vn{taylor_field} type defines a set of Taylor maps. Each map defines the field in the
-transverse $(x, y)$ plane at constant $z$. Interpolation is used to evaluate the field
-in between the planes.
+\vn{gen_grad_map} type defines a set of ``generalized gradients'' (\sref{s:gen.grad.phys}).
 
 The \vn{cylindrical_map} and \vn{grid_field} types can be used with both RF and DC fields.
 The other two types can only be used with DC fields. RF fields may only be used with the following
@@ -2093,9 +2149,9 @@ more details.
 In a lattice file, once a field map is defined for an element, components of the field map
 may be redefined using the notation
 \begin{example}
-  ele_name[field_map_name(index)%component_name] = value
+  ele_name[fieldmap_name(index)%component_name] = value
 \end{example}
-where \vn{ele_name} is the name of the element, \vn{field_map_name} is the name of the
+where \vn{ele_name} is the name of the element, \vn{fieldmap_name} is the name of the
 type of field map, \vn{index} is the index of the field map which is ``1'' for the first
 field map defined for an element, etc., \vn{component_name} is the name of the component,
 and \vn{value} is the value to set to. Example:
@@ -2115,7 +2171,7 @@ and \vn{value} is the value to set to. Example:
 When used with a bend element, by default, field map coordinates will be Cartesian and not curved
 like the reference orbit. The orientation of the field map coordinates is determined by the setting
 of \vn{ele_anchor_pt}. To use curvilinear coordinates instead, \vn{curved_ref_frame} must be set to
-\vn{True} [Available in \vn{grid_field} and \vn{taylor_field} only].}
+\vn{True} [Available in \vn{grid_field} and \vn{gen_grad_map} only].}
   \label{f:bend.grid}
 \end{figure}
 
@@ -2126,7 +2182,8 @@ individual types for a list of the attributes pertinent to that type.
 \index{field_type}
 \index{field_scale}\index{master_parameter}
   \begin{description}
-  \item[curved_ref_frame] \Newline
+%
+\item[curved_ref_frame] \Newline
 For bends, the coordinates of the field are, by default, Cartesian and do not follow the
 curved bend coordinates. The orientation of the field map coordinates with respect to the
 bend is determined by the placement of the anchor point (specified by \vn{ele_anchor_pt})
@@ -2135,12 +2192,13 @@ particle coordinates (which are expressed in the bend's curvilinear coordinate s
 defined by the reference orbit) to the Cartesian coordinates of the field map and will
 rotate the computed field from the field map coordinates back to the particle coordinates.
 
-For \vn{grid_field} and \vn{taylor_field} types only, this default behavior can be changed by
+For \vn{grid_field} and \vn{gen_grad_map} types only, this default behavior can be changed by
 setting the \vn{curved_ref_frame} component of the field map to \vn{True}. In this case,
 the field grid coordinates will follow curved bend coordinates.  The \vn{curved_ref_frame}
 parameter is only pertinent for bend elements (\vn{sbend}s, \vn{rbend}s).  The setting of
 \vn{curved_ref_frame} is ignored for non-bend elements.
-  \item[ele_anchor_pt] \Newline
+%
+\item[ele_anchor_pt] \Newline
 The \vn{ele_anchor_pt}, along with \vn{r0}, determines the origin of the field with
 respect to the lattice element. Possible settings are:
 \begin{example}
@@ -2150,9 +2208,10 @@ respect to the lattice element. Possible settings are:
 \end{example}
 Example:
 \begin{example}
-  rfc0: rfcavity, taylor_field = \{ele_anchor_pt = center, ...\}, ...
+  rfc0: rfcavity, gen_grad_map = \{ele_anchor_pt = center, ...\}, ...
 \end{example}
-  \item[field_type] \Newline
+%
+\item[field_type] \Newline
 The \vn{field_type} attribute sets the type of field described. Possible settings for
 \vn{field_type} are:
 \begin{example}
@@ -2166,7 +2225,8 @@ Example:
 \end{example}
 The \vn{cylindrical_map} type does not have a \vn{field_type} since it has explicit arrays
 for the electric and magnetic fields.
-  \item[field_scale] \Newline
+%
+\item[field_scale] \Newline
 The \vn{field_scale} attribute is used to scale the overall field magnitude. The default
 value is 1. A value of -1 will reverse the field. If the \vn{master_parameter} is
 defined, it is multiplied with the \vn{field_scale} to give the overall scale.
@@ -2176,7 +2236,8 @@ Example:
   qq[grid_field(1)%field_scale] = 0.7     ! Change value after element def.
   qq[grid_field(1)%master_parameter] = k1 ! Change value after element def.
 \end{example}
-  \item[harmonic] \Newline
+%
+\item[harmonic] \Newline
 The \vn{harmonic} attribute, along with \vn{rf_frequency} element attribute, sets the oscillation
 frequency of the field map. The \vn{harmonic} attribute is only used with \vn{cylindrical_map} and
 \vn{grid_field} types. The default value of \vn{harmonic} is 0.  The \vn{harmonic} number needs to
@@ -2188,9 +2249,9 @@ Notice that \vn{rf_frequency} is set outside of any field map and is common to a
   \item[master_parameter] \Newline
 The \vn{master_parameter} defines a ``master'' element attribute for scaling the field. Example:
 \begin{example}
-  qq: quadrupole, taylor_field = \{master_parameter = "K1", ...\}, k1 = ...
+  qq: quadrupole, gen_grad_map = \{master_parameter = "K1", ...\}, k1 = ...
 \end{example}
-This example defines the \vn{master_parameter} for the \vn{taylor_field} to be the
+This example defines the \vn{master_parameter} for the \vn{gen_grad_map} to be the
 quadrupole strength \vn{k1}. By using the same master parameter for a set of field map
 instances within a given lattice element, the sum field of the set can be controlled by a
 single attribute. The \vn{master_parameter} must be set to a valid element attribute. If
@@ -2198,25 +2259,14 @@ the name is blank (""), no master parameter is used. The \vn{master_parameter}, 
 defined, is multiplied with the \vn{field_scale} to give the value used to scale the
 fields. The default \vn{master_parameter} is blank ("") except for \vn{wiggler} elements
 where, for historical reasons, the default is \vn{polarity}.
-
-Certain parameters have an associated ``error'' parameter. If the \vn{master_parameter} is one of
-these parameters, the value used to scale the field is the sum of the \vn{master_parameter} and the
-associated error parameter. The elements that have associated error parameters are:
-\begin{example}
-  Parameter    Assoc. Error Param    Element Type
-  ---------    ------------------    --------------
-  Voltage      Voltage_err           E_gun, LCavity
-  Gradient     Gradient_err          E_gun, LCavity
-  Phi0         Phi0_err              E_gun, LCavity
-  G            dG                    Sbend, Rbend
-  B_field      dB_field              Sbend, Rbend
-\end{example}
-  \item[phi0_fieldmap] \Newline
+%
+\item[phi0_fieldmap] \Newline
 For AC fields, \vn{phi0_fieldmap} is the phase of the field map field relative to the fundamental
 mode. The phase \vn{phi0_fieldmap} is relative to the fundamental frequency and not the frequency of
 the field map mode. That is, the ``zero crossing'' point of the field map is shifted by a time
 \vn{phi0_fieldmap}/$f_0$ where $f_0$ is the fundamental mode frequency.
-  \item[r0] \Newline
+%
+\item[r0] \Newline
 The \vn{r0} attribute is the $(x0, y0, z0)$ vector specifying the offset of the origin point that
 defines the field relative to the \vn{anchor} point defined by \vn{ele_anchor_pt}.  The origin
 position of the field (\vn{r_origin}) is determined by
@@ -2236,7 +2286,7 @@ with \vn{L} being the length of the element.
 
 Example:
 \begin{example}
-  rfc0: rfcavity, taylor_field = \{r0 = (-0.23, ...), ...\}, ...
+  rfc0: rfcavity, gen_grad_map = \{r0 = (-0.23, ...), ...\}, ...
 \end{example}
   \end{description}
 
@@ -2245,9 +2295,8 @@ Example:
 \label{s:cart.map}
 \index{cartesian_map}
 
-The \vn{cartesian_map} field map is only used for DC fields. Each term of a
-\vn{cartesian_map} is a solution of Laplace's equation in cartesian coordinates.
-as described in Sec.~\sref{s:cart.map.phys}. 
+The \vn{cartesian_map} is used to describe DC fields. Each term of a \vn{cartesian_map} is a solution
+of Laplace's equation in cartesian coordinates.  as described in Sec.~\sref{s:cart.map.phys}.
 
 The lattice file syntax for the \vn{cartesian_map} type is:
 \begin{example}
@@ -2258,10 +2307,11 @@ The lattice file syntax for the \vn{cartesian_map} type is:
     ele_anchor_pt    = <Real>,   ! Anchor position: Beginning (default), Center, or End.
     r0               = (<x0>, <y0>, <z0>), ! Anchor offset. Default is 0.
     term = \{<A>, <k_x>, <k_y>, <k_z>, <x_0>, <y_0>, <phi_z>, <family>\}, 
-    term = \{....\}  \}
+    term = \{....\},
+    ... more terms ...
+  \}
 \end{example}
-The possible settings of \vn{<family>} are explained in Sec.~\sref{s:cart.map.phys}.
-Example:
+The possible settings of \vn{<family>} are explained in Sec.~\sref{s:cart.map.phys}. Example:
 \begin{example}
   q01: quadrupole, l = 0.6, field_calc = fieldmap,
         cartesian_map = \{
@@ -2269,20 +2319,23 @@ Example:
           term = \{...\}, ...    \}
 \end{example}
 
-See Sec.~\sref{s:fieldmap.com} for an explanation of the attributes that are common with
-other field map types. 
+See Sec.~\sref{s:fieldmap.com} for an explanation of the attributes that are common with other field
+map types.
 
-To use with PTC dependent tracking methods (\sref{s:integ}) there are a number of
-restrictions: 
+To use with PTC dependent tracking methods (\sref{s:integ}) there are a number of restrictions:
   \begin{itemize}
-  \item
-There can be only one \vn{cartesian_map} field map and there cannot be any other field
-maps of any kind.
-  \item 
+%
+\item
+There can be only one \vn{cartesian_map} field map and there cannot be any other field maps of any
+kind.
+%
+\item 
 \vn{cartesian_map} may not be used with a bend.
-  \item
+%
+\item
 Only magnetic fields may be used. 
-  \item
+%
+\item
 The transverse terms in \vn{r0} must be zero.
   \end{itemize}
 
@@ -2291,9 +2344,9 @@ The transverse terms in \vn{r0} must be zero.
 \label{s:cylind.map}
 \index{ccylindrical map}
 
-The \vn{cylindrical_map} field map is used for both DC and AC fields. Each term of a
-\vn{cylindrical_map} is a solution of Laplace's equation in cylindrical coordinates.
-as described in Sec.~\sref{s:cylind.map.phys}. 
+The \vn{cylindrical_map} is used to describe both DC and AC fields. Each term of a
+\vn{cylindrical_map} is a solution of Laplace's equation in cylindrical coordinates.  as described
+in Sec.~\sref{s:cylind.map.phys}.
 
 The lattice file syntax for the \vn{cylindrical_map} type is:
 \begin{example}
@@ -2380,14 +2433,19 @@ Example:
 
 Note: When using PTC based tracking (\sref{c:methods}), the following restrictions apply:
 \begin{Itemize}
+%
 \item
 The fields must be DC.
+%
 \item
 all the \vn{e_coef} and \vn{b_coef} arrays must have the same length.
+%
 \item
 \vn{r0(1)} and \vn{r0(2)} (the transverse offsets) must be zero.
+%
 \item
 The element containing the map cannot be an \vn{sbend} or \vn{rbend}.
+%
 \item
 May not be combined with other field map types.
 \end{Itemize}
@@ -2411,8 +2469,9 @@ A \vn{grid_field} is grid of field points specified using the syntax:
     r0   = (...),                   ! Grid origin. Syntax is \vn{geometry} dependent.
     dr   = (...),                   ! Grid spacing. Syntax is \vn{geometry} dependent.
     ele_anchor_pt = <Position>      ! BEGINNING, CENTER, or END
-    pt(<Integer>, \dots) = ( \ldots ), ! Field points. Syntax is \vn{geometry} dependent.
-    \ldots \} \} \}
+    \{ ... \},                      ! Field table. Syntax is \vn{geometry} dependent.
+    pt(<Integer>, \dots) = ( \ldots ), ! Field table point. Old style.
+  \}
 \end{example}
 See Sec.~\sref{s:fieldmap.com} for an explanation of the attributes that are common with
 other field map types.
@@ -2428,12 +2487,15 @@ For \vn{field_type} set to \vn{electric} or \vn{magnetic}, the field is DC. That
 For AC fields, the individual field components are complex.  the syntax for specifying a complex
 number is:
 \begin{example}
-  (<Re>, <Im>)
+  (<Re> <Im>)
 \end{example}
 Example:
 \begin{example}
-  pt(0, 0, -7) = ((0.34, -4.3), (2.37, 9.34), ...)  ! Complex field
-  pt(0, 0, -7) = (0.12, -0.33, ...)                 ! Imaginary components are zero
+  \{
+    0 0 -7: (0.34 -4.3) (2.37 9.34) ...,    ! Complex field
+    0 0 -7: 0.12 -0.33 ...,                 ! Imaginary components are zero
+    ...
+  \}
 \end{example}
 
 The actual fields $\bfE$ and $\bfB$ are computed from the complex fields $\bfE_c$ and $\bfB_c$ via
@@ -2456,43 +2518,68 @@ element. For non \vn{rfcavity} elements the phase is
                                                   phi0_autoscale + phi0_fieldmap(j)]
 \end{example}
 
-The \vn{geometry} switch sets the type of the grid and must come before any \vn{pt} is given. The
+The \vn{geometry} switch sets the type of the grid and must come before the field table. The
 possible settings of \vn{geometry} are:
 \begin{example} 
   rotationally_symmetric_rz
   xyz
 \end{example}
 
-The \vn{rotationally_symmetric_rz} setting for \vn{geometry} is for fields
-that are rotationally symmetric around the $z$ axis. The format for
-this type of \vn{grid_field} is
+The \vn{rotationally_symmetric_rz} setting for \vn{geometry} is for fields that are rotationally
+symmetric around the $z$ axis. The format for this type of \vn{grid_field} is
 \begin{example}
   grid_field = \{ 
     geometry = rotationally_symmetric_rz,
-    r0   = (<x0>, <y0>, <z0>),  ! Grid origin 
-    dr   = (<dr>, <dz>),        ! Grid spacing
+    r0   = (<x0>, <y0>, <z0>),        ! Grid origin 
+    dr   = (<dr>, <dz>),              ! Grid spacing
+    \{                                ! Field table...
+      <ir> <iz>: <E_r> <E_phi> <E_z>,   ! For field_type = Electric
+      <ir> <iz>: <B_r> <B_phi> <B_z>,   ! For field_type = Magnetic
+      <ir> <iz>: <E_r> <E_phi> <E_z> <B_r> <B_phi> <B_z>,
+                                        ! For field_type = Mixed.
+      \ldots 
+    \} 
+  \}
+\end{example}
+where \vn{<iz>} can be negative but \vn{<ir>} must be non-negative. Notice that commas are only used
+in the field table to demarcate between field points.
+
+There is an old style syntax for the field table that looks like:
+\begin{example}
     pt(<ir>, <iz>) = (<E_r>, <E_phi>, <E_z>) ! For field_type = Electric
     pt(<ir>, <iz>) = (<B_r>, <B_phi>, <B_z>) ! For field_type = Magnetic
     pt(<ir>, <iz>) = (<E_r>, <E_phi>, <E_z>, <B_r>, <B_phi>, <B_z>)
                                              ! For field_type = Mixed.
-    \ldots \} 
 \end{example}
-where \vn{<iz>} can be negative but \vn{<ir>} must be non-negative.  
+While the old style is accepted, parsing the old syntax is almost a factor of two slower. The only
+possible advantage to the old style is that expressions can be used for field values.
 
-The \vn{xyz} setting for \vn{geometry} can be used for all rectangular field grids. The
-format for this type of \vn{grid_field} is
+The \vn{xyz} setting for \vn{geometry} can be used for all rectangular field grids. The format for
+this type of \vn{grid_field} is
 \begin{example}
   grid_field = \{ 
     geometry = xyz,
     r0   = (<x0>, <y0>, <z0>),    ! Grid origin 
     dr   = (<dx>, <dy>, <dz>),    ! Grid spacing
+    \}
+      <ix> <iy> <iz>: <E_x> <E_y> <E_z>,  ! For field_type = Electric
+      <ix> <iy> <iz>: <B_x> <B_y> <B_z>,  ! For field_type = Magnetic
+      <ix> <iy> <iz>: <E_x> <E_y> <E_z> <B_x> <B_y> <B_z>, 
+                                                   ! For field_type = Mixed.
+      \ldots 
+    \}
+  \}
+\end{example}
+where \vn{<ix>}, \vn{<iy>}, and \vn{<iz>} can be negative.
+
+The old style syntax for the \vn{xyz} field table is:
+\begin{example}
     pt(<ix>, <iy>, <iz>) = (<E_x>, <E_y>, <E_z>),  ! For field_type = Electric
     pt(<ix>, <iy>, <iz>) = (<B_x>, <B_y>, <B_z>),  ! For field_type = Magnetic
     pt(<ix>, <iy>, <iz>) = (<E_x>, <E_y>, <E_z>, <B_x>, <B_y>, <B_z>), 
                                                    ! For field_type = Mixed.
-    \ldots \}
 \end{example}
-where \vn{<ix>}, \vn{<iy>}, and \vn{<iz>} can be negative.
+
 
 [For clarity sake, the following discusses the \vn{xyz} case. Extension to other cases is straight
 forward.]  There is no restriction on the bounds of the indexes \vn{(ix, iy, iz)} of the \vn{pt(ix,
@@ -2524,9 +2611,12 @@ with the file \vn{apex_gun_grid.bmad} being:
     master_parameter = voltage,
     r0 = (0, 0),
     dr = (0.001, 0.001),
-    pt(0,0) = ( (0, 0), (0, 0), (1, 0),  (0, 0), (0, 0), (0, 0)),
-    pt(0,1) = ( (0, 0), (0, 0), (0.99, 0),  (0, 0), (0, 0), (0, 0)),
-    ... \}
+    \{
+      0 0:  (0 0) (0 0) (1 0)     (0 0) (0 0) (0 0),
+      0 1:  (0 0) (0 0) (0.99 0)  (0 0) (0 0) (0 0),
+      ... 
+    \}
+  \}
 \end{example}
 
 The order of the polynomials used to interpolate the field is determined by the setting of
@@ -2554,104 +2644,86 @@ Grid fields may stored in \vn{HDF5} binary format which may then be called using
 \end{example}
 
 %-----------------------------------------------------------------
-\subsection{Taylor_Field Field Map}
-\label{s:taylor.field}
-\index{taylor field}
+\subsection{Gen_Grad_Map}
+\label{s:gen.grad.map}
+\index{gen_grad_map}
 
-The \vn{taylor_field} field map is only used for DC fields. A \vn{taylor_field} is comprised
-of a set of two dimensional Taylor maps.  
+The \vn{gen_grad_map} characterizes DC magnetic or electric fields using ``generalized gradients''
+(GG) as described by Venturini and Dragt\cite{b:gen.grad}. Formulas for the GG are given in
+\Sref{s:gen.grad.phys}.
 
-The syntax for describing a \vn{taylor_field} is:
+An element can store an set of GGs. For example, a GG for the magnetic field and a GG for the
+electric field. The syntax for describing a single GG is:
 \begin{example}
-  taylor_field = \{
-    field_type       = <String>,    ! Type of field: Default = Magnetic.
+  gen_grad_map = \{
+    field_type       = <String>,    ! Type of field: Default = magnetic.
     field_scale      = <Real>,      ! Scale factor for the E & B fields.
     master_parameter = <Name>,      ! Master scaling parameter for E & B fields.
-    curved_ref_frame   = <Logical>, ! Use curved coords with bends?
-    canonical_tracking = <logical>  ! Use (px, py) instead of (x', y') when tracking?
+    curved_ref_frame = <Logical>,   ! Use curved coords with bends?
     ele_anchor_pt    = <Real>,      ! Anchor position: Beginning (default), Center, or End.
     r0               = (<x0>, <y0>, <z0>), ! Anchor offset. Default is 0.
     dz               = <Real>,             ! Distance between sampled field points.
-    plane(<i>) = \{<term1>, <term2>, <term3>, ....\}, ! Taylor map at constant z.
-    plane(<j>) = \{....\}  \}
+    curve = \{                      ! Generalized gradient curve
+      m = <Int>,                    ! Azimuthal m value
+      type = <Sin-or-Cos>           ! Type of curve: sin or cos.
+      derivs = \{
+        <z0>: <d0> <d1> <d2> ... <dN>,
+        <z1>: ...,
+        ...
+      \}
+    \},
+    curve = \{
+      ...
+    \}
+  \}
 \end{example}
-See Sec.~\sref{s:fieldmap.com} for an explanation of the attributes that are common with
-other field map types.
-
-Each \vn{plane(<i>)} component specifies a Taylor map at constant z
-(\sref{s:taylor.field.phys}). The index \vn{<i>} for the different planes must be in
-consecutive order. The plane with <i> = 0 corresponds to the $z = 0$ origin. There is no
-restriction for the starting \vn{<i>} index of the first plane. That is, there does not
-have to be a plane with index \vn{<i>} = 0 (in this case, the origin needs to be outside
-of the element).
-
-The individual Taylor series terms follow the same syntax as the Taylor terms in a
-\vn{taylor} element (\sref{s:taylor}):
-\begin{example}
-  \{<out>: <coef>, <e1> <e2>\}           ! EM Taylor term. First form.
-  \{<out>: <coef> | <n1> <n2> ...\}      ! EM Taylor term. Second form.
-\end{example}
-except that 1) \vn{<out>} must be one of
-\begin{example}
-  Bx, By, or Bz
-\end{example}
-2) there are only two exponents \vn{<e1>} and \vn{<e2>}
-corresponding to \vn{x}, and \vn{y} respectively for the first form,  and 3) the integers
-\vn{<n1>}, \vn{<n2>}, etc., are restricted to being 1 or 2.
-
-To use with PTC dependent tracking methods (\sref{s:integ}) there are a number of
-restrictions: 
-  \begin{itemize}
-  \item
-There can be only one \vn{taylor_field} field map and there cannot be any other field
-maps of any kind.
-  \item 
-The number of planes must be odd. If you want to be able to track with PTC to the center of the
-element, the number of planes must be of the form $4 \, n + 1$ where $n$ is an integer.
-  \item
-Only magnetic fields may be used.
-  \item
-The plane locations must be symmetric with respect to the center of the element. That is,
-the first plane and the last plane must be equidistant from the element center.
-  \item
-The element may not be superimposed upon (\sref{s:super}). [PTC tracks from plane to plane
-so there is no good way to cut an element at an arbitrary position.]
-  \item
-In a bend with \vn{curved_ref_frame} = False, The setting of \vn{ele_anchor_pt} must be
-\vn{center}.
-  \end{itemize}
-If the edges of the \vn{taylor_field}, which are defined by the first and last planes, is different
-than the edges of the element, \bmad and PTC will do tracking differently. With \bmad, the tracking
-will start at one edge of the element and will end at the other end. That is, \bmad will ignore the
-field outside of the element (but this can be modified using field overlap (\sref{s:overlap})). PTC,
-on the other hand, will start at an element end and then track from the element end backwards to the
-first plane like in a drift. It will then track to the ending plane and finally track backwards from
-the ending plane to the ending element edge line in a drift. That is, PTC does not ignore the field
-outside of the element.
-
-When using PTC based tracking (\sref{c:methods}), the \vn{canonical_tracking} parameter can be used
-to select whether the transverse phase space coordinates used in tracking is the canonical $(x, p_x,
-y, p_y)$ (\sref{s:phase.space}) coordinates or the non-canonical $(x, x', y, y')$ coordinates. The
-default is \vn{False}. The difference comes at the edges of element if the field is not zero. With
-canonical coordinates, there is a kick at the edge while with the non-canonical there is not. What
-is best depends upon the problem. For example, with a solenoid magnet where the field is constant
-right up to the edge, canonical tracking will be needed since the edge kick is significant. However,
-the edge kick is not well defined (that is, certain assumptions are built into the edge kick
-calculation. For example, with a solenoid, cylindrical symmetry is generally assumed). Thus for some
-arbitrary field, the assumptions used by PTC may by incorrect for the problem at hand. Thus in many
-cases, especially for single pass machines, the non-canonical tracking is a better choice.
 
 Example:
 \begin{example}
-  t1: sbend, k1 = 2, taylor_field = \{
+  t1: sbend, k1 = 2, gen_grad_map = \{
     field_type = electric,   ele_anchor_pt = end, 
     dz = 1.2,                r0 = (0, 0, 2.0),
     field_scale = 1.3,       curved_ref_frame = False,
     master_parameter = k1,
-    plane(-2) = \{\{Bx: 0.3| 1\}, \{Bx: 1.3, 1 2\}, \{By: 0.7, 3 1\}, ...\},
-    plane(-1) = \{\{Bx: 0.6|\}, \{By: 0.4|112\}, \{By: 0.7, 4 0\}, ...\}, 
-    ...  \}, field_calc = fieldmap
+
+    ...  \}, field_calc = fieldmap, integrator_order = 6, num_steps = 70, 
+  tracking_method = taylor, mat6_calc_method = taylor
 \end{example}
+
+See Sec.~\sref{s:fieldmap.com} for an explanation of the attributes that are common with other field
+map types. In general there will be multiple \vn{curve} instances.  A given \vn{curve} instance
+specifies one generalized gradient with a given azimuthal \vn{m} value and a \vn{type} which
+specifies if the generalized gradient is \vn{sin}-like or \vn{cos}-like. Each \vn{curve} has a table
+of derivatives given by the \vn{derivs} component. Each row in the derivative table starts with the
+z-position of the derivatives \vn{<z0>}, \vn{<z1>}, \vn{z2}, ... etc. The z-positions must be in
+increasing order and be multiples of \vn{dz} with no gaps (that is, \vn{<z1>} = \vn{<z0>} + \vn{dz},
+etc.). Each line in the \vn{derivs} table specifies the derivatives \vn{<d0>}, \vn{<d1>}, etc. at
+the given z-position where \vn{<d0>} is the zeroth derivative (the value of the generalized gradient
+itself), \vn{<d1>} is the first derivative, etc. For a given \vn{curve} instance, all derivative
+rows must have the same number of derivatives. Different \vn{curves} can have differing number of
+derivatives. All curves must specify the same z-positions but different curves may have differing
+number of derivatives.
+
+Like \vn{grid_field}s, the edges of a \vn{gen_grad_map}, can be defined to be outside of the edges
+of the element. These areas will be ignored while tracking unless field overlap is defined
+(\sref{s:overlap})).
+
+To use with PTC dependent tracking methods (\sref{s:integ}) there are a number of restrictions:
+  \begin{itemize}
+%
+\item
+There can be only one \vn{gen_grad_map} and there cannot be any other field maps of any kind.
+%
+\item
+Only magnetic fields may be used.
+%
+\item
+In a bend with \vn{curved_ref_frame} = False, The setting of \vn{ele_anchor_pt} must be
+\vn{center}.
+  \end{itemize}
+
+The \vn{integrator_order} for PTC dependent tracking can be either set to 4 or 6 with 4 being the
+default\vn{s:ptc.integ}.
 
 %-----------------------------------------------------------------
 \section{RF Couplers}
@@ -2757,7 +2829,7 @@ the ``desired'' is set by the \vn{voltage} or \vn{gradient} attribute of the ele
 
 The scaling problem is not present when \vn{bmad_standard} tracking (\sref{s:tkm}) is used since
 \vn{bmad_standard} tracking uses an integrated formula that is designed to give the proper
-acceleration. Rather it is a problem for Runge-Kutta and other methods integration methods.
+acceleration. Rather it is a problem for Runge-Kutta and other integration methods.
 
 The problem becomes even more complicated at non-ultra relativistic energies where the particle
 velocity is not a constant. In this case, the proper amplitude and/or phase settings will depend
@@ -2782,27 +2854,34 @@ scaling are varied.  The element parameters varied when autoscaling is done are:
   field_autoscale       ! Amplitude scale
   phi0_autoscale        ! phase scale
 \end{example}
-For an \vn{rfcavity} element, the \vn{field_autoscale} parameter is set so that when the phase is
+For an \vn{rfcavity} element, the \vn{field_autoscale} parameter is set such that when the phase is
 adjusted for maximum acceleration, the voltage gain of a particle on the zero orbit is equal to the
-value of the element's \vn{voltage} parameter and then phi0_autoscale is shifted by approximately 90
-degrees so that with \vn{phi0} equal to zero a particle on the zero orbit will not see any energy
-gain through the cavity.
+value of the element's \vn{voltage} parameter. 
 
-If no autoscaling is done, the default setting of \vn{field_autoscale} is 1 and the default setting
-of \vn{phi0_autoscale} is 0.
+The \vn{phi0_autoscale} is set so that with \vn{phi0} equal to zero, a particle on the zero orbit
+will not see any energy gain through the cavity. There are two values for \vn{phi0_autoscale} where,
+with \vn{phi0} equal zero, the energy gain of the zero orbit particle is zero. If the \vn{bmad_com}
+global parameter \vn{rf_phase_below_transition_ref} (\sref{s:bmad.common}) is set to \vn{False} (the
+default), \vn{phi0_autoscale} will be set such that, with \vn{phi0} equal zero, the zero orbit for a
+particle above transition will be at the stable zero-crossing. For a particle below transition,
+setting \vn{rf_phase_below_transition_ref} to \vn{True}, will result in \vn{phi0_autoscale} being
+set such that, for particles below transition, and with \vn{phi0} equal zero, a particle on the zero
+orbit will be at the stable zero-crossing.
 
-For an \vn{rfcavity}, the autoscaling is normally done around a phase of \vn{phi0} = 0 which is
-appropriate for a ring above transition since \vn{phi0} = 0 is the stable fixed point. Below
-transition, the stable fixed point is at \vn{phi0} = 0.5. In this case, the \vn{bmad_com} global
-parameter \vn{rf_phase_below_transition_ref} (\sref{s:bmad.common}) should be set to True so that
-autoscaling is done around \vn{phi0} = 0.5. For an ultrarelativistic reference particle with speed
-very nearly $c$ there is no difference in the autoscaling between \vn{phi0} = 0 and \vn{phi0} = 0.5.
-However, when there are velocity variations of the particle within the cavity there will be
-differences between autoscaling at the two phases.
+It is important to keep in mind that with a ring, the closed orbit will be the equilibrium
+orbit. For example, for a ring with a single cavity, changes in \vn{phi0} will just result in
+variations in the closed orbit $z$. The voltage kick that the closed orbit particle gets going
+through the cavity is independent of \vn{phi0} and will be equal to the radiation losses throughout
+the ring (and if radiation of off, the kick will be zero).
 
-Notice that if autoscaling is on, the \vn{field_autoscale} is adjusted so that a particle on the
-zero orbit will see a field appropriate for the setting of the element's \vn{voltage} setting.  If
-autoscaling is off, the field is independent of the element's \vn{voltage} setting.
+It is not possible to autoscale if the voltage is very small. \bmad sets a lower limit of 10~Volts
+and if the voltage is set less than this no scaling is done. If no autoscaling is done, the default
+setting of \vn{field_autoscale} is 1 and the default setting of \vn{phi0_autoscale} is 0.
+
+Note: If a field map (\sref{s:fieldmap}) is used to define the cavity fields, in order for the
+field amplitude to vary with changes in the value of the \vn{voltage}, the \vn{master_parameter} of
+the field map must be set to \vn{voltage} (or \vn{gradient} since \vn{gradient} and \vn{voltage}
+are linked).
 
 \vn{field_autoscale} and \vn{phi0_autoscale} are not needed and therefore ignored when
 \vn{bmad_standard} tracking is done.
@@ -3108,101 +3187,113 @@ Notice that with the old format it is not possible to specify the phase offset $
 \label{s:fringe}
 \index{fringe fields}
 
-Lattice elements can have fringe fields at the element edges. Whether \bmad tries to model
-the fringe fields using the models described below first depends upon what kind of
-tracking is done. Fringe effects are {\em not} applied when an element's
-\vn{tracking_method} is set to:
+Some lattice elements can have fringe fields at the element edges. Whether \bmad tries to model the
+fringe fields using the models described below first depends upon what kind of tracking is
+done. Fringe effects are {\em not} applied when an element's \vn{tracking_method} is set to:
 \begin{example}
   custom
-  linear
   mad
 \end{example}
-Additionally, no fringe effects will be used if the \vn{tracking_method} is 
-\vn{runge_kutta} or \vn{time_runge_kutta}, and the element's \vn{field_calc} (\sref{s:integ}) is
-not \vn{bmad_standard}. This is done since it is assumed, in this case, that the body of the field
-includes any fringe fields.
+Additionally, no fringe effects will be used if the \vn{tracking_method} is \vn{runge_kutta} or
+\vn{time_runge_kutta}, and the element's \vn{field_calc} (\sref{s:integ}) is {\em not}
+\vn{bmad_standard}. This is done since, for non-\vn{bmad_standard} field calculations, it is assumed
+that the field profile includes the fringe regions.
 
 %-----------------------------------------------------------------
 \subsection{Turning On/Off Fringe Effects}
 \label{s:fringe.at}
 
 \index{fringe_at}
-Whether fringe fields are ignored or not is determined by the setting of the \vn{fringe_at} element
-parameter. The possible settings are
+For elements that have a fringe, whether fringe fields are ignored or not is determined by the
+setting of the \vn{fringe_at} element parameter. The possible settings are
 \begin{example}
   no_end         
   both_ends             ! Default
   entrance_end
   exit_end
 \end{example}
-This is particularly useful in vetoing the fringe effect in the interior of split elements. If there
-is no fringe at a particular boundary, the setting of attributes like \vn{fringe_type} (see below)
-are ignored.
+This is particularly useful in vetoing the fringe effect in the interior of split elements. The
+setting of attributes like \vn{fringe_type} (see below) are ignored for boundaries where the fringe
+has been turned off.
 
 \index{spin_fringe_on}
-When a particle's spin is being tracked through the fringe field at an element's edge, the
-\vn{spin_fringe_on} logical attribute of the element determines how the tracking is handled.
-Example:
+When a particle's spin is being tracked, the \vn{spin_fringe_on} logical attribute of the element
+determines how the spin tracking is handled through a fringe region. Example:
 \begin{example}
   q: quad, spin_fringe_on = T, fringe_at = exit_end
 \end{example}
-Here, there is no fringe effect at the entrance of the element and the fringe at the exit
-end of the element will affect the spin. The default setting of \vn{spin_fringe_on} is
-\vn{True}.
+Here, there is no fringe effect at the entrance of the element and the fringe at the exit end of the
+element will affect the spin. The default setting of \vn{spin_fringe_on} is \vn{True}. The
+\vn{spin_fringe_on} attribute is useful for examining how much fringe fields affect spin precession.
 
 %-----------------------------------------------------------------
 \subsection{Fringe Types}
-\label{s:fringe.trype}
-
-\bmad and PTC have several fringe field models for the magnetic field. Which fringe
-model is used is set by two element attributes:
-\begin{example}
-  fringe_type
-  ptc_fringe_geometry
-\end{example}
+\label{s:fringe.type}
 
 \index{fringe_type}
-For elements that have a multipole type fringe field (dipole, quadrupole, etc., as opposed to
-solenoid or RF fringes), the \vn{fringe_type} switch is used to select how a fringe field is
-simulated.  For everything except for \vn{rbend} and \vn{sbend} elements, \vn{fringe_type} may be
-set to one of:
+\bmad and PTC have several fringe field models for static magnetic fields. Which fringe model is
+used is set by two element attributes: \vn{ fringe_type} and \vn{ptc_fringe_geometry} with
+\vn{ptc_fringe_geometry} only being used with bends and PTC dependent tracking.
+The \vn{fringe_type} switch is used to select how a fringe field is
+simulated.  The possible settings of \vn{fringe_type} are:
 \begin{example}
-  none              ! Default 
+  none              ! No fringe effect. 
   soft_edge_only
   hard_edge_only
   full
+  linear_edge       ! Sbend, rbend only.
+  basic_bend        ! Sbend, rbend only. 
+  sad_full          ! Sbend, rbend, sad_mult only.
 \end{example}
-The \vn{none} setting ignores any fringe fields.  The fringe field kick is divided into two pieces.
-The first piece is called the \vn{hard edge} fringe kick and is the kick in the limit that the
-longitudinal extent of the fringe is zero. The second piece is the \vn{soft edge} fringe kick which
-is the fringe kick with the fringe having a finite longitudinal extent minus the hard edge fringe
-kick. That is
+Default settings for \vn{fringe_type} are
+\newline\hspace*{0.1in}
+{ \tt
+\begin{tabular}{ll}
+  Element Type        & Default fringe_type  \\ \midrule
+  e_gun               & full                 \\
+  lcavity, rfcavity   & full                 \\
+  sbend, rbend        & basic_bend           \\
+  All others          & none                 \\
+  \bottomrule
+\end{tabular}
+}
+
+Some fringe fields can be divided into two pieces.  The first piece is called the \vn{hard edge}
+fringe kick and is the kick in the limit that the longitudinal extent of the fringe is zero. The
+second piece is the \vn{soft edge} fringe kick which is the fringe kick with the fringe having a
+finite longitudinal extent minus the hard edge fringe kick. That is
 \begin{example}
   fringe kick = hard fringe kick + soft fringe kick
 \end{example}
 The advantage of separating the fringe kick in this way is that the hard fringe can be used without
-having to know anything about the longitudinal extent of the fringe.  In many cases, this is a good
-enough approximation. Note that using the soft fringe without the hard fringe is not physical but
-can be useful in understanding how the soft edge component affects tracking. See~\sref{s:fringe.std}
-for details.
+having to know anything about the longitudinal extent of the fringe (which happens when simulating
+magnets that have not yet been fully designed).  In many cases, this is a good enough
+approximation. Note that using the soft fringe without the hard fringe is not physical but can be
+useful in understanding how the soft edge component affects tracking. See~\sref{s:fringe.std} for
+details.
 
-For \vn{rbend} and \vn{sbend} elements, the possible \vn{fringe_type}
-settings are:
-\begin{example}
-  none
-  soft_edge_only      !          SAD equivalent: fringe = 1, disfrin = 1
-  hard_edge_only      !          SAD equivalent: fringe = 0, disfrin = 0
-  full
-  linear_edge
-  basic_bend          ! Default. SAD equivalent: fringe = 0, disfrin = 1
-  sad_full            !          SAD equivalent: fringe = 1, disfrin = 0
-\end{example}
-The \vn{basic_bend} setting, which is the default, is essentially the basic vertical focusing effect
-that is present when there is a finite \vn{e1} or \vn{e2} face angle. With \vn{bmad_standard}
-tracking, \vn{basic_bend} also includes second order terms (\sref{s:fringe.bend.hard}). The
-\vn{linear_edge} setting ignores these second order terms.  In some cases, for instance in a
-chicane, \vn{basic_bend} is not good enough. With \vn{fringe_type} set to \vn{full}, higher order
-effects are taken into account.
+For bend elements the following fringe maps are used: 
+\newline\hspace*{0.1in}
+{{ \tt
+\begin{tabular}{ll}
+  fringe_type     & Fringe model    \\ \midrule
+  none            & No fringe effect                                  \\
+  soft_edge_only  & SAD dipole soft edge (\sref{s:fringe.bend.soft})  \\
+  hard_edge_only  & Bend Second Order (\sref{s:fringe.bend.hard}) with \vn{fint} and \vn{hgap} ignored. \\
+  full            & Exact bend                                        \\
+  linear_edge     & Linear dipole hard edge (\sref{s:lin.dip.fringe}) \\
+  basic_bend      & Bend Second Order (\sref{s:fringe.bend.hard})     \\
+  sad_full        &  \\
+  \bottomrule
+\end{tabular}
+\hfill\vspace*{0.1in}
+}\newline}
+The \vn{basic_bend} setting for bend elements, which is the default, is essentially the basic
+vertical focusing effect that is present when there is a finite \vn{e1} or \vn{e2} face angle. With
+\vn{bmad_standard} tracking, \vn{basic_bend} also includes second order terms
+(\sref{s:fringe.bend.hard}). The \vn{linear_edge} setting ignores these second order terms.  In some
+cases, for instance in a chicane, \vn{basic_bend} is not good enough. With \vn{fringe_type} set to
+\vn{full}, higher order effects are taken into account.
 
 PTC does not have a \vn{linear_edge} fringe model.
 With PTC tracking, \vn{basic_bend} tracking is used if \vn{linear_edge} is chosen.
@@ -3224,22 +3315,12 @@ book\cite{b:forest} for more details. Which setting of \vn{ptc_fringe_geometry} 
 depends upon how the dipole under consideration is constructed. The two settings of
 \vn{ptc_fringe_geometry} represent two points of a continuum of possible fringe field geometries.
 
-Additionally, when using PTC tracking (\sref{s:ptc.intro}), the \vn{ptc_com[max_fringe_order]}
+When using PTC tracking (\sref{s:ptc.intro}), the \vn{ptc_com[max_fringe_order]}
 (\sref{s:param}) determines the maximum order of the calculated fringe fields.
 
 Example:
 \begin{example}
   b1: rbend, angle = pi/4, g = 0.3, fringe_type = full
-\end{example}
-
-In a bend element, the \vn{fringe_type} setting only pertains to the dipole fringe.  For higher
-order multipole fields in a bend, the \vn{higher_order_fringe_type} selects the fringe
-type. Possible settings are the same as for the non-bend \vn{fringe_type} elements
-\begin{example}
-  none              ! Default 
-  soft_edge_only
-  hard_edge_only
-  full
 \end{example}
 
 \index{sad}\index{sbend}\index{rbend}
@@ -3249,22 +3330,35 @@ uses the linear part of the fringe, \vn{hard_edge_only} ignores the linear part 
 \vn{sad_full} uses the full fringe.  For an \vn{sbend} or \vn{rbend} element, these SAD fringe
 fields are in addition to the fringe fields that occurs with a finite \vn{e1} or \vn{e2} face angle.
 
+Equivalent settings of SAD \vn{fringe} and \vn{disfrin} for \vn{sbend} and \vn{rbend} elements:
+\newline\hspace*{0.1in}
+{ \tt
+\begin{tabular}{lll}
+  fringe_type       & fringe & disfrin \\ \midrule
+  soft_edge_only    &  1     & 1       \\
+  hard_edge_only    &  0     & 0       \\
+  basic_bend        &  0     & 1       \\
+  sad_full          &  1     & 0       \\
+  \bottomrule
+\end{tabular}
+}
+
 For \vn{quadrupole} and \vn{sad_mult} elements, the translation between the \vn{fringe_at}
 and \vn{fringe_type} settings and the \vn{fringe} and \vn{disfrin} switches of SAD is:
-\begin{center}
-\tt
-\begin{tabular}{ll|llll} 
-              &                      & \multicolumn{4}{c}{fringe_at:} \\
-              &                      & no_end     & entrance_end & exit_end   & both_ends$^*$ \\ \midrule
-\multirow{4}{*}{fringe_type:} 
-              & none                 & [0, $\ne 0$] & [0, $\ne 0$]   & [0, $\ne 0$] & [0, $\ne 0$] \\
-              & soft_edge_only       & [0, $\ne 0$] & [1, $\ne 0$]   & [2, $\ne 0$] & [3, $\ne 0$] \\
-              & hard_edge_only$^*$   & [0, $\ne 0$] & No SAD Equiv   & No SAD Equiv & [0, $= 0$]   \\
-              & full                 & [0, $\ne 0$] & [1, $= 0$]     & [2, $= 0$]   & [3, $= 0$]   \\ 
+\newline\hspace*{0.1in}
+{{ \tt
+\begin{tabular}{lllll} 
+                       & \multicolumn{4}{c}{fringe_at:}                               \\
+  fringe_type          & no_end       & entrance_end   & exit_end     & both_ends$^*$ \\ \midrule
+  none                 & [0, $\ne 0$] & [0, $\ne 0$]   & [0, $\ne 0$] & [0, $\ne 0$]  \\
+  soft_edge_only       & [0, $\ne 0$] & [1, $\ne 0$]   & [2, $\ne 0$] & [3, $\ne 0$]  \\
+  hard_edge_only$^*$   & [0, $\ne 0$] & No SAD Equiv   & No SAD Equiv & [0, $= 0$]    \\
+  full                 & [0, $\ne 0$] & [1, $= 0$]     & [2, $= 0$]   & [3, $= 0$]    \\ 
   \bottomrule
-\multicolumn{2}{l}{$^*$Default value.} & \multicolumn{4}{l}{\textbf{[fringe, disfrin]}} \\
+  $^*$Default value.   & \multicolumn{4}{l}{\textbf{[fringe, disfrin]}} \\
 \end{tabular}
-\end{center}
+\hfill\vspace*{0.1in}
+}\newline}
 Each entry is the table is of the form [\vn{fringe}, \vn{disfrin}]. The \vn{soft_edge_only} fringe
 kick is a kick that is linear in the transverse $(x, p_x, y, p_y)$ coordinates and comes from the
 finite width of the quadrupolar fringe field. The width of the quadrupolar fringe field is
@@ -3282,14 +3376,15 @@ In the SAD documentation, the soft edge is called the ``linear'' fringe.
 \index{permfringe}\index{bendfringe}
 For programmers who deal with PTC directly: The translation between \vn{ptc_fringe_geometry} on the
 \bmad side and \vn{bendfringe} on the PTC side is:
-
-\begin{center}
+\newline\hspace*{0.1in}
+{
 \begin{tabular}{lll} \toprule 
-{\em ptc_fringe_geometry} & {\em bendfringe} \\ \midrule
-  x_invariant             & True  \\
-  multipole_symmetry      & False \\ \bottomrule
+  ptc_fringe_geometry     & bendfringe \\ \midrule
+  x_invariant             & True       \\
+  multipole_symmetry      & False      \\ 
+  \bottomrule
 \end{tabular}
-\end{center}
+}
 
 %-----------------------------------------------------------------
 \section{Instrumental Measurement Attributes}

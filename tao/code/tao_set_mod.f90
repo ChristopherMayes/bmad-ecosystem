@@ -678,7 +678,11 @@ end select
 iu = tao_open_scratch_file (err);  if (err) return
 
 write (iu, '(a)') '&params'
-write (iu, '(a)') ' local_space_charge_com%' // trim(who) // ' = ' // trim(val)
+if (who == 'sigma_cut') then   ! Old style
+  write (iu, '(a)') ' local_space_charge_com%lsc_sigma_cut = ' // trim(val)
+else
+  write (iu, '(a)') ' local_space_charge_com%' // trim(who) // ' = ' // trim(val)
+endif
 write (iu, '(a)') '/'
 rewind (iu)
 local_space_charge_com = space_charge_com  ! set defaults
@@ -966,9 +970,8 @@ type (ele_struct), pointer :: ele
 type (beam_struct), pointer :: beam
 type (tao_beam_branch_struct), pointer :: bb
 
-real(rp) com_ds_step
-
-integer ix, iu, n_loc, ie, ix_branch
+real(rp) value
+integer ix, ib, iu, n_loc, ie, ix_branch
 
 logical, allocatable :: this_u(:)
 logical err, logic, always_reinit
@@ -981,7 +984,7 @@ character(*), parameter :: r_name = 'tao_set_beam_cmd'
 
 call tao_pick_universe (unquote(who), who2, this_u, err); if (err) return
 
-call match_word (who2, [character(32):: 'track_start', 'track_end', 'saved_at', 'comb_ds_step', &
+call match_word (who2, [character(32):: 'track_start', 'track_end', 'saved_at', 'comb_ds_save', 'comb_max_ds_save', &
                     'beam_track_start', 'beam_track_end', 'beam_init_file_name', 'beam_saved_at', &
                     'beginning', 'add_saved_at', 'subtract_saved_at', 'beam_init_position_file', &
                     'beam_dump_at', 'beam_dump_file', 'dump_at', 'dump_file', &
@@ -1011,8 +1014,17 @@ do iu = lbound(s%u, 1), ubound(s%u, 1)
     bb%beam_at_start = beam
     u%calc%lattice = .true.
 
-  case ('comb_ds_step')
-    call tao_set_real_value (u%beam%comb_ds_step, switch, value_str, err)
+  case ('comb_ds_save')
+    call tao_set_real_value (value, switch, value_str, err)
+    do ib = 0, ubound(u%model%tao_branch, 1)
+      u%model%tao_branch(ib)%bunch_params_comb%ds_save = value
+    enddo
+
+  case ('comb_max_ds_save')
+    call tao_set_real_value (value, switch, value_str, err)
+    do ib = 0, ubound(u%model%tao_branch, 1)
+      u%model%tao_branch(ib)%bunch_params_comb%max_ds_save = value
+    enddo
 
   case ('always_reinit')
     call tao_set_logical_value (u%beam%always_reinit, switch, value_str, err)
@@ -1143,7 +1155,7 @@ call downcase_string(who2)
 
 ! Special cases not associated with the beam_init structure
 
-call match_word (who2, [character(32):: 'track_start', 'track_end', 'saved_at', 'comb_ds_step', &
+call match_word (who2, [character(32):: 'track_start', 'track_end', 'saved_at', 'comb_ds_save', &
                     'beam_track_start', 'beam_track_end', 'beam_init_file_name', 'beam_saved_at', &
                     'beginning', 'add_saved_at', 'subtract_saved_at', 'beam_init_position_file', &
                     'beam_dump_at', 'beam_dump_file', 'dump_at', 'dump_file', &
@@ -1235,6 +1247,13 @@ do i = lbound(s%u, 1), ubound(s%u, 1)
     endif
     exit
   endif
+
+  select case (who2)
+  case ('a_emit');        beam_init%a_norm_emit = 0
+  case ('b_emit');        beam_init%b_norm_emit = 0
+  case ('a_norm_emit');   beam_init%a_emit = 0
+  case ('b_norm_emit');   beam_init%b_emit = 0
+  end select
 
   bb%beam_init = beam_init
   bb%init_starting_distribution = .true.  ! Force reinit
@@ -1476,13 +1495,13 @@ type (tao_model_branch_struct), pointer :: model_branch
 type (ele_pointer_struct), allocatable :: eles(:)
 
 integer ix, i_branch
-logical err
+logical err, is_int
 character(40) name, comp
 
 !
 
-i_branch = this_curve%ix_branch
-i_uni = tao_universe_number(tao_curve_ix_uni(this_curve))
+i_branch = tao_branch_index(this_curve%ix_branch)
+i_uni = tao_universe_index(tao_curve_ix_uni(this_curve))
 
 this_graph => this_curve%g
 this_graph%p%default_plot = .true.   ! Plot has been modified
@@ -1494,24 +1513,24 @@ ix = index(comp, '.')
 if (ix /= 0) comp(ix:ix) = '%'
 select case (comp)
 
-case ('ele_ref_name')
-  call tao_locate_elements (value_str, i_uni, eles, err, ignore_blank = .true.)
-  if (size(eles) == 0) return
-  this_curve%ele_ref_name = upcase(value_str)
-  this_curve%ix_ele_ref = eles(1)%ele%ix_ele
-  this_curve%ix_branch  = eles(1)%ele%ix_branch
-  call tao_ele_to_ele_track (i_uni, i_branch, this_curve%ix_ele_ref, this_curve%ix_ele_ref_track)
+case ('ele_ref_name', 'ix_ele_ref')
+  is_int = is_integer(value_str, ix)
+  if (value_str == '' .or. (is_int .and. ix < 0)) then
+    this_curve%ele_ref_name = ''
+    this_curve%ix_ele_ref = -1
+
+  else
+    call tao_locate_elements (value_str, i_uni, eles, err, ignore_blank = .true.)
+    if (size(eles) == 0) return
+    this_curve%ele_ref_name = upcase(value_str)
+    this_curve%ix_ele_ref = eles(1)%ele%ix_ele
+    this_curve%ix_branch  = eles(1)%ele%ix_branch
+    call tao_ele_to_ele_track (i_uni, i_branch, this_curve%ix_ele_ref, this_curve%ix_ele_ref_track)
+  endif
 
 case ('name')
   this_curve%name = value_str
   
-case ('ix_ele_ref')
-  call tao_set_integer_value (this_curve%ix_ele_ref, component, &
-                    value_str, err, 0, s%u(i_uni)%model%lat%branch(i_branch)%n_ele_max)
-  this_curve%ele_ref_name = s%u(i_uni)%model%lat%ele(this_curve%ix_ele_ref)%name
-  call tao_ele_to_ele_track (tao_curve_ix_uni(this_curve), i_branch, &
-                                this_curve%ix_ele_ref, this_curve%ix_ele_ref_track)
-
 case ('ix_universe')
   call tao_set_integer_value (this_curve%ix_universe, component, value_str, err, -2, ubound(s%u, 1))
   if (err) return
@@ -1523,7 +1542,7 @@ case ('ix_universe')
                                      this_curve%ix_ele_ref, this_curve%ix_ele_ref_track)
 
 case ('ix_branch') 
-  call tao_set_integer_value (this_curve%ix_branch, component, value_str, err, 0, ubound(s%u(i_uni)%model%lat%branch, 1))
+  call tao_set_integer_value (this_curve%ix_branch, component, value_str, err, -1, ubound(s%u(i_uni)%model%lat%branch, 1))
 
 case ('ix_bunch')
   u => tao_pointer_to_universe (tao_curve_ix_uni(this_curve))
@@ -1630,14 +1649,23 @@ case ('hist%width')
   call tao_set_real_value (this_curve%hist%width, component, value_str, err, dflt_uni = i_uni)  
   
 case ('orbit')
-  select case (component)
-  case ('orbit%x')
-    call tao_set_real_value (this_curve%orbit%x, component, value_str, err, dflt_uni = i_uni)
-  case ('orbit%y')
-    call tao_set_real_value (this_curve%orbit%y, component, value_str, err, dflt_uni = i_uni)
-  case ('orbit%t')
-    call tao_set_real_value (this_curve%orbit%t, component, value_str, err, dflt_uni = i_uni)
-  end select
+  call string_trim (value_str, value_str, ix)
+  call tao_set_real_value (this_curve%orbit%x, component, value_str(1:ix), err, dflt_uni = i_uni)
+  if (err) return
+  call string_trim (value_str(ix+1:), value_str, ix)
+  if (ix == 0) return
+  call tao_set_real_value (this_curve%orbit%y, component, value_str(1:ix), err, dflt_uni = i_uni)
+  if (err) return
+  call string_trim (value_str(ix+1:), value_str, ix)
+  if (ix == 0) return
+  call tao_set_real_value (this_curve%orbit%t, component, value_str(1:ix), err, dflt_uni = i_uni)
+
+case ('orbit%x')
+  call tao_set_real_value (this_curve%orbit%x, component, value_str, err, dflt_uni = i_uni)
+case ('orbit%y')
+  call tao_set_real_value (this_curve%orbit%y, component, value_str, err, dflt_uni = i_uni)
+case ('orbit%t')
+  call tao_set_real_value (this_curve%orbit%t, component, value_str, err, dflt_uni = i_uni)
 
 case ('y_axis_scale_factor')
   call tao_set_real_value (this_curve%y_axis_scale_factor, component, value_str, err, dflt_uni = i_uni)
@@ -1645,13 +1673,6 @@ case ('y_axis_scale_factor')
 case default
   call out_io (s_error$, r_name, "BAD CURVE COMPONENT")
   return
-
-end select
-
-! Set ix_ele_ref_track if necessary
-
-select case (component)
-case ('ele_ref_name', 'ix_ele_ref', 'ix_universe')
 
 end select
 
@@ -2000,6 +2021,8 @@ case ('floor_plan')
     call tao_set_real_value(this_graph%floor_plan%orbit_scale, component, value, error, dflt_uni = u%ix_uni)
   case ('orbit_color', 'color')
     this_graph%floor_plan%orbit_color = value
+  case ('orbit_lattice', 'lattice')
+    this_graph%floor_plan%orbit_lattice = value
   case ('orbit_pattern', 'pattern')
     this_graph%floor_plan%orbit_pattern = value
   case ('view')
@@ -2023,7 +2046,7 @@ case ('ix_universe')
     u => tao_pointer_to_universe(this_graph%ix_universe)
   endif
 case ('ix_branch')
-  call tao_set_integer_value (this_graph%ix_branch, component, value, error, 0, ubound(u%model%lat%branch, 1))
+  call tao_set_integer_value (this_graph%ix_branch, component, value, error, -1, ubound(u%model%lat%branch, 1))
 case ('margin')
   call tao_set_qp_rect_struct (comp, sub_comp, this_graph%margin, value, error, u%ix_uni)
 case ('name')
@@ -2317,8 +2340,6 @@ end subroutine tao_set_branch_cmd
 ! Input:
 !   who_str   -- Character(*): Which data component(s) to set.
 !   value_str -- Character(*): What value to set it to.
-!
-!  Output:
 !-
 
 subroutine tao_set_data_cmd (who_str, value_str)
@@ -2358,7 +2379,7 @@ if (err) return
 select case (component)
   case ('model', 'base', 'design', 'old', 'model_value', 'base_value', 'design_value', &
              'old_value', 'invalid', 'delta_merit', 'merit', 'exists', 'good_base ', &
-             'useit_opt ', 'useit_plot', 'ix_d1', 'ix_uni')
+             'useit_opt ', 'useit_plot', 'ix_d1', 'good_model', 'good_design')
   call out_io (s_error$, r_name, 'DATUM ATTRIBUTE NOT SETTABLE: ' // component)
   return
 end select
@@ -2435,22 +2456,27 @@ elseif (size(int_dat) /= 0) then
       u => s%u(d_dat(i)%d%d1%d2%ix_universe)
       branch => u%design%lat%branch(d_dat(i)%d%ix_branch)
       ie = int_dat(i)%i
+      if (ie < 0) ie = -1
+      tmpstr = ''
 
-      if (ie < 0 .or. ie > branch%n_ele_max) then
+      if (ie > branch%n_ele_max) then
         int_dat(i)%i = int_save(i)
         call out_io (s_error$, r_name, 'ELEMENT INDEX OUT OF RANGE.')
         return
       endif
 
       if (component == 'ix_ele') then
-        tmpstr = branch%ele(ie)%name
+        if (ie > -1) tmpstr = branch%ele(ie)%name
         d_dat(i)%d%ele_name = upcase(tmpstr)   ! Use temp due to bug on Windows
+        d_dat(i)%d%ix_ele = ie
       elseif (component == 'ix_ele_start') then
-        tmpstr = branch%ele(ie)%name
+        if (ie > -1) tmpstr = branch%ele(ie)%name
         d_dat(i)%d%ele_start_name = upcase(tmpstr)   ! Use temp due to bug on Windows
+        d_dat(i)%d%ix_ele_start = ie
       else
-        tmpstr = branch%ele(ie)%name
+        if (ie > -1) tmpstr = branch%ele(ie)%name
         d_dat(i)%d%ele_ref_name = upcase(tmpstr)   ! Use temp due to bug on Windows
+        d_dat(i)%d%ix_ele_ref = ie
       endif
     enddo
 
@@ -2512,43 +2538,63 @@ elseif (size(s_dat) /= 0) then
     do i = 1, size(d_dat)
       u => s%u(d_dat(i)%d%d1%d2%ix_universe)
       call upcase_string (s_dat(i)%s)
-      call lat_ele_locator (s_dat(i)%s, u%design%lat, eles, n_loc)
-
-      if (n_loc == 0) then
-        call out_io (s_error$, r_name, 'ELEMENT NOT LOCATED: ' // s_dat(i)%s)
-        s_dat(i)%s = s_save(i)
-        return
-      endif
-
-      if (n_loc > 1) then
-        call out_io (s_error$, r_name, 'MULTIPLE ELEMENT OF THE SAME NAME EXIST: ' // s_dat(i)%s)
-        s_dat(i)%s = s_save(i)
-        return
+      if (s_dat(i)%s /= '') then
+        call lat_ele_locator (s_dat(i)%s, u%design%lat, eles, n_loc)
+        if (n_loc == 0) then
+          call out_io (s_error$, r_name, 'ELEMENT NOT LOCATED: ' // s_dat(i)%s)
+          s_dat(i)%s = s_save(i)
+          return
+        endif
+        if (n_loc > 1) then
+          call out_io (s_error$, r_name, 'MULTIPLE ELEMENT OF THE SAME NAME EXIST: ' // s_dat(i)%s)
+          s_dat(i)%s = s_save(i)
+          return
+        endif
       endif
 
       if (component == 'ele_name') then
-        d_dat(i)%d%ix_ele    = eles(1)%ele%ix_ele
-        if (d_dat(i)%d%ix_branch /= eles(1)%ele%ix_branch) then
-          d_dat(i)%d%ele_ref_name = ''
-          d_dat(i)%d%ix_ele_ref = -1
-          d_dat(i)%d%ele_start_name = ''
-          d_dat(i)%d%ix_ele_start = -1
+        if (s_dat(i)%s == '') then
+          d_dat(i)%d%ix_ele = -1
+          d_dat(i)%d%ele_name = ''
+        else
+          d_dat(i)%d%ix_ele    = eles(1)%ele%ix_ele
+          d_dat(i)%d%ele_name  = eles(1)%ele%name
+          if (d_dat(i)%d%ix_branch /= eles(1)%ele%ix_branch) then
+            d_dat(i)%d%ele_ref_name = ''
+            d_dat(i)%d%ix_ele_ref = -1
+            d_dat(i)%d%ele_start_name = ''
+            d_dat(i)%d%ix_ele_start = -1
+          endif
+          d_dat(i)%d%ix_branch = eles(1)%ele%ix_branch
         endif
-        d_dat(i)%d%ix_branch = eles(1)%ele%ix_branch
+
       elseif (component == 'ele_start_name') then
-        if (d_dat(i)%d%ix_branch /= eles(1)%ele%ix_branch) then
-          s_dat(i)%s = s_save(i)
-          call out_io (s_error$, r_name, 'START_ELEMENT IS IN DIFFERENT BRANCH FROM ELEMENT.')
-          return
+        if (s_dat(i)%s == '') then
+          d_dat(i)%d%ix_ele_start = -1
+          d_dat(i)%d%ele_start_name = ''
+        else
+          if (d_dat(i)%d%ix_branch /= eles(1)%ele%ix_branch) then
+            s_dat(i)%s = s_save(i)
+            call out_io (s_error$, r_name, 'START_ELEMENT IS IN DIFFERENT BRANCH FROM ELEMENT.')
+            return
+          endif
+          d_dat(i)%d%ix_ele_start   = eles(1)%ele%ix_ele
+          d_dat(i)%d%ele_start_name = eles(1)%ele%name
         endif
-        d_dat(i)%d%ix_ele_start = eles(1)%ele%ix_ele
+
       else
-        if (d_dat(i)%d%ix_branch /= eles(1)%ele%ix_branch) then
-          s_dat(i)%s = s_save(i)
-          call out_io (s_error$, r_name, 'REF_ELEMENT IS IN DIFFERENT BRANCH FROM ELEMENT.')
-          return
+        if (s_dat(i)%s == '') then
+          d_dat(i)%d%ix_ele_ref = -1
+          d_dat(i)%d%ele_ref_name = ''
+        else
+          if (d_dat(i)%d%ix_branch /= eles(1)%ele%ix_branch) then
+            s_dat(i)%s = s_save(i)
+            call out_io (s_error$, r_name, 'REF_ELEMENT IS IN DIFFERENT BRANCH FROM ELEMENT.')
+            return
+          endif
+          d_dat(i)%d%ix_ele_ref   = eles(1)%ele%ix_ele
+          d_dat(i)%d%ele_ref_name = eles(1)%ele%name
         endif
-        d_dat(i)%d%ix_ele_ref = eles(1)%ele%ix_ele
       endif
     enddo
   endif
@@ -2579,10 +2625,12 @@ endif
 !----------------------
 ! If the "exists" component has been set (used by gui interface) check if the datum is truely valid.
 
-if (component == 'exists') then
+select case (component)
+case ('ele_name', 'ele_start_name', 'ele_ref_name', 'data_type', 'data_source', 'ix_uni', &
+      'ix_branch', 'ix_ele', 'ix_ele_start', 'ix_ele_ref', 'eval_point', 'exists')
   do i = 1, size(d_dat)
     d => d_dat(i)%d
-    if (.not. d%exists) cycle
+    if (component == 'exists' .and. .not. d%exists) cycle
 
     d%exists = tao_data_sanity_check(d, .true., '')
     if (.not. d%exists) cycle
@@ -2594,7 +2642,7 @@ if (component == 'exists') then
     endif
     if (d%good_model) call tao_evaluate_a_datum (d, u, u%design, d%design_value, d%good_design, why_invalid)
   enddo
-endif
+end select
 
 ! End stuff
 
@@ -2829,7 +2877,7 @@ do iu = 1, ubound(s%u, 1)
       u%calc%dynamic_aperture = .true.
       u%calc%lattice = .true.
     elseif (what == 'off') then
-      u%calc%lattice = .false.
+      u%calc%dynamic_aperture = .false.
     else
       call out_io (s_error$, r_name, 'Syntax is: "set universe <uni_num> dynamic_aperture_calc on/off"')
       return
@@ -2961,6 +3009,7 @@ if (attribute_type(upcase(attribute), eles(1)%ele) == is_real$) then
     return
   endif
 
+  n_set = 0
   do i = 1, size(eles)
     call pointer_to_attribute(eles(i)%ele, attribute, .true., a_ptr, err)
     if (err) return
@@ -2968,10 +3017,17 @@ if (attribute_type(upcase(attribute), eles(1)%ele) == is_real$) then
       call out_io (s_error$, r_name, 'STRANGE ERROR: PLEASE CONTACT HELP.')
       return
     endif
-    call set_ele_real_attribute (eles(i)%ele, attribute, set_val(i), err)
 
+    call set_ele_real_attribute (eles(i)%ele, attribute, set_val(i), err, .false.)
+    if (.not. err) n_set = n_set + 1
     call tao_set_flags_for_changed_attribute (s%u(eles(i)%id), eles(i)%ele%name, eles(i)%ele, a_ptr%r)
   enddo
+
+  if (n_set == 0) then
+    call out_io (s_error$, r_name, 'NOTHING SET. EG:')
+    i = size(eles)
+    call set_ele_real_attribute (eles(i)%ele, attribute, set_val(i), err, .false.)
+  endif
 
   do i = lbound(s%u, 1), ubound(s%u, 1)
     u => s%u(i)
@@ -3047,11 +3103,15 @@ do i = 1, size(eles)
   if (.not. err) n_set = n_set + 1
 enddo
 
-! If there is a true error then generate an error message
-
 if (n_set == 0) then
-  u => s%u(eles(1)%id)
-  call set_ele_attribute (eles(1)%ele, trim(attribute) // '=' // trim(val_str),  err, .true., lord_set)
+  if (lord_set) then
+    call out_io (s_error$, r_name, &
+          'NOTHING SET. REMEMBER: "-lord_no_set" USAGE WILL PREVENT LORD ELEMENT ATTRIBUTES FROM BEING SET.')
+  else
+    call out_io (s_error$, r_name, 'NOTHING SET. EG:')
+    u => s%u(eles(1)%id)
+    call set_ele_attribute (eles(1)%ele, trim(attribute) // '=' // trim(val_str),  err, .true., lord_set)
+  endif
   return
 endif
 
@@ -3425,7 +3485,7 @@ type (named_number_struct), allocatable :: sym_temp(:)
 integer i, n
 real(rp), optional :: val
 real(rp), allocatable :: value(:)
-logical err
+logical err, ok
 
 character(*) sym_str
 character(*), optional :: num_str
@@ -3446,7 +3506,14 @@ enddo
 if (present(val)) then
   allocate(value(1))
   value(1) = val
+
 else
+  if (index(num_str, 'chrom') /= 0) then
+    s%com%force_chrom_calc = .true.
+    s%u%calc%lattice = .true.
+    call tao_lattice_calc(ok)
+  endif
+
   call tao_evaluate_expression (num_str, 1, .false., value, err); if (err) return
 endif
 

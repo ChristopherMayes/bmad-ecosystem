@@ -913,10 +913,8 @@ endif
 rhs = 6 + offset; F%surface_roughness_rms = rhs
 !! f_side.test_pat[real, 0, NOT]
 rhs = 7 + offset; F%roughness_correlation_len = rhs
-!! f_side.test_pat[logical, 0, NOT]
-rhs = 8 + offset; F%initialized = (modulo(rhs, 2) == 0)
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 9 + offset; F%ix_surface = rhs
+rhs = 8 + offset; F%ix_surface = rhs
 
 end subroutine set_photon_reflect_surface_test_pattern
 
@@ -1048,9 +1046,11 @@ rhs = 16 + offset; F%state = rhs
 !! f_side.test_pat[integer, 0, NOT]
 rhs = 17 + offset; F%direction = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 18 + offset; F%species = rhs
+rhs = 18 + offset; F%time_dir = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 19 + offset; F%location = rhs
+rhs = 19 + offset; F%species = rhs
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 20 + offset; F%location = rhs
 
 end subroutine set_coord_test_pattern
 
@@ -3265,306 +3265,6 @@ end subroutine set_grid_field_test_pattern
 !---------------------------------------------------------------------------------
 !---------------------------------------------------------------------------------
 
-subroutine test1_f_taylor_field_plane1 (ok)
-
-implicit none
-
-type(taylor_field_plane1_struct), target :: f_taylor_field_plane1, f2_taylor_field_plane1
-logical(c_bool) c_ok
-logical ok
-
-interface
-  subroutine test_c_taylor_field_plane1 (c_taylor_field_plane1, c_ok) bind(c)
-    import c_ptr, c_bool
-    type(c_ptr), value :: c_taylor_field_plane1
-    logical(c_bool) c_ok
-  end subroutine
-end interface
-
-!
-
-ok = .true.
-call set_taylor_field_plane1_test_pattern (f2_taylor_field_plane1, 1)
-
-call test_c_taylor_field_plane1(c_loc(f2_taylor_field_plane1), c_ok)
-if (.not. f_logic(c_ok)) ok = .false.
-
-call set_taylor_field_plane1_test_pattern (f_taylor_field_plane1, 4)
-if (f_taylor_field_plane1 == f2_taylor_field_plane1) then
-  print *, 'taylor_field_plane1: C side convert C->F: Good'
-else
-  print *, 'taylor_field_plane1: C SIDE CONVERT C->F: FAILED!'
-  ok = .false.
-endif
-
-end subroutine test1_f_taylor_field_plane1
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
-subroutine test2_f_taylor_field_plane1 (c_taylor_field_plane1, c_ok) bind(c)
-
-implicit  none
-
-type(c_ptr), value ::  c_taylor_field_plane1
-type(taylor_field_plane1_struct), target :: f_taylor_field_plane1, f2_taylor_field_plane1
-logical(c_bool) c_ok
-
-!
-
-c_ok = c_logic(.true.)
-call taylor_field_plane1_to_f (c_taylor_field_plane1, c_loc(f_taylor_field_plane1))
-
-call set_taylor_field_plane1_test_pattern (f2_taylor_field_plane1, 2)
-if (f_taylor_field_plane1 == f2_taylor_field_plane1) then
-  print *, 'taylor_field_plane1: F side convert C->F: Good'
-else
-  print *, 'taylor_field_plane1: F SIDE CONVERT C->F: FAILED!'
-  c_ok = c_logic(.false.)
-endif
-
-call set_taylor_field_plane1_test_pattern (f2_taylor_field_plane1, 3)
-call taylor_field_plane1_to_c (c_loc(f2_taylor_field_plane1), c_taylor_field_plane1)
-
-end subroutine test2_f_taylor_field_plane1
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
-subroutine set_taylor_field_plane1_test_pattern (F, ix_patt)
-
-implicit none
-
-type(taylor_field_plane1_struct) F
-integer ix_patt, offset, jd, jd1, jd2, jd3, lb1, lb2, lb3, rhs
-
-!
-
-offset = 100 * ix_patt
-
-!! f_side.test_pat[type, 1, NOT]
-do jd1 = 1, size(F%field,1); lb1 = lbound(F%field,1) - 1
-  rhs = 100 + jd1 + 1 + offset
-  call set_em_taylor_test_pattern (F%field(jd1+lb1), ix_patt+jd1)
-enddo
-
-end subroutine set_taylor_field_plane1_test_pattern
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
-subroutine test1_f_taylor_field_plane (ok)
-
-implicit none
-
-type(taylor_field_plane_struct), target :: f_taylor_field_plane, f2_taylor_field_plane
-logical(c_bool) c_ok
-logical ok
-
-interface
-  subroutine test_c_taylor_field_plane (c_taylor_field_plane, c_ok) bind(c)
-    import c_ptr, c_bool
-    type(c_ptr), value :: c_taylor_field_plane
-    logical(c_bool) c_ok
-  end subroutine
-end interface
-
-!
-
-ok = .true.
-call set_taylor_field_plane_test_pattern (f2_taylor_field_plane, 1)
-
-call test_c_taylor_field_plane(c_loc(f2_taylor_field_plane), c_ok)
-if (.not. f_logic(c_ok)) ok = .false.
-
-call set_taylor_field_plane_test_pattern (f_taylor_field_plane, 4)
-if (f_taylor_field_plane == f2_taylor_field_plane) then
-  print *, 'taylor_field_plane: C side convert C->F: Good'
-else
-  print *, 'taylor_field_plane: C SIDE CONVERT C->F: FAILED!'
-  ok = .false.
-endif
-
-end subroutine test1_f_taylor_field_plane
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
-subroutine test2_f_taylor_field_plane (c_taylor_field_plane, c_ok) bind(c)
-
-implicit  none
-
-type(c_ptr), value ::  c_taylor_field_plane
-type(taylor_field_plane_struct), target :: f_taylor_field_plane, f2_taylor_field_plane
-logical(c_bool) c_ok
-
-!
-
-c_ok = c_logic(.true.)
-call taylor_field_plane_to_f (c_taylor_field_plane, c_loc(f_taylor_field_plane))
-
-call set_taylor_field_plane_test_pattern (f2_taylor_field_plane, 2)
-if (f_taylor_field_plane == f2_taylor_field_plane) then
-  print *, 'taylor_field_plane: F side convert C->F: Good'
-else
-  print *, 'taylor_field_plane: F SIDE CONVERT C->F: FAILED!'
-  c_ok = c_logic(.false.)
-endif
-
-call set_taylor_field_plane_test_pattern (f2_taylor_field_plane, 3)
-call taylor_field_plane_to_c (c_loc(f2_taylor_field_plane), c_taylor_field_plane)
-
-end subroutine test2_f_taylor_field_plane
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
-subroutine set_taylor_field_plane_test_pattern (F, ix_patt)
-
-implicit none
-
-type(taylor_field_plane_struct) F
-integer ix_patt, offset, jd, jd1, jd2, jd3, lb1, lb2, lb3, rhs
-
-!
-
-offset = 100 * ix_patt
-
-!! f_side.test_pat[character, 0, NOT]
-do jd1 = 1, len(F%file)
-  F%file(jd1:jd1) = char(ichar("a") + modulo(100+1+offset+jd1, 26))
-enddo
-!! f_side.test_pat[integer, 0, NOT]
-rhs = 2 + offset; F%n_link = rhs
-!! f_side.test_pat[type, 1, ALLOC]
-
-if (ix_patt < 3) then
-  if (allocated(F%plane)) deallocate (F%plane)
-else
-  if (.not. allocated(F%plane)) allocate (F%plane(-1:1))
-  do jd1 = 1, size(F%plane,1); lb1 = lbound(F%plane,1) - 1
-    call set_taylor_field_plane1_test_pattern (F%plane(jd1+lb1), ix_patt+jd1)
-  enddo
-endif
-
-end subroutine set_taylor_field_plane_test_pattern
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
-subroutine test1_f_taylor_field (ok)
-
-implicit none
-
-type(taylor_field_struct), target :: f_taylor_field, f2_taylor_field
-logical(c_bool) c_ok
-logical ok
-
-interface
-  subroutine test_c_taylor_field (c_taylor_field, c_ok) bind(c)
-    import c_ptr, c_bool
-    type(c_ptr), value :: c_taylor_field
-    logical(c_bool) c_ok
-  end subroutine
-end interface
-
-!
-
-ok = .true.
-call set_taylor_field_test_pattern (f2_taylor_field, 1)
-
-call test_c_taylor_field(c_loc(f2_taylor_field), c_ok)
-if (.not. f_logic(c_ok)) ok = .false.
-
-call set_taylor_field_test_pattern (f_taylor_field, 4)
-if (f_taylor_field == f2_taylor_field) then
-  print *, 'taylor_field: C side convert C->F: Good'
-else
-  print *, 'taylor_field: C SIDE CONVERT C->F: FAILED!'
-  ok = .false.
-endif
-
-end subroutine test1_f_taylor_field
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
-subroutine test2_f_taylor_field (c_taylor_field, c_ok) bind(c)
-
-implicit  none
-
-type(c_ptr), value ::  c_taylor_field
-type(taylor_field_struct), target :: f_taylor_field, f2_taylor_field
-logical(c_bool) c_ok
-
-!
-
-c_ok = c_logic(.true.)
-call taylor_field_to_f (c_taylor_field, c_loc(f_taylor_field))
-
-call set_taylor_field_test_pattern (f2_taylor_field, 2)
-if (f_taylor_field == f2_taylor_field) then
-  print *, 'taylor_field: F side convert C->F: Good'
-else
-  print *, 'taylor_field: F SIDE CONVERT C->F: FAILED!'
-  c_ok = c_logic(.false.)
-endif
-
-call set_taylor_field_test_pattern (f2_taylor_field, 3)
-call taylor_field_to_c (c_loc(f2_taylor_field), c_taylor_field)
-
-end subroutine test2_f_taylor_field
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
-subroutine set_taylor_field_test_pattern (F, ix_patt)
-
-implicit none
-
-type(taylor_field_struct) F
-integer ix_patt, offset, jd, jd1, jd2, jd3, lb1, lb2, lb3, rhs
-
-!
-
-offset = 100 * ix_patt
-
-!! f_side.test_pat[integer, 0, NOT]
-rhs = 1 + offset; F%ele_anchor_pt = rhs
-!! f_side.test_pat[integer, 0, NOT]
-rhs = 2 + offset; F%field_type = rhs
-!! f_side.test_pat[real, 0, NOT]
-rhs = 3 + offset; F%dz = rhs
-!! f_side.test_pat[real, 1, NOT]
-do jd1 = 1, size(F%r0,1); lb1 = lbound(F%r0,1) - 1
-  rhs = 100 + jd1 + 4 + offset
-  F%r0(jd1+lb1) = rhs
-enddo
-!! f_side.test_pat[real, 0, NOT]
-rhs = 5 + offset; F%field_scale = rhs
-!! f_side.test_pat[integer, 0, NOT]
-rhs = 6 + offset; F%master_parameter = rhs
-!! f_side.test_pat[logical, 0, NOT]
-rhs = 7 + offset; F%curved_ref_frame = (modulo(rhs, 2) == 0)
-!! f_side.test_pat[logical, 0, NOT]
-rhs = 8 + offset; F%canonical_tracking = (modulo(rhs, 2) == 0)
-!! f_side.test_pat[type, 0, PTR]
-if (ix_patt < 3) then
-  if (associated(F%ptr)) deallocate (F%ptr)
-else
-  if (.not. associated(F%ptr)) allocate (F%ptr)
-  rhs = 9 + offset
-  call set_taylor_field_plane_test_pattern (F%ptr, ix_patt)
-endif
-
-end subroutine set_taylor_field_test_pattern
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
 subroutine test1_f_floor_position (ok)
 
 implicit none
@@ -4242,21 +3942,27 @@ do jd1 = 1, size(F%ref_orb,1); lb1 = lbound(F%ref_orb,1) - 1
   rhs = 100 + jd1 + 1 + offset
   F%ref_orb(jd1+lb1) = rhs
 enddo
+!! f_side.test_pat[real, 2, NOT]
+do jd1 = 1, size(F%damp_dmat,1); lb1 = lbound(F%damp_dmat,1) - 1
+do jd2 = 1, size(F%damp_dmat,2); lb2 = lbound(F%damp_dmat,2) - 1
+  rhs = 100 + jd1 + 10*jd2 + 2 + offset
+  F%damp_dmat(jd1+lb1,jd2+lb2) = rhs
+enddo; enddo
 !! f_side.test_pat[real, 1, NOT]
-do jd1 = 1, size(F%damp_vec,1); lb1 = lbound(F%damp_vec,1) - 1
-  rhs = 100 + jd1 + 2 + offset
-  F%damp_vec(jd1+lb1) = rhs
+do jd1 = 1, size(F%xfer_damp_vec,1); lb1 = lbound(F%xfer_damp_vec,1) - 1
+  rhs = 100 + jd1 + 3 + offset
+  F%xfer_damp_vec(jd1+lb1) = rhs
 enddo
 !! f_side.test_pat[real, 2, NOT]
-do jd1 = 1, size(F%damp_mat,1); lb1 = lbound(F%damp_mat,1) - 1
-do jd2 = 1, size(F%damp_mat,2); lb2 = lbound(F%damp_mat,2) - 1
-  rhs = 100 + jd1 + 10*jd2 + 3 + offset
-  F%damp_mat(jd1+lb1,jd2+lb2) = rhs
+do jd1 = 1, size(F%xfer_damp_mat,1); lb1 = lbound(F%xfer_damp_mat,1) - 1
+do jd2 = 1, size(F%xfer_damp_mat,2); lb2 = lbound(F%xfer_damp_mat,2) - 1
+  rhs = 100 + jd1 + 10*jd2 + 4 + offset
+  F%xfer_damp_mat(jd1+lb1,jd2+lb2) = rhs
 enddo; enddo
 !! f_side.test_pat[real, 2, NOT]
 do jd1 = 1, size(F%stoc_mat,1); lb1 = lbound(F%stoc_mat,1) - 1
 do jd2 = 1, size(F%stoc_mat,2); lb2 = lbound(F%stoc_mat,2) - 1
-  rhs = 100 + jd1 + 10*jd2 + 4 + offset
+  rhs = 100 + jd1 + 10*jd2 + 5 + offset
   F%stoc_mat(jd1+lb1,jd2+lb2) = rhs
 enddo; enddo
 
@@ -4266,18 +3972,18 @@ end subroutine set_rad_map_test_pattern
 !---------------------------------------------------------------------------------
 !---------------------------------------------------------------------------------
 
-subroutine test1_f_rad_int_ele_cache (ok)
+subroutine test1_f_rad_map_ele (ok)
 
 implicit none
 
-type(rad_int_ele_cache_struct), target :: f_rad_int_ele_cache, f2_rad_int_ele_cache
+type(rad_map_ele_struct), target :: f_rad_map_ele, f2_rad_map_ele
 logical(c_bool) c_ok
 logical ok
 
 interface
-  subroutine test_c_rad_int_ele_cache (c_rad_int_ele_cache, c_ok) bind(c)
+  subroutine test_c_rad_map_ele (c_rad_map_ele, c_ok) bind(c)
     import c_ptr, c_bool
-    type(c_ptr), value :: c_rad_int_ele_cache
+    type(c_ptr), value :: c_rad_map_ele
     logical(c_bool) c_ok
   end subroutine
 end interface
@@ -4285,58 +3991,58 @@ end interface
 !
 
 ok = .true.
-call set_rad_int_ele_cache_test_pattern (f2_rad_int_ele_cache, 1)
+call set_rad_map_ele_test_pattern (f2_rad_map_ele, 1)
 
-call test_c_rad_int_ele_cache(c_loc(f2_rad_int_ele_cache), c_ok)
+call test_c_rad_map_ele(c_loc(f2_rad_map_ele), c_ok)
 if (.not. f_logic(c_ok)) ok = .false.
 
-call set_rad_int_ele_cache_test_pattern (f_rad_int_ele_cache, 4)
-if (f_rad_int_ele_cache == f2_rad_int_ele_cache) then
-  print *, 'rad_int_ele_cache: C side convert C->F: Good'
+call set_rad_map_ele_test_pattern (f_rad_map_ele, 4)
+if (f_rad_map_ele == f2_rad_map_ele) then
+  print *, 'rad_map_ele: C side convert C->F: Good'
 else
-  print *, 'rad_int_ele_cache: C SIDE CONVERT C->F: FAILED!'
+  print *, 'rad_map_ele: C SIDE CONVERT C->F: FAILED!'
   ok = .false.
 endif
 
-end subroutine test1_f_rad_int_ele_cache
+end subroutine test1_f_rad_map_ele
 
 !---------------------------------------------------------------------------------
 !---------------------------------------------------------------------------------
 
-subroutine test2_f_rad_int_ele_cache (c_rad_int_ele_cache, c_ok) bind(c)
+subroutine test2_f_rad_map_ele (c_rad_map_ele, c_ok) bind(c)
 
 implicit  none
 
-type(c_ptr), value ::  c_rad_int_ele_cache
-type(rad_int_ele_cache_struct), target :: f_rad_int_ele_cache, f2_rad_int_ele_cache
+type(c_ptr), value ::  c_rad_map_ele
+type(rad_map_ele_struct), target :: f_rad_map_ele, f2_rad_map_ele
 logical(c_bool) c_ok
 
 !
 
 c_ok = c_logic(.true.)
-call rad_int_ele_cache_to_f (c_rad_int_ele_cache, c_loc(f_rad_int_ele_cache))
+call rad_map_ele_to_f (c_rad_map_ele, c_loc(f_rad_map_ele))
 
-call set_rad_int_ele_cache_test_pattern (f2_rad_int_ele_cache, 2)
-if (f_rad_int_ele_cache == f2_rad_int_ele_cache) then
-  print *, 'rad_int_ele_cache: F side convert C->F: Good'
+call set_rad_map_ele_test_pattern (f2_rad_map_ele, 2)
+if (f_rad_map_ele == f2_rad_map_ele) then
+  print *, 'rad_map_ele: F side convert C->F: Good'
 else
-  print *, 'rad_int_ele_cache: F SIDE CONVERT C->F: FAILED!'
+  print *, 'rad_map_ele: F SIDE CONVERT C->F: FAILED!'
   c_ok = c_logic(.false.)
 endif
 
-call set_rad_int_ele_cache_test_pattern (f2_rad_int_ele_cache, 3)
-call rad_int_ele_cache_to_c (c_loc(f2_rad_int_ele_cache), c_rad_int_ele_cache)
+call set_rad_map_ele_test_pattern (f2_rad_map_ele, 3)
+call rad_map_ele_to_c (c_loc(f2_rad_map_ele), c_rad_map_ele)
 
-end subroutine test2_f_rad_int_ele_cache
+end subroutine test2_f_rad_map_ele
 
 !---------------------------------------------------------------------------------
 !---------------------------------------------------------------------------------
 
-subroutine set_rad_int_ele_cache_test_pattern (F, ix_patt)
+subroutine set_rad_map_ele_test_pattern (F, ix_patt)
 
 implicit none
 
-type(rad_int_ele_cache_struct) F
+type(rad_map_ele_struct) F
 integer ix_patt, offset, jd, jd1, jd2, jd3, lb1, lb2, lb3, rhs
 
 !
@@ -4350,7 +4056,228 @@ call set_rad_map_test_pattern (F%rm1, ix_patt)
 !! f_side.test_pat[logical, 0, NOT]
 rhs = 3 + offset; F%stale = (modulo(rhs, 2) == 0)
 
-end subroutine set_rad_int_ele_cache_test_pattern
+end subroutine set_rad_map_ele_test_pattern
+
+!---------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------
+
+subroutine test1_f_gen_grad1 (ok)
+
+implicit none
+
+type(gen_grad1_struct), target :: f_gen_grad1, f2_gen_grad1
+logical(c_bool) c_ok
+logical ok
+
+interface
+  subroutine test_c_gen_grad1 (c_gen_grad1, c_ok) bind(c)
+    import c_ptr, c_bool
+    type(c_ptr), value :: c_gen_grad1
+    logical(c_bool) c_ok
+  end subroutine
+end interface
+
+!
+
+ok = .true.
+call set_gen_grad1_test_pattern (f2_gen_grad1, 1)
+
+call test_c_gen_grad1(c_loc(f2_gen_grad1), c_ok)
+if (.not. f_logic(c_ok)) ok = .false.
+
+call set_gen_grad1_test_pattern (f_gen_grad1, 4)
+if (f_gen_grad1 == f2_gen_grad1) then
+  print *, 'gen_grad1: C side convert C->F: Good'
+else
+  print *, 'gen_grad1: C SIDE CONVERT C->F: FAILED!'
+  ok = .false.
+endif
+
+end subroutine test1_f_gen_grad1
+
+!---------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------
+
+subroutine test2_f_gen_grad1 (c_gen_grad1, c_ok) bind(c)
+
+implicit  none
+
+type(c_ptr), value ::  c_gen_grad1
+type(gen_grad1_struct), target :: f_gen_grad1, f2_gen_grad1
+logical(c_bool) c_ok
+
+!
+
+c_ok = c_logic(.true.)
+call gen_grad1_to_f (c_gen_grad1, c_loc(f_gen_grad1))
+
+call set_gen_grad1_test_pattern (f2_gen_grad1, 2)
+if (f_gen_grad1 == f2_gen_grad1) then
+  print *, 'gen_grad1: F side convert C->F: Good'
+else
+  print *, 'gen_grad1: F SIDE CONVERT C->F: FAILED!'
+  c_ok = c_logic(.false.)
+endif
+
+call set_gen_grad1_test_pattern (f2_gen_grad1, 3)
+call gen_grad1_to_c (c_loc(f2_gen_grad1), c_gen_grad1)
+
+end subroutine test2_f_gen_grad1
+
+!---------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------
+
+subroutine set_gen_grad1_test_pattern (F, ix_patt)
+
+implicit none
+
+type(gen_grad1_struct) F
+integer ix_patt, offset, jd, jd1, jd2, jd3, lb1, lb2, lb3, rhs
+
+!
+
+offset = 100 * ix_patt
+
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 1 + offset; F%m = rhs
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 2 + offset; F%sincos = rhs
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 3 + offset; F%n_deriv_max = rhs
+!! f_side.test_pat[real, 2, ALLOC]
+
+if (ix_patt < 3) then
+  if (allocated(F%deriv)) deallocate (F%deriv)
+else
+  if (.not. allocated(F%deriv)) allocate (F%deriv(-1:1, 2))
+  do jd1 = 1, size(F%deriv,1); lb1 = lbound(F%deriv,1) - 1
+  do jd2 = 1, size(F%deriv,2); lb2 = lbound(F%deriv,2) - 1
+    rhs = 100 + jd1 + 10*jd2 + 4 + offset
+    F%deriv(jd1+lb1,jd2+lb2) = rhs
+  enddo; enddo
+endif
+
+end subroutine set_gen_grad1_test_pattern
+
+!---------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------
+
+subroutine test1_f_gen_grad_map (ok)
+
+implicit none
+
+type(gen_grad_map_struct), target :: f_gen_grad_map, f2_gen_grad_map
+logical(c_bool) c_ok
+logical ok
+
+interface
+  subroutine test_c_gen_grad_map (c_gen_grad_map, c_ok) bind(c)
+    import c_ptr, c_bool
+    type(c_ptr), value :: c_gen_grad_map
+    logical(c_bool) c_ok
+  end subroutine
+end interface
+
+!
+
+ok = .true.
+call set_gen_grad_map_test_pattern (f2_gen_grad_map, 1)
+
+call test_c_gen_grad_map(c_loc(f2_gen_grad_map), c_ok)
+if (.not. f_logic(c_ok)) ok = .false.
+
+call set_gen_grad_map_test_pattern (f_gen_grad_map, 4)
+if (f_gen_grad_map == f2_gen_grad_map) then
+  print *, 'gen_grad_map: C side convert C->F: Good'
+else
+  print *, 'gen_grad_map: C SIDE CONVERT C->F: FAILED!'
+  ok = .false.
+endif
+
+end subroutine test1_f_gen_grad_map
+
+!---------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------
+
+subroutine test2_f_gen_grad_map (c_gen_grad_map, c_ok) bind(c)
+
+implicit  none
+
+type(c_ptr), value ::  c_gen_grad_map
+type(gen_grad_map_struct), target :: f_gen_grad_map, f2_gen_grad_map
+logical(c_bool) c_ok
+
+!
+
+c_ok = c_logic(.true.)
+call gen_grad_map_to_f (c_gen_grad_map, c_loc(f_gen_grad_map))
+
+call set_gen_grad_map_test_pattern (f2_gen_grad_map, 2)
+if (f_gen_grad_map == f2_gen_grad_map) then
+  print *, 'gen_grad_map: F side convert C->F: Good'
+else
+  print *, 'gen_grad_map: F SIDE CONVERT C->F: FAILED!'
+  c_ok = c_logic(.false.)
+endif
+
+call set_gen_grad_map_test_pattern (f2_gen_grad_map, 3)
+call gen_grad_map_to_c (c_loc(f2_gen_grad_map), c_gen_grad_map)
+
+end subroutine test2_f_gen_grad_map
+
+!---------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------
+
+subroutine set_gen_grad_map_test_pattern (F, ix_patt)
+
+implicit none
+
+type(gen_grad_map_struct) F
+integer ix_patt, offset, jd, jd1, jd2, jd3, lb1, lb2, lb3, rhs
+
+!
+
+offset = 100 * ix_patt
+
+!! f_side.test_pat[character, 0, NOT]
+do jd1 = 1, len(F%file)
+  F%file(jd1:jd1) = char(ichar("a") + modulo(100+1+offset+jd1, 26))
+enddo
+!! f_side.test_pat[type, 1, ALLOC]
+
+if (ix_patt < 3) then
+  if (allocated(F%gg)) deallocate (F%gg)
+else
+  if (.not. allocated(F%gg)) allocate (F%gg(-1:1))
+  do jd1 = 1, size(F%gg,1); lb1 = lbound(F%gg,1) - 1
+    call set_gen_grad1_test_pattern (F%gg(jd1+lb1), ix_patt+jd1)
+  enddo
+endif
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 4 + offset; F%ele_anchor_pt = rhs
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 5 + offset; F%field_type = rhs
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 6 + offset; F%iz0 = rhs
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 7 + offset; F%iz1 = rhs
+!! f_side.test_pat[real, 0, NOT]
+rhs = 8 + offset; F%dz = rhs
+!! f_side.test_pat[real, 1, NOT]
+do jd1 = 1, size(F%r0,1); lb1 = lbound(F%r0,1) - 1
+  rhs = 100 + jd1 + 9 + offset
+  F%r0(jd1+lb1) = rhs
+enddo
+!! f_side.test_pat[real, 0, NOT]
+rhs = 10 + offset; F%field_scale = rhs
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 11 + offset; F%master_parameter = rhs
+!! f_side.test_pat[logical, 0, NOT]
+rhs = 12 + offset; F%curved_ref_frame = (modulo(rhs, 2) == 0)
+
+end subroutine set_gen_grad_map_test_pattern
 
 !---------------------------------------------------------------------------------
 !---------------------------------------------------------------------------------
@@ -5270,6 +5197,16 @@ call set_photon_material_test_pattern (F%material, ix_patt)
 call set_surface_grid_test_pattern (F%grid, ix_patt)
 !! f_side.test_pat[type, 0, NOT]
 call set_pixel_detec_test_pattern (F%pixel, ix_patt)
+!! f_side.test_pat[type, 1, ALLOC]
+
+if (ix_patt < 3) then
+  if (allocated(F%reflectivity_table)) deallocate (F%reflectivity_table)
+else
+  if (.not. allocated(F%reflectivity_table)) allocate (F%reflectivity_table(-1:1))
+  do jd1 = 1, size(F%reflectivity_table,1); lb1 = lbound(F%reflectivity_table,1) - 1
+    call set_photon_reflect_table_test_pattern (F%reflectivity_table(jd1+lb1), ix_patt+jd1)
+  enddo
+endif
 
 end subroutine set_photon_element_test_pattern
 
@@ -5944,8 +5881,6 @@ integer ix_patt, offset, jd, jd1, jd2, jd3, lb1, lb2, lb3, rhs
 
 offset = 100 * ix_patt
 
-!! f_side.test_pat[integer, 0, NOT]
-rhs = 1 + offset; F%type = rhs
 !! f_side.test_pat[type, 1, ALLOC]
 
 if (ix_patt < 3) then
@@ -5973,7 +5908,7 @@ if (ix_patt < 3) then
 else
   if (.not. allocated(F%x_knot)) allocate (F%x_knot(-1:1))
   do jd1 = 1, size(F%x_knot,1); lb1 = lbound(F%x_knot,1) - 1
-    rhs = 100 + jd1 + 6 + offset
+    rhs = 100 + jd1 + 5 + offset
     F%x_knot(jd1+lb1) = rhs
   enddo
 endif
@@ -7499,100 +7434,6 @@ end subroutine set_track_test_pattern
 !---------------------------------------------------------------------------------
 !---------------------------------------------------------------------------------
 
-subroutine test1_f_synch_rad_common (ok)
-
-implicit none
-
-type(synch_rad_common_struct), target :: f_synch_rad_common, f2_synch_rad_common
-logical(c_bool) c_ok
-logical ok
-
-interface
-  subroutine test_c_synch_rad_common (c_synch_rad_common, c_ok) bind(c)
-    import c_ptr, c_bool
-    type(c_ptr), value :: c_synch_rad_common
-    logical(c_bool) c_ok
-  end subroutine
-end interface
-
-!
-
-ok = .true.
-call set_synch_rad_common_test_pattern (f2_synch_rad_common, 1)
-
-call test_c_synch_rad_common(c_loc(f2_synch_rad_common), c_ok)
-if (.not. f_logic(c_ok)) ok = .false.
-
-call set_synch_rad_common_test_pattern (f_synch_rad_common, 4)
-if (f_synch_rad_common == f2_synch_rad_common) then
-  print *, 'synch_rad_common: C side convert C->F: Good'
-else
-  print *, 'synch_rad_common: C SIDE CONVERT C->F: FAILED!'
-  ok = .false.
-endif
-
-end subroutine test1_f_synch_rad_common
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
-subroutine test2_f_synch_rad_common (c_synch_rad_common, c_ok) bind(c)
-
-implicit  none
-
-type(c_ptr), value ::  c_synch_rad_common
-type(synch_rad_common_struct), target :: f_synch_rad_common, f2_synch_rad_common
-logical(c_bool) c_ok
-
-!
-
-c_ok = c_logic(.true.)
-call synch_rad_common_to_f (c_synch_rad_common, c_loc(f_synch_rad_common))
-
-call set_synch_rad_common_test_pattern (f2_synch_rad_common, 2)
-if (f_synch_rad_common == f2_synch_rad_common) then
-  print *, 'synch_rad_common: F side convert C->F: Good'
-else
-  print *, 'synch_rad_common: F SIDE CONVERT C->F: FAILED!'
-  c_ok = c_logic(.false.)
-endif
-
-call set_synch_rad_common_test_pattern (f2_synch_rad_common, 3)
-call synch_rad_common_to_c (c_loc(f2_synch_rad_common), c_synch_rad_common)
-
-end subroutine test2_f_synch_rad_common
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
-subroutine set_synch_rad_common_test_pattern (F, ix_patt)
-
-implicit none
-
-type(synch_rad_common_struct) F
-integer ix_patt, offset, jd, jd1, jd2, jd3, lb1, lb2, lb3, rhs
-
-!
-
-offset = 100 * ix_patt
-
-!! f_side.test_pat[real, 0, NOT]
-rhs = 1 + offset; F%scale = rhs
-!! f_side.test_pat[real, 0, NOT]
-rhs = 2 + offset; F%i2 = rhs
-!! f_side.test_pat[real, 0, NOT]
-rhs = 3 + offset; F%i3 = rhs
-!! f_side.test_pat[real, 0, NOT]
-rhs = 4 + offset; F%i5a = rhs
-!! f_side.test_pat[real, 0, NOT]
-rhs = 5 + offset; F%i5b = rhs
-
-end subroutine set_synch_rad_common_test_pattern
-
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------
-
 subroutine test1_f_space_charge_common (ok)
 
 implicit none
@@ -7683,30 +7524,34 @@ rhs = 5 + offset; F%abs_tol_tracking = rhs
 !! f_side.test_pat[real, 0, NOT]
 rhs = 6 + offset; F%beam_chamber_height = rhs
 !! f_side.test_pat[real, 0, NOT]
-rhs = 7 + offset; F%sigma_cutoff = rhs
+rhs = 7 + offset; F%lsc_sigma_cutoff = rhs
+!! f_side.test_pat[real, 0, NOT]
+rhs = 8 + offset; F%particle_sigma_cutoff = rhs
 !! f_side.test_pat[integer, 1, NOT]
 do jd1 = 1, size(F%space_charge_mesh_size,1); lb1 = lbound(F%space_charge_mesh_size,1) - 1
-  rhs = 100 + jd1 + 8 + offset
+  rhs = 100 + jd1 + 9 + offset
   F%space_charge_mesh_size(jd1+lb1) = rhs
 enddo
 !! f_side.test_pat[integer, 1, NOT]
 do jd1 = 1, size(F%csr3d_mesh_size,1); lb1 = lbound(F%csr3d_mesh_size,1) - 1
-  rhs = 100 + jd1 + 9 + offset
+  rhs = 100 + jd1 + 10 + offset
   F%csr3d_mesh_size(jd1+lb1) = rhs
 enddo
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 10 + offset; F%n_bin = rhs
+rhs = 11 + offset; F%n_bin = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 11 + offset; F%particle_bin_span = rhs
+rhs = 12 + offset; F%particle_bin_span = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 12 + offset; F%n_shield_images = rhs
+rhs = 13 + offset; F%n_shield_images = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 13 + offset; F%sc_min_in_bin = rhs
+rhs = 14 + offset; F%sc_min_in_bin = rhs
 !! f_side.test_pat[logical, 0, NOT]
-rhs = 14 + offset; F%lsc_kick_transverse_dependence = (modulo(rhs, 2) == 0)
+rhs = 15 + offset; F%lsc_kick_transverse_dependence = (modulo(rhs, 2) == 0)
+!! f_side.test_pat[logical, 0, NOT]
+rhs = 16 + offset; F%debug = (modulo(rhs, 2) == 0)
 !! f_side.test_pat[character, 0, NOT]
 do jd1 = 1, len(F%diagnostic_output_file)
-  F%diagnostic_output_file(jd1:jd1) = char(ichar("a") + modulo(100+15+offset+jd1, 26))
+  F%diagnostic_output_file(jd1:jd1) = char(ichar("a") + modulo(100+17+offset+jd1, 26))
 enddo
 
 end subroutine set_space_charge_common_test_pattern
@@ -7826,35 +7671,35 @@ rhs = 14 + offset; F%autoscale_phase_tol = rhs
 !! f_side.test_pat[real, 0, NOT]
 rhs = 15 + offset; F%electric_dipole_moment = rhs
 !! f_side.test_pat[real, 0, NOT]
-rhs = 16 + offset; F%sad_eps_scale = rhs
+rhs = 16 + offset; F%synch_rad_scale = rhs
 !! f_side.test_pat[real, 0, NOT]
-rhs = 17 + offset; F%sad_amp_max = rhs
+rhs = 17 + offset; F%sad_eps_scale = rhs
+!! f_side.test_pat[real, 0, NOT]
+rhs = 18 + offset; F%sad_amp_max = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 18 + offset; F%sad_n_div_max = rhs
+rhs = 19 + offset; F%sad_n_div_max = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 19 + offset; F%taylor_order = rhs
+rhs = 20 + offset; F%taylor_order = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 20 + offset; F%runge_kutta_order = rhs
+rhs = 21 + offset; F%runge_kutta_order = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 21 + offset; F%default_integ_order = rhs
+rhs = 22 + offset; F%default_integ_order = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 22 + offset; F%max_num_runge_kutta_step = rhs
+rhs = 23 + offset; F%max_num_runge_kutta_step = rhs
 !! f_side.test_pat[logical, 0, NOT]
-rhs = 23 + offset; F%rf_phase_below_transition_ref = (modulo(rhs, 2) == 0)
+rhs = 24 + offset; F%rf_phase_below_transition_ref = (modulo(rhs, 2) == 0)
 !! f_side.test_pat[logical, 0, NOT]
-rhs = 24 + offset; F%sr_wakes_on = (modulo(rhs, 2) == 0)
+rhs = 25 + offset; F%sr_wakes_on = (modulo(rhs, 2) == 0)
 !! f_side.test_pat[logical, 0, NOT]
-rhs = 25 + offset; F%lr_wakes_on = (modulo(rhs, 2) == 0)
+rhs = 26 + offset; F%lr_wakes_on = (modulo(rhs, 2) == 0)
 !! f_side.test_pat[logical, 0, NOT]
-rhs = 26 + offset; F%auto_bookkeeper = (modulo(rhs, 2) == 0)
+rhs = 27 + offset; F%auto_bookkeeper = (modulo(rhs, 2) == 0)
 !! f_side.test_pat[logical, 0, NOT]
-rhs = 27 + offset; F%high_energy_space_charge_on = (modulo(rhs, 2) == 0)
+rhs = 28 + offset; F%high_energy_space_charge_on = (modulo(rhs, 2) == 0)
 !! f_side.test_pat[logical, 0, NOT]
-rhs = 28 + offset; F%csr_and_space_charge_on = (modulo(rhs, 2) == 0)
+rhs = 29 + offset; F%csr_and_space_charge_on = (modulo(rhs, 2) == 0)
 !! f_side.test_pat[logical, 0, NOT]
-rhs = 29 + offset; F%spin_tracking_on = (modulo(rhs, 2) == 0)
-!! f_side.test_pat[logical, 0, NOT]
-rhs = 30 + offset; F%backwards_time_tracking_on = (modulo(rhs, 2) == 0)
+rhs = 30 + offset; F%spin_tracking_on = (modulo(rhs, 2) == 0)
 !! f_side.test_pat[logical, 0, NOT]
 rhs = 31 + offset; F%spin_sokolov_ternov_flipping_on = (modulo(rhs, 2) == 0)
 !! f_side.test_pat[logical, 0, NOT]
@@ -8348,11 +8193,11 @@ else
 endif
 !! f_side.test_pat[type, 0, PTR]
 if (ix_patt < 3) then
-  if (associated(F%rad_int_cache)) deallocate (F%rad_int_cache)
+  if (associated(F%rad_map)) deallocate (F%rad_map)
 else
-  if (.not. associated(F%rad_int_cache)) allocate (F%rad_int_cache)
+  if (.not. associated(F%rad_map)) allocate (F%rad_map)
   rhs = 24 + offset
-  call set_rad_int_ele_cache_test_pattern (F%rad_int_cache, ix_patt)
+  call set_rad_map_ele_test_pattern (F%rad_map, ix_patt)
 endif
 !! f_side.test_pat[type, 1, NOT]
 do jd1 = 1, size(F%taylor,1); lb1 = lbound(F%taylor,1) - 1
@@ -8410,21 +8255,21 @@ endif
 !! f_side.test_pat[type, 1, PTR]
 
 if (ix_patt < 3) then
-  if (associated(F%grid_field)) deallocate (F%grid_field)
+  if (associated(F%gen_grad_map)) deallocate (F%gen_grad_map)
 else
-  if (.not. associated(F%grid_field)) allocate (F%grid_field(-1:1))
-  do jd1 = 1, size(F%grid_field,1); lb1 = lbound(F%grid_field,1) - 1
-    call set_grid_field_test_pattern (F%grid_field(jd1+lb1), ix_patt+jd1)
+  if (.not. associated(F%gen_grad_map)) allocate (F%gen_grad_map(-1:1))
+  do jd1 = 1, size(F%gen_grad_map,1); lb1 = lbound(F%gen_grad_map,1) - 1
+    call set_gen_grad_map_test_pattern (F%gen_grad_map(jd1+lb1), ix_patt+jd1)
   enddo
 endif
 !! f_side.test_pat[type, 1, PTR]
 
 if (ix_patt < 3) then
-  if (associated(F%taylor_field)) deallocate (F%taylor_field)
+  if (associated(F%grid_field)) deallocate (F%grid_field)
 else
-  if (.not. associated(F%taylor_field)) allocate (F%taylor_field(-1:1))
-  do jd1 = 1, size(F%taylor_field,1); lb1 = lbound(F%taylor_field,1) - 1
-    call set_taylor_field_test_pattern (F%taylor_field(jd1+lb1), ix_patt+jd1)
+  if (.not. associated(F%grid_field)) allocate (F%grid_field(-1:1))
+  do jd1 = 1, size(F%grid_field,1); lb1 = lbound(F%grid_field,1) - 1
+    call set_grid_field_test_pattern (F%grid_field(jd1+lb1), ix_patt+jd1)
   enddo
 endif
 !! f_side.test_pat[type, 0, NOT]
@@ -9405,43 +9250,42 @@ call set_twiss_test_pattern (F%a, ix_patt)
 call set_twiss_test_pattern (F%b, ix_patt)
 !! f_side.test_pat[type, 0, NOT]
 call set_twiss_test_pattern (F%c, ix_patt)
-!! f_side.test_pat[real, 1, NOT]
-do jd1 = 1, size(F%spin,1); lb1 = lbound(F%spin,1) - 1
-  rhs = 100 + jd1 + 8 + offset
-  F%spin(jd1+lb1) = rhs
-enddo
 !! f_side.test_pat[real, 2, NOT]
 do jd1 = 1, size(F%sigma,1); lb1 = lbound(F%sigma,1) - 1
 do jd2 = 1, size(F%sigma,2); lb2 = lbound(F%sigma,2) - 1
-  rhs = 100 + jd1 + 10*jd2 + 9 + offset
+  rhs = 100 + jd1 + 10*jd2 + 8 + offset
   F%sigma(jd1+lb1,jd2+lb2) = rhs
 enddo; enddo
 !! f_side.test_pat[real, 1, NOT]
 do jd1 = 1, size(F%rel_max,1); lb1 = lbound(F%rel_max,1) - 1
-  rhs = 100 + jd1 + 10 + offset
+  rhs = 100 + jd1 + 9 + offset
   F%rel_max(jd1+lb1) = rhs
 enddo
 !! f_side.test_pat[real, 1, NOT]
 do jd1 = 1, size(F%rel_min,1); lb1 = lbound(F%rel_min,1) - 1
-  rhs = 100 + jd1 + 11 + offset
+  rhs = 100 + jd1 + 10 + offset
   F%rel_min(jd1+lb1) = rhs
 enddo
 !! f_side.test_pat[real, 0, NOT]
-rhs = 12 + offset; F%s = rhs
+rhs = 11 + offset; F%s = rhs
 !! f_side.test_pat[real, 0, NOT]
-rhs = 13 + offset; F%t = rhs
+rhs = 12 + offset; F%t = rhs
 !! f_side.test_pat[real, 0, NOT]
-rhs = 14 + offset; F%charge_live = rhs
+rhs = 13 + offset; F%charge_live = rhs
 !! f_side.test_pat[real, 0, NOT]
-rhs = 15 + offset; F%charge_tot = rhs
+rhs = 14 + offset; F%charge_tot = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 16 + offset; F%n_particle_tot = rhs
+rhs = 15 + offset; F%n_particle_tot = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 17 + offset; F%n_particle_live = rhs
+rhs = 16 + offset; F%n_particle_live = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 18 + offset; F%n_particle_lost_in_ele = rhs
+rhs = 17 + offset; F%n_particle_lost_in_ele = rhs
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 18 + offset; F%ix_ele = rhs
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 19 + offset; F%location = rhs
 !! f_side.test_pat[logical, 0, NOT]
-rhs = 19 + offset; F%twiss_valid = (modulo(rhs, 2) == 0)
+rhs = 20 + offset; F%twiss_valid = (modulo(rhs, 2) == 0)
 
 end subroutine set_bunch_params_test_pattern
 

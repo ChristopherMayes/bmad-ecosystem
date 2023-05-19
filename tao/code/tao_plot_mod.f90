@@ -31,7 +31,7 @@ type (tao_data_array_struct), allocatable :: d_array(:)
 
 real(rp) location(4), dx, dy, h
 
-integer i, j, k, ic, id
+integer i, j, k, ic, id, nb
 
 character(80) text
 character(*), parameter :: r_name = 'tao_draw_plots'
@@ -73,9 +73,16 @@ endif
 
 ! Draw view universe
 
-if (size(s%u) > 1 .and. s%plot_page%draw_graph_title_suffix) then
-  write (default_uni, '(i3)') s%global%default_universe
-  call qp_draw_text ('Default Universe:' // default_uni, -2.0_rp, -2.0_rp, 'POINTS/PAGE/RT', 'RT')
+if (s%plot_page%draw_graph_title_suffix) then
+  nb = 0
+  do i = 1, size(s%u)
+    nb = max(nb, size(s%u(1)%model%lat%branch))
+  enddo
+  text = ','
+  if (size(s%u) > 1) text = ', Default Universe:' // int_str(s%global%default_universe)
+  if (nb > 1) text = trim(text) // ', Default Branch: ' // int_str(s%global%default_branch)
+  text = text(3:)
+  if (text /= '') call qp_draw_text (text, -2.0_rp, -2.0_rp, 'POINTS/PAGE/RT', 'RT')
 endif
 
 ! loop over all plots
@@ -430,7 +437,7 @@ if (graph%ix_universe == -2) then
     call draw_this_floor_plan(isu)
   enddo
 else
-  isu = tao_universe_number(graph%ix_universe)
+  isu = tao_universe_index(graph%ix_universe)
   call draw_this_floor_plan(isu)
 endif
 
@@ -446,6 +453,7 @@ contains
 subroutine draw_this_floor_plan(isu)
 
 type (tao_ele_shape_struct), pointer :: ele_shape, ele_shape2
+type (tao_lattice_struct), pointer :: tao_lat
 type (tao_building_wall_point_struct) pt0, pt1
 type (floor_position_struct) end1, end2, floor
 type (branch_struct), pointer :: branch
@@ -464,7 +472,18 @@ character(40) label_name
 
 !
 
-lat => s%u(isu)%model%lat
+select case(graph%floor_plan%orbit_lattice)
+case ('model');   tao_lat => s%u(isu)%model
+case ('design');  tao_lat => s%u(isu)%design
+case ('base');    tao_lat => s%u(isu)%base
+case default;
+  call out_io (s_error$, r_name, 'Bad floor_plan%orbit_lattice: ' // graph%floor_plan%orbit_lattice, &
+                                 'Should be one of: "model", "design", or "base"', &
+                                 'Will default to "model"')
+  tao_lat => s%u(isu)%model
+end select
+
+lat => tao_lat%lat
 
 ! loop over all elements in the lattice. 
 
@@ -492,10 +511,10 @@ do n = 0, ubound(lat%branch, 1)
           slave => pointer_to_slave(ele, j)
           ele_shape2 => tao_pointer_to_ele_shape (isu, slave, s%plot_page%floor_plan%ele_shape)
           if (associated(ele_shape2)) cycle ! Already drawn. Do not draw twice
-          call tao_draw_ele_for_floor_plan (plot, graph, isu, lat, slave, ele_shape, label_name, y1, y2)
+          call tao_draw_ele_for_floor_plan (plot, graph, tao_lat, slave, ele_shape, label_name, y1, y2)
         enddo
       else
-        call tao_draw_ele_for_floor_plan (plot, graph, isu, lat, ele, ele_shape, label_name, y1, y2)
+        call tao_draw_ele_for_floor_plan (plot, graph, tao_lat, ele, ele_shape, label_name, y1, y2)
       endif
       if (.not. associated(ele_shape)) exit
       if (.not. ele_shape%multi) exit
@@ -607,30 +626,30 @@ end subroutine tao_set_floor_plan_axis_label
 !--------------------------------------------------------------------------
 !--------------------------------------------------------------------------
 !+
-! Subroutine tao_draw_ele_for_floor_plan (plot, graph, ix_uni, lat, ele, ele_shape, label_name, offset1, offset2)
+! Subroutine tao_draw_ele_for_floor_plan (plot, graph, tao_lat, ele, ele_shape, label_name, offset1, offset2)
 !
 ! Routine to draw one lattice element or one datum location for the floor plan graph. 
 !
 ! Input:
 !   plot              -- tao_plot_struct: Plot containing the graph.
 !   graph             -- tao_graph_struct: Graph to plot.
-!   ix_uni            -- integer: Universe index.
-!   lat               -- lat_struct: Lattice containing the element.
+!   tao_lat           -- tao_lattice_struct: Lattice containing the element.
 !   ele               -- ele_struct: Element to draw.
 !   ele_shape         -- tao_ele_shape_struct: Shape to draw from s%plot_page%floor_plan%ele_shape(:) array.
 !                         Will be NULL if no associated shape for this element.
 !   label_name        -- character(*): Shape label.
-!   offset1, offset2  -- real(rp): Offsets for drawing the label.
+!   offset1, offset2  -- real(rp): Transverse distances used to scale the drawing of the element shape.
 !-
 
-recursive subroutine tao_draw_ele_for_floor_plan (plot, graph, ix_uni, lat, ele, ele_shape, label_name, offset1, offset2)
+recursive subroutine tao_draw_ele_for_floor_plan (plot, graph, tao_lat, ele, ele_shape, label_name, offset1, offset2)
 
 implicit none
 
 type (tao_plot_struct) :: plot
 type (tao_graph_struct) :: graph
+type (tao_lattice_struct), target :: tao_lat
 type (branch_struct), pointer :: branch
-type (lat_struct) :: lat
+type (lat_struct), pointer :: lat
 type (ele_struct) :: ele
 type (ele_struct) :: drift
 type (ele_struct), pointer :: ele0, ele1, ele2, lord
@@ -642,7 +661,7 @@ type (coord_struct) orb_here, orb_start, orb_end
 type (tao_shape_pattern_struct), pointer :: pat
 
 integer, parameter :: n_bend_extra = 40, l1 = -n_bend_extra, l2 = 200 + n_bend_extra
-integer ix_uni, i, j, k, n_bend, n, ix, ic, n_mid, isu, min1_bend, min2_bend, max1_bend, max2_bend
+integer i, j, k, n_bend, n, ix, ic, n_mid, min1_bend, min2_bend, max1_bend, max2_bend
 integer n1, n2
 
 real(rp) offset1, offset2
@@ -669,12 +688,10 @@ logical is_bend, can_test
 
 !
 
-isu = tao_universe_number(ix_uni)
-
 call find_element_ends (ele, ele1, ele2)
 if (.not. associated(ele1)) return
 
-orbit => s%u(isu)%model%tao_branch(ele1%ix_branch)%orbit
+orbit => tao_lat%tao_branch(ele1%ix_branch)%orbit
 
 orb_start = orbit(ele1%ix_ele)
 orb_end = orbit(ele2%ix_ele)
@@ -821,7 +838,7 @@ if (graph%floor_plan%orbit_scale /= 0 .and. ele%value(l$) /= 0) then
                                                        .true., .true., orb_start, orb_here)
       f_orb%r(1:2) = graph%floor_plan%orbit_scale * orb_here%vec(1:3:2)
       f_orb%r(3) = s_here
-      f_orb = coords_local_curvilinear_to_floor (f_orb, ele, .false., relative_to_upstream = .true.)
+      f_orb = coords_local_curvilinear_to_floor (f_orb, ele, .false., relative_to = upstream_end$)
       call tao_floor_to_screen (graph, f_orb%r, dx_orbit(j), dy_orbit(j))
     enddo
     call qp_draw_polyline(dx_orbit(0:n), dy_orbit(0:n))
@@ -848,13 +865,14 @@ if (graph%floor_plan%orbit_scale /= 0 .and. ele%value(l$) /= 0) then
     n = int(100 * (abs(orb_end%vec(2) - orb_start%vec(2)) + abs(orb_end%vec(4) - orb_start%vec(4)))) + &
                       int(ele%value(num_steps$)) + 1
     n = min(n, ubound(dx_orbit, 1))
+    n = nint(min(1.0*n, 1 + 0.1 * ele%value(l$) / bmad_com%significant_length))
     do ic = 0, n
       s_here = ic * ele%value(l$) / n
       call twiss_and_track_intra_ele (ele, ele%branch%param, 0.0_rp, s_here, &
                                                  .true., .true., orb_start, orb_here)
       floor%r(1:2) = graph%floor_plan%orbit_scale * orb_here%vec(1:3:2)
       floor%r(3) = s_here
-      floor1 = coords_local_curvilinear_to_floor (floor, ele, .false., relative_to_upstream = .true.)
+      floor1 = coords_local_curvilinear_to_floor (floor, ele, .false., relative_to = upstream_end$)
       call tao_floor_to_screen_coords (graph, floor1, f_orb)
       dx_orbit(ic) = f_orb%r(1)
       dy_orbit(ic) = f_orb%r(2)
@@ -978,7 +996,7 @@ if (ix == 0) then
   prefix = ''
   shape = ele_shape%shape
 else
-  prefix = ele_shape%shape(ix-1:)
+  prefix = ele_shape%shape(:ix-1)
   shape = ele_shape%shape(ix+1:)
 endif
 
@@ -1101,10 +1119,9 @@ if (prefix == 'pattern') then
   do i = 1, size(s%plot_page%pattern)
     if (shape /= s%plot_page%pattern(i)%name) cycle
     pat => s%plot_page%pattern(i)
-    r0 = end1%r(1:2) + [pat%pt(1)%s, pat%pt(1)%x] * (end2%r(1:2) - end1%r(1:2))
-    do j = 2, size(pat%pt)
-      r1 = end1%r(1:2) + [pat%pt(j)%s, pat%pt(j)%x] * (end2%r(1:2) - end1%r(1:2))
-      call qp_draw_line (r0(1), r1(1), r0(2), r1(2), units = draw_units)
+    do j = 1, size(pat%pt)
+      r1 = end1%r(1:2) + pat%pt(j)%s * (end2%r(1:2) - end1%r(1:2)) - pat%pt(j)%y * [dx1, dy1]
+      if (j > 1) call qp_draw_line (r0(1), r1(1), r0(2), r1(2), units = draw_units)
       r0 = r1
     enddo
   enddo
@@ -1182,7 +1199,7 @@ type (tao_var_struct), pointer :: var
 real(rp) x1, x2, y1, y2, y, s_pos, x0, y0, s_lat_min, s_lat_max
 real(rp) lat_len, height, dx, dy, key_number_height, dummy, l2
 
-integer i, j, k, n, kk, ix, ix1, isu, ixe
+integer i, j, k, n, kk, ix, ix1, isu, ixe, ib
 integer ix_var, ixv
 
 logical err, have_data
@@ -1212,10 +1229,11 @@ case default
   return
 end select
 
-isu = tao_universe_number(graph%ix_universe, .true.)
+isu = tao_universe_index(graph%ix_universe, .true.)
 lat => s%u(isu)%model%lat
-branch => lat%branch(graph%ix_branch)
-tao_branch => s%u(isu)%model%tao_branch(graph%ix_branch)
+ib = tao_branch_index(graph%ix_branch)
+branch => lat%branch(ib)
+tao_branch => s%u(isu)%model%tao_branch(ib)
 
 lat_len = branch%param%total_length
 
@@ -1345,7 +1363,7 @@ do
 
   call find_element_ends (ele, ele1, ele2)
   if (.not. associated(ele1)) return
-  if (ele1%ix_branch /= graph%ix_branch) return
+  if (ele1%ix_branch /= tao_branch_index(graph%ix_branch)) return
   x1 = ele1%s
   x2 = ele2%s
   ! If out of range then try to shift by lat_len to get in range
@@ -1369,7 +1387,7 @@ do
 
   ! Does this element wrap around?
 
-  if (branch%param%geometry == closed$ .and. x2 < x1 .and. ele%value(l$) > 0) then
+  if (x2 < x1 .and. ele%value(l$) > 0) then
     if (x1 > graph%x%min .and. x1 < graph%x%max) then
       call draw_shape_for_lat_layout (label_name, x1, x1 + ele%value(l$), y1, y2, min(graph%x%max, x1+ele%value(l$)/2), ele_shape)
     endif
@@ -1410,7 +1428,7 @@ if (ix == 0) then
   prefix = ''
   shape = ele_shape%shape
 else
-  prefix = ele_shape%shape(ix-1:)
+  prefix = ele_shape%shape(:ix-1)
   shape = ele_shape%shape(ix+1:)
 endif
 
@@ -1491,10 +1509,9 @@ if (prefix == 'pattern') then
   do i = 1, size(s%plot_page%pattern)
     if (shape /= s%plot_page%pattern(i)%name) cycle
     pat => s%plot_page%pattern(i)
-    r0 = [x1, y1] + [pat%pt(1)%s, pat%pt(1)%x] * [x2-x1, y2-y1]
-    do j = 2, size(pat%pt)
-      r1 = [x1, y1] + [pat%pt(j)%s, pat%pt(j)%x] * [x2-x1, y2-y1]
-      call qp_draw_line (r0(1), r1(1), r0(2), r1(2), width = iwidth, color = color, clip = .true.)
+    do j = 1, size(pat%pt)
+      r1 = [x1, 0.0_rp] + [pat%pt(j)%s, pat%pt(j)%y] * [x2-x1, y1]
+      if (j > 1) call qp_draw_line (r0(1), r1(1), r0(2), r1(2), width = iwidth, color = color, clip = .true.)
       r0 = r1
     enddo
   enddo
@@ -1547,14 +1564,15 @@ type (branch_struct), pointer :: branch, branch2
 
 real(rp) lat_len, dummy
 
-integer i, isu
+integer i, ib, isu
 
 !
 
-isu = tao_universe_number(graph%ix_universe)
+isu = tao_universe_index(graph%ix_universe)
 lat => s%u(isu)%model%lat
-branch => lat%branch(graph%ix_branch)
-tao_branch => s%u(isu)%model%tao_branch(graph%ix_branch)
+ib = graph%ix_branch
+branch => lat%branch(ib)
+tao_branch => s%u(isu)%model%tao_branch(ib)
 
 lat_len = branch%param%total_length
   

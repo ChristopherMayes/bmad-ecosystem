@@ -18,7 +18,7 @@
 
 subroutine lat_compute_ref_energy_and_time (lat, err_flag)
 
-use autoscale_mod, dummy2 => lat_compute_ref_energy_and_time
+use bmad_interface, dummy => lat_compute_ref_energy_and_time
 
 implicit none
 
@@ -406,8 +406,8 @@ enddo ! Branch loop
 
 ! Correct particle_start info
 
-call init_coord (lat%particle_start, lat%particle_start, lat%ele(0), downstream_end$, &
-                                                            E_photon = lat%particle_start%p0c, shift_vec6 = .false.)
+!call init_coord (lat%particle_start, lat%particle_start, lat%ele(0), downstream_end$, &
+!                                                            E_photon = lat%particle_start%p0c, shift_vec6 = .false.)
 
 ! Put the appropriate energy values in the lord elements...
 
@@ -488,7 +488,6 @@ end subroutine lat_compute_ref_energy_and_time
 subroutine ele_compute_ref_energy_and_time (ele0, ele, param, err_flag)
 
 use bmad_interface, dummy => ele_compute_ref_energy_and_time
-use autoscale_mod, only: autoscale_phase_and_amp
 use radiation_mod, only: track1_radiation
 
 implicit none
@@ -505,7 +504,7 @@ real(rp) E_tot_start, p0c_start, ref_time_start, e_tot, p0c, phase, velocity, ab
 real(rp) value_saved(num_ele_attrib$), beta0, ele_ref_time
 
 integer i, key
-logical err_flag, err, changed, saved_is_on, energy_stale
+logical err_flag, err, changed, saved_is_on, energy_stale, do_track
 
 character(*), parameter :: r_name = 'ele_compute_ref_energy_and_time'
 
@@ -531,6 +530,7 @@ ele%value(ref_time_start$) = ref_time_start
 
 ele%time_ref_orb_out = ele%time_ref_orb_in  ! This should be true when we don't have to track.
 ele%time_ref_orb_out%location = downstream_end$
+ele%time_ref_orb_out%s = ele%s
 
 key = ele%key
 if (key == em_field$ .and. is_false(ele%value(constant_ref_energy$))) key = lcavity$
@@ -573,17 +573,37 @@ case (lcavity$)
     if (err) goto 9000
   endif
 
+  ! If ele is super_slave and the super_lord and ele are essentially the same element, do not need to track.
+
+  do_track = .true.
+  if (ele%slave_status == super_slave$) then
+    do i = 1, ele%n_lord
+      lord => pointer_to_lord(ele, i)
+      if (lord%key /= lcavity$) cycle  ! May be a pipe$
+      if (lord%n_slave /= 1) cycle
+      do_track = .false.
+      ele%value(p0c$) = lord%value(p0c$)
+      ele%value(E_tot$) = lord%value(E_tot$)
+      ele%value(delta_ref_time$) = lord%value(delta_ref_time$)
+      ele%ref_time = lord%ref_time
+      ele%time_ref_orb_out = lord%time_ref_orb_out
+    enddo
+  endif
+
   ! Track. With runge_kutta (esp fixed step with only a few steps), a shift in the end energy can cause 
   ! small changes in the tracking. So if there has been a shift in the end energy, track again.
+  
 
-  do i = 1, 5
-    call track_this_ele (orb_start, orb_end, ref_time_start, .false., err); if (err) goto 9000
-    call calc_time_ref_orb_out(orb_end)
-    ele%value(p0c$) = orb_end%p0c * (1 + orb_end%vec(6))
-    call convert_pc_to (ele%value(p0c$), param%particle, E_tot = ele%value(E_tot$), err_flag = err)
-    if (err) goto 9000
-    if (abs(orb_end%vec(6)) < small_rel_change$) exit
-  enddo
+  if (do_track) then
+    do i = 1, 5
+      call track_this_ele (orb_start, orb_end, ref_time_start, .false., err); if (err) goto 9000
+      call calc_time_ref_orb_out(ele, orb_end)
+      ele%value(p0c$) = orb_end%p0c * (1 + orb_end%vec(6))
+      call convert_pc_to (ele%value(p0c$), param%particle, E_tot = ele%value(E_tot$), err_flag = err)
+      if (err) goto 9000
+      if (abs(orb_end%vec(6)) < small_rel_change$) exit
+    enddo
+  endif
 
   ele%value(delta_ref_time$) = ele%ref_time - ref_time_start
   ele%time_ref_orb_out%p0c = ele%value(p0c$)  ! To prevent small roundoff errors
@@ -594,6 +614,7 @@ case (custom$, hybrid$)
   if (err) goto 9000
 
   ele%ref_time = ref_time_start + ele%value(delta_ref_time$)
+  ele%time_ref_orb_out%t = ele%ref_time
 
 case (taylor$)
   ele%value(E_tot$) = E_tot_start + ele%value(delta_e_ref$)
@@ -605,6 +626,7 @@ case (taylor$)
     ele%value(delta_ref_time$) = ele%value(l$) * E_tot_start / (p0c_start * c_light)
   endif
   ele%ref_time = ref_time_start + ele%value(delta_ref_time$)
+  ele%time_ref_orb_out%t = ele%ref_time
 
 case (e_gun$)
   ! Note: Due to the coupling between an e_gun and the begin_ele, autoscaling is
@@ -620,7 +642,7 @@ case (e_gun$)
   endif
 
   call track_this_ele (orb_start, orb_end, ref_time_start, .true., err); if (err) goto 9000
-  call calc_time_ref_orb_out(orb_end)
+  call calc_time_ref_orb_out(ele, orb_end)
   ele%value(delta_ref_time$) = ele%ref_time - ref_time_start
 
 case (crystal$, mirror$, multilayer_mirror$, diffraction_plate$, photon_init$, mask$)
@@ -662,6 +684,7 @@ case (patch$)
   velocity = c_light * ele%value(p0c$) / ele%value(E_tot$)
   ele%value(delta_ref_time$) = ele%value(t_offset$) + ele%value(l$) / velocity
   ele%ref_time = ref_time_start + ele%value(delta_ref_time$)
+  ele%time_ref_orb_out%t = ele%ref_time
 
 case (marker$, fork$, photon_fork$)
   ele%value(E_tot$) = E_tot_start
@@ -670,12 +693,13 @@ case (marker$, fork$, photon_fork$)
   ele%ref_time = ref_time_start
 
 case default
-  if (significant_difference(ele%value(p0c$), p0c_start, rel_tol = small_rel_change$)) then
-    ele%value(E_tot$) = E_tot_start
-    ele%value(p0c$) = p0c_start
-    ! Need to call attribute_bookkeeper since num_steps is not set until the energy is set.
-    call attribute_bookkeeper(ele, .true.) 
-  endif
+  changed = significant_difference(ele%value(p0c$), p0c_start, rel_tol = small_rel_change$)
+  ! Need to always do this set in case E_tot_start shifted by non-zero but insignifcant.
+  ! Some code relies on E_tot_start == E_tot or p0c_start = p0c exactly.
+  ele%value(E_tot$) = E_tot_start  
+  ele%value(p0c$) = p0c_start
+  ! Need to call attribute_bookkeeper since num_steps is not set until the energy is set.
+  if (changed) call attribute_bookkeeper(ele, .true.) 
   
   if (ele%key == rfcavity$ .and. ele%slave_status /= super_slave$ .and. &
                         ele%slave_status /= slice_slave$ .and. ele%slave_status /= multipass_slave$) then
@@ -690,10 +714,11 @@ case default
       ele%value(delta_ref_time$) = ele%value(l$) * E_tot_start / (p0c_start * c_light)
     endif
     ele%ref_time = ref_time_start + ele%value(delta_ref_time$)
+    ele%time_ref_orb_out%t = ele%ref_time
 
   else
     call track_this_ele (orb_start, orb_end, ref_time_start, .false., err); if (err) goto 9000
-    call calc_time_ref_orb_out(orb_end)
+    call calc_time_ref_orb_out(ele, orb_end)
     ele%value(delta_ref_time$) = ele%ref_time - ref_time_start
   endif
 end select
@@ -720,7 +745,7 @@ abs_tol(3) = bmad_com%significant_length/c_light
 energy_stale = ele_value_has_changed(ele, [p0c$, e_tot$, delta_ref_time$], abs_tol, .false.)
 if (energy_stale.or. ele%bookkeeping_state%control /= ok$ .or. ele%bookkeeping_state%floor_position /= ok$) then
   ! Transfer ref energy to super_lord before bookkeeping done. This is important for bends.
-  if (ele%slave_status == super_slave$ .and. ele%key == sbend$) then
+  if (ele%slave_status == super_slave$ .and. (ele%key == sbend$ .or. ele%key == rf_bend$)) then
     do i = 1, ele%n_lord
       lord => pointer_to_lord(ele, i)
       lord%value(e_tot$) = ele%value(e_tot$); lord%value(e_tot_start$) = ele%value(e_tot_start$)
@@ -755,11 +780,14 @@ subroutine track_this_ele (orb_start, orb_end, ref_time_start, is_inside, error)
 type (coord_struct) orb_start, orb_end
 type (ele_struct), pointer :: lord
 real(rp) ref_time_start
-logical error, is_inside
+integer ie
+logical error, is_inside, totalpath_saved
 
-!
+! With use_totalpath = False (the standard setting) and with ptc tracking, orb_end%t is calculated
+! using ele%ref_time. But this is what we want to calculate here.
 
 error = .true.
+call set_ptc_base_state('TOTALPATH', .true., totalpath_saved)
 
 call zero_errors_in_ele (ele, changed)
 call init_coord (orb_start, ele%time_ref_orb_in, ele, upstream_end$, shift_vec6 = .false.)
@@ -779,7 +807,11 @@ call restore_errors_in_ele (ele)
 
 if (ele%tracking_method /= bmad_standard$ .and. &
           (ele%slave_status == slice_slave$ .or. ele%slave_status == super_slave$)) then
-  lord => pointer_to_lord(ele, 1)
+  do ie = 1, ele%n_lord
+    lord => pointer_to_lord(ele, ie)
+    if (lord%key /= pipe$) exit
+  enddo
+
   if (lord%value(l$) == 0) then
     ele%value(delta_ref_time$) = 0
   else
@@ -791,6 +823,7 @@ endif
 
 ele%ref_time = ref_time_start + ele%value(delta_ref_time$)
 
+call set_ptc_base_state('TOTALPATH', totalpath_saved)
 error = .false.
 
 end subroutine track_this_ele
@@ -843,7 +876,9 @@ case (lcavity$)
 
   if (ele%value(gradient_err$) /= 0 .or. ele%value(voltage_err$) /= 0) then
     ele%value(gradient_err$) = 0
-    ele%value(voltage_err$) = 0
+    ele%value(voltage_err$)  = 0
+    ele%value(gradient_tot$) = ele%value(gradient$)
+    ele%value(voltage_tot$)  = ele%value(voltage$)
     has_changed = .true.
   endif
 
@@ -855,32 +890,24 @@ case (e_gun$)
 
   if (ele%value(gradient_err$) /= 0 .or. ele%value(voltage_err$) /= 0) then
     ele%value(gradient_err$) = 0
-    ele%value(voltage_err$) = 0
+    ele%value(voltage_err$)  = 0
+    ele%value(gradient_tot$) = ele%value(gradient$)
+    ele%value(voltage_tot$)  = ele%value(voltage$)
     has_changed = .true.
   endif
 
 case (rfcavity$)
-  if (bmad_com%rf_phase_below_transition_ref) then
-    if (ele%value(phi0$) /= 0.5_rp) then
-      ele%value(phi0$) = 0.5_rp
-      has_changed = .true.
-    endif    
-  else
-    if (ele%value(phi0$) /= 0) then
-      ele%value(phi0$) = 0
-      has_changed = .true.
-    endif    
-  endif
+  if (ele%value(phi0$) /= 0) then
+    ele%value(phi0$) = 0
+    has_changed = .true.
+  endif    
 end select
 
-! For speed, use symp_lie_bmad tracking if the taylor map does not exist or if the taylor
+! For speed, use symp_lie_ptc tracking if the taylor map does not exist or if the taylor
 ! map is not valid for the element with kicks and offsets removed.
 
 changed = has_changed
-if (ele%tracking_method == taylor$) then
-  if (.not. associated (ele%taylor(1)%term) .or. (changed .and. ele%taylor_map_includes_offsets)) &
-                                                       ele%tracking_method = symp_lie_bmad$
-endif
+if (ele%tracking_method == taylor$ .and. .not. associated (ele%taylor(1)%term)) ele%tracking_method = symp_lie_ptc$
 
 end subroutine zero_errors_in_ele
 
@@ -893,7 +920,7 @@ type (ele_struct) ele
 type (ele_struct), pointer :: lord
 integer i
 
-! 
+!
 
 ele%value = ele%old_value
 ele%is_on = saved_is_on
@@ -913,10 +940,12 @@ end subroutine restore_errors_in_ele
 !---------------------------------------------------------------------------------
 ! contains
 
-subroutine calc_time_ref_orb_out (orb_end)
+subroutine calc_time_ref_orb_out (ele, orb_end)
 
+type (ele_struct), target :: ele
 type (coord_struct) orb_end
-
+type (ele_struct), pointer :: lord
+integer ii
 !
 
 ele%time_ref_orb_out = orb_end
@@ -935,7 +964,10 @@ endif
 if (ele%key == lcavity$ .and. ele%tracking_method == bmad_standard$) then
   ele%time_ref_orb_out%vec(5) = 0
 elseif (ele%slave_status == super_slave$ .or. ele%slave_status == slice_slave$) then
-  lord => pointer_to_lord(ele, 1)
+  do ii = 1, ele%n_lord
+    lord => pointer_to_lord(ele, ii)
+    if (lord%key /= pipe$) exit
+  enddo
   beta0 = lord%value(l$) / (c_light * lord%value(delta_ref_time$))
   ele_ref_time = ele%value(ref_time_start$) + ele%value(l$) / (c_light * beta0)
   ele%time_ref_orb_out%vec(5) = c_light * orb_end%beta * (ele_ref_time - orb_end%t)

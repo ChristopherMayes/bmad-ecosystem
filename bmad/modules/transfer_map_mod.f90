@@ -94,15 +94,16 @@ if (error_flag) return
 call check_if_s_in_bounds (branch, real_option(branch%param%total_length, s2), error_flag, ss2)
 if (error_flag) return
 
+ix_ele = element_at_s (branch, ss1, .true.)
+
 if (unit_start_this) then
   call taylor_make_unit (t_map)
   if (present(ref_orb_in)) t_map%ref = ref_orb_in%vec
 endif
 
 if (present(ref_orb_in)) then
-  orb = ref_orb_in
+  call init_coord(orb, ref_orb_in, branch%ele(ix_ele), inside$)
 else
-  ix_ele = element_at_s (branch, s1, .true.)
   v6 = 0
   call init_coord(orb, v6, branch%ele(ix_ele), inside$)
 endif
@@ -232,7 +233,7 @@ do
 
     if (.not. global_com%mp_threading_is_safe .or. ds /= runt%value(l$) .or. runt_points_to_new) then
       create_it = .true.
-    elseif (ele%key == sbend$) then
+    elseif (ele%key == sbend$ .or. ele%key == rf_bend$) then
       if (track_upstream_end .or. track_downstream_end .or. old_track_end) create_it = .true.
     elseif (.not. ele_has_constant_ds_dt_ref(ele)) then
       create_it = .true.

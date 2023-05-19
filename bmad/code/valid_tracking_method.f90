@@ -1,6 +1,3 @@
-!-------------------------------------------------------------------------------------------
-!-------------------------------------------------------------------------------------------
-!-------------------------------------------------------------------------------------------
 !+
 ! Function valid_tracking_method (ele, species, tracking_method) result (is_valid)
 !
@@ -63,7 +60,7 @@ case (ab_multipole$)
 case (ac_kicker$)
   select case (method)
   case (bmad_standard$, runge_kutta$, time_runge_kutta$, linear$, custom$, symp_lie_ptc$, taylor$)
-    is_valid = .true.
+    is_valid = ((method /= symp_lie_ptc$ .and. method /= taylor$) .or. allocated(ele%ac_kick%frequency))
   end select
 
 case (beambeam$)
@@ -241,6 +238,12 @@ case (quadrupole$)
 case (rcollimator$)
   select case (method)
   case (bmad_standard$, symp_lie_ptc$, runge_kutta$, linear$, taylor$, time_runge_kutta$, custom$)
+    is_valid = .true.
+  end select
+
+case (rf_bend$)
+  select case (method)
+  case (runge_kutta$, time_runge_kutta$, custom$)
     is_valid = .true.
   end select
 

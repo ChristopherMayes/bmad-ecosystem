@@ -1,7 +1,6 @@
 module radiation_mod
 
 use rad_int_common
-use symp_lie_mod
 
 contains
 
@@ -66,8 +65,7 @@ implicit none
 
 type (coord_struct) :: orbit
 type (ele_struct), target :: ele
-type (rad_int_ele_cache_struct), pointer :: ric
-type (rad_map_struct) rad_mat
+type (rad_map_struct) rad_map
 
 integer :: edge
 
@@ -92,22 +90,29 @@ end select
 
 ! Use stochastic and damp mats
 
-call this_rad_mat_setup(ele, edge)
-ric => ele%rad_int_cache
+call radiation_map_setup(ele)
+
 if (edge == start_edge$) then
-  rad_mat = ric%rm0
+  rad_map = ele%rad_map%rm0
 else
-  rad_mat = ric%rm1
+  rad_map = ele%rad_map%rm1
 endif
 
 if (bmad_com%radiation_damping_on) then
-  orbit%vec = orbit%vec + synch_rad_com%scale * matmul(rad_mat%damp_mat, orbit%vec - rad_mat%ref_orb)
-  if (.not. bmad_com%radiation_zero_average) orbit%vec = orbit%vec + synch_rad_com%scale * rad_mat%damp_vec
+  orbit%vec = orbit%vec + bmad_com%synch_rad_scale * matmul(rad_map%damp_dmat, orbit%vec - rad_map%ref_orb)
+  if (.not. bmad_com%radiation_zero_average) orbit%vec = orbit%vec + bmad_com%synch_rad_scale * rad_map%xfer_damp_vec
 endif
 
 if (bmad_com%radiation_fluctuations_on) then
   call ran_gauss (ran6)
-  orbit%vec = orbit%vec + synch_rad_com%scale * matmul(rad_mat%stoc_mat, ran6)
+  orbit%vec = orbit%vec + bmad_com%synch_rad_scale * matmul(rad_map%stoc_mat, ran6)
+endif
+
+!
+
+if (orbit%vec(6) < -1.0_rp) then
+  call out_io (s_warn$, r_name, 'Particle is kaput due to radiation loss!')
+  orbit%state = lost_pz_aperture$
 endif
 
 ! Sokolov-Ternov Spin flip
@@ -127,37 +132,74 @@ endif
 !  endif
 !endif
 
-!---------------------------------------------------------------------------
-contains
+end subroutine track1_radiation 
 
-subroutine this_rad_mat_setup (ele, edge)
+!---------------------------------------------------------------------------
+!---------------------------------------------------------------------------
+!---------------------------------------------------------------------------
+!+
+! Subroutine radiation_map_setup (ele, ref_orbit_in, err_flag)
+!
+! Routine to calculate the radiation kick for a lattice element.
+!
+! Input:
+!   ele       -- ele_struct: Element whose map is to be setup.
+!   ref_orb   -- coord_struct, optional: If present, ignore ele_map%stale setting and make the map around this reference orbit.
+!
+! Output:
+!   ele       -- ele_struct: Element with map calculated.
+!   err_flag  -- logical, optional: Set True if there is an error. False otherwise.
+!-
+
+subroutine radiation_map_setup (ele, ref_orbit_in, err_flag)
 
 use rad_6d_mod
 
-type (coord_struct) orb1, orb2
 type (ele_struct), target :: ele, runt
-type (rad_int_ele_cache_struct), pointer :: ric
-type (rad_map_struct) rad_mat
+type (coord_struct), optional :: ref_orbit_in
+type (coord_struct) orb1, orb2, ref_orb_in, ref_orb_out
 type (branch_struct), pointer :: branch
 real(rp) tol, m_inv(6,6)
 integer i, edge, info
+logical, optional :: err_flag
 logical err, rad_damp_on
+
+character(*), parameter :: r_name = 'radiation_map_setup'
 
 !
 
-if (.not. associated(ele%rad_int_cache)) allocate(ele%rad_int_cache)
-ric => ele%rad_int_cache
-if (.not. ric%stale) return
-ric%stale = .false.
+if (present(err_flag)) err_flag = .false.
+
+if (ele%value(l$) == 0 .or. ele%key == taylor$) return   ! Does not produce radiation.
+if (.not. associated(ele%rad_map)) allocate(ele%rad_map)
+if (.not. ele%rad_map%stale .and. .not. present(ref_orbit_in)) return
+ele%rad_map%stale = .false.
+ele%rad_map%rm0 = rad_map_struct(-1, 0, 0, mat6_unit$, 0)
+ele%rad_map%rm1 = rad_map_struct(-1, 0, 0, mat6_unit$, 0)
 
 branch => pointer_to_branch(ele)
 
-if (all(ric%rm0%ref_orb(2:4:2) == ric%rm1%ref_orb(2:4:2)) .and. &
-        ele%key /= sbend$ .and. ele%key /= wiggler$ .and. ele%key /= undulator$) then
-  ric%rm0 = rad_map_struct()
-  ric%rm1 = rad_map_struct()
-  ric%rm0%ref_orb = ele%map_ref_orb_in%vec
-  ric%rm1%ref_orb = ele%map_ref_orb_out%vec
+!
+
+if (present(ref_orbit_in)) then
+  ref_orb_in = ref_orbit_in
+  call track1(ref_orb_in, ele, branch%param, ref_orb_out)
+  if (ref_orb_out%state /= alive$) then
+    if (present(err_flag)) err_flag = .true.
+    call out_io (s_error$, r_name, 'Reference particle lost while tracking through: ' // ele_full_name(ele))
+    return
+  endif
+else
+  ref_orb_in  = ele%map_ref_orb_in
+  ref_orb_out = ele%map_ref_orb_out
+endif
+
+!
+
+if (all(ref_orb_in%vec(2:4:2) == ref_orb_out%vec(2:4:2)) .and. &
+        ele%key /= sbend$ .and. ele%key /= rf_bend$ .and. ele%key /= wiggler$ .and. ele%key /= undulator$) then
+  ele%rad_map%rm0%ref_orb = ref_orb_in%vec
+  ele%rad_map%rm1%ref_orb = ref_orb_out%vec
   return
 endif
 
@@ -167,21 +209,19 @@ bmad_com%radiation_damping_on = .false.
 ! Mats for first half of element
 
 call create_element_slice (runt, ele, 0.5_rp*ele%value(l$), 0.0_rp, ele%branch%param, .true., .true., err, pointer_to_next_ele(ele, -1))
-call make_mat6 (runt, branch%param, ele%map_ref_orb_in, orb1)
-call tracking_rad_mat_setup (runt, 1e-4_rp, upstream_end$, ric%rm0)
+call make_mat6 (runt, branch%param, ref_orb_in, orb1)
+call tracking_rad_map_setup (runt, 1e-4_rp, upstream_end$, ele%rad_map%rm0)
 
 ! Mats for second half of element
 
 call create_element_slice (runt, ele, 0.5_rp*ele%value(l$), 0.5_rp*ele%value(l$), ele%branch%param, .true., .true., err, runt)
 call make_mat6 (runt, branch%param, orb1, orb2)
-runt%map_ref_orb_out = ele%map_ref_orb_out  ! Important for if test above
-call tracking_rad_mat_setup (runt, 1e-4_rp, downstream_end$, ric%rm1)
+runt%map_ref_orb_out = ref_orb_out  ! Important if test above is done.
+call tracking_rad_map_setup (runt, 1e-4_rp, downstream_end$, ele%rad_map%rm1)
 
 bmad_com%radiation_damping_on = rad_damp_on
 
-end subroutine this_rad_mat_setup
-
-end subroutine track1_radiation 
+end subroutine radiation_map_setup
 
 !---------------------------------------------------------------------------
 !---------------------------------------------------------------------------
