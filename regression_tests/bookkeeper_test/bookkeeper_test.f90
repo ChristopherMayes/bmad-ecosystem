@@ -16,10 +16,10 @@ type (nametable_struct) ntab
 type (expression_atom_struct), allocatable :: stack(:)
 
 character(40) :: lat_file  = 'bookkeeper_test.bmad'
-character(40) :: loc_str(16) = [character(40):: 'qu1-1', 'qu1-5', 'qu2+1', 'qu2+10', &
+character(40) :: loc_str(17) = [character(40):: 'qu1-1', 'qu1-5', 'qu2+1', 'qu2+10', &
           '1>>drift::3:15', 'sb', '3:15', '1>>quad::*', 'octupole::1>>*', &
           'sb##2', 'type::*', 'alias::"q*t"', 'descrip::"So Long"', 'sb%', &
-          '0>>drift::qu1:qu2', '1>>drift::qu1:qu2']
+          '0>>drift::qu1:qu2', '1>>drift::qu1:qu2', 'sbend::17:5']
 character(40) :: exp_str(4) = [character(40):: &
                       'atan2(1,2) + ran()', &
                       'atan2(atan2(1,2), atan(0.5))', &
@@ -121,7 +121,7 @@ call bmad_parser (lat_file, lat, make_mats6 = .false., err_flag = err);  if (err
 
 !
 
-call set_on_off (quadrupole$, lat, off_and_save$, saved_values = save, attribute = 'Y_OFFSET')
+call set_on_off (quadrupole$, lat, off_and_save$, saved_values = save, attribute = 'a11')
 write (1, '(a, 6f10.3)') '"ON_OFF_SAVE"  ABS 0', save(1:4)
 
 do i = 1, lat%n_ele_max
@@ -131,7 +131,7 @@ do i = 1, lat%n_ele_max
     write (1, '(a, f10.4)') '"Q1[K1]"     ABS 0', ele%value(k1$) 
     write (1, '(a, f10.4)') '"Q1[TILT]"   ABS 0', ele%value(tilt$) 
     write (1, '(a, f10.4)') '"Q1[HKICK]"  ABS 0', ele%value(hkick$) 
-    write (1, '(a, f10.4)') '"Q1[Y_OFF]"  ABS 0', ele%value(y_offset$) 
+    write (1, '(a, f10.4)') '"Q1[Y_OFF]"  ABS 0', ele%a_pole(11) 
   endif
 
   write (1, '(3a, f10.4)') '"', trim(ele%name), '[L]"      ABS 0', ele%value(l$)

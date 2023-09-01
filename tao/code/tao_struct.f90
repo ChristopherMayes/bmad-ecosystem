@@ -94,9 +94,9 @@ type tao_expression_info_struct
 end type
 
 type tao_eval_stack1_struct
-  integer :: type = 0
+  integer :: type = 0                 
   character(60) :: name = ''
-  real(rp) :: scale = 1    ! Scale factor for ping data 
+  real(rp) :: scale = 1               ! Scale factor for ping data
   real(rp), allocatable :: value(:)
   type (tao_expression_info_struct), allocatable :: info(:)
   type (tao_real_pointer_struct), allocatable :: value_ptr(:)  ! Used to point to data, lattice parameters, etc
@@ -129,7 +129,7 @@ type tao_drawing_struct
 end type
 
 type tao_shape_pattern_point_struct
-  real(rp) :: s = real_garbage$, x = real_garbage$, radius = 0
+  real(rp) :: s = real_garbage$, y = real_garbage$, radius = 0
 end type
 
 type tao_shape_pattern_struct
@@ -211,7 +211,7 @@ type tao_curve_struct
   type (tao_curve_orbit_struct) :: orbit = tao_curve_orbit_struct()   ! Used for E/B field plotting.
   integer :: ix_universe = -1            ! Universe where data is. -1 => use s%global%default_universe
   integer :: symbol_every = 1            ! Symbol every how many points.
-  integer :: ix_branch = 0
+  integer :: ix_branch = -1
   integer :: ix_ele_ref = -1             ! Index in lattice of reference element.
   integer :: ix_ele_ref_track = -1       ! = ix_ele_ref except for super_lord elements.
   integer :: ix_bunch = 0                ! Bunch to plot.
@@ -239,6 +239,7 @@ type tao_floor_plan_struct
   real(rp) :: orbit_scale = 0                ! Scale factor for drawing orbits. 0 -> Do not draw.
   character(16) :: orbit_color = 'red'
   character(16) :: orbit_pattern = 'solid'
+  character(16) :: orbit_lattice = 'model'   ! Or 'design' or 'base'
   integer :: orbit_width = 1
 end type
 
@@ -268,7 +269,7 @@ type tao_graph_struct
   real(rp) :: x_axis_scale_factor = 1               ! x-axis conversion from internal to plotting units.
   real(rp) :: symbol_size_scale = 0                 ! Symbol size scale factor for phase_space plots.
   integer :: box(4) = 0                             ! Defines which box the plot is put in.
-  integer :: ix_branch = 0                          ! Branch in lattice.
+  integer :: ix_branch = -1                         ! Branch in lattice. Used when there are no associated curves.
   integer :: ix_universe = -1                       ! Used for lat_layout plots.
   logical :: clip = .false.                         ! Clip plot at graph boundary.
   logical :: y2_mirrors_y = .true.                  ! Y2-axis same as Y-axis?
@@ -631,36 +632,36 @@ end type
 ! If this structure is changed, change tao_set_global_cmd.
 
 type tao_global_struct
-  real(rp) :: lm_opt_deriv_reinit = -1   ! Reinit derivative matrix cutoff
-  real(rp) :: de_lm_step_ratio = 1       ! Scaling for step sizes between DE and LM optimizers.
+  real(rp) :: lm_opt_deriv_reinit = -1           ! Reinit derivative matrix cutoff
+  real(rp) :: de_lm_step_ratio = 1               ! Scaling for step sizes between DE and LM optimizers.
   real(rp) :: de_var_to_population_factor = 5.0_rp ! DE population = max(n_var*factor, 20)
-  real(rp) :: lmdif_eps = 1e-12          ! Tollerance for lmdif optimizer.
+  real(rp) :: lmdif_eps = 1e-12                  ! Tollerance for lmdif optimizer.
   real(rp) :: lmdif_negligible_merit = 1d-30
-  real(rp) :: svd_cutoff = 1e-5          ! SVD singular value cutoff.
-  real(rp) :: unstable_penalty = 1e-3    ! Used in unstable_ring datum merit calculation.
-  real(rp) :: merit_stop_value = 0       ! Merit value below which an optimizer will stop.
-  real(rp) :: dmerit_stop_value = 0      ! Fractional Merit change below which an optimizer will stop.
-  real(rp) :: random_sigma_cutoff = -1   ! Cut-off in sigmas.
-  real(rp) :: delta_e_chrom = 0          ! Delta E used from chrom calc.
-  integer :: default_universe = 1        ! Default universe to work with.
-  integer :: default_branch = 0          ! Default lattice branch to work with.
-  integer :: n_opti_cycles = 20          ! Number of optimization cycles
-  integer :: n_opti_loops = 1            ! Number of optimization loops
-  integer :: phase_units = radians$      ! Phase units on output.
-  integer :: bunch_to_plot = 1           ! Which bunch to plot
-  integer :: random_seed = 0             ! Use system clock by default
-  integer :: n_top10_merit = 10          ! Number of top merit constraints to print.
-  integer :: srdt_gen_n_slices = 10      ! Number times to slice elements for summation RDT calculation
-  integer :: datum_err_messages_max = 10 ! Maximum number of error messages per cycle.
-  integer :: srdt_sxt_n_slices = 20      ! Number times to slice sextupoles for summation RDT calculation
-  logical :: srdt_use_cache = .true.     ! Create cache for SRDT calculations.  Can use lots of memory if srdt_*_n_slices large.
-  character(12) :: quiet = 'off'                    ! "all", or "output". Print I/O when running a command file?
-  character(16) :: random_engine = 'pseudo'         ! Non-beam random number engine
-  character(16) :: random_gauss_converter = 'exact' ! Non-beam
-  character(16) :: track_type    = 'single'         ! or 'beam'  
+  real(rp) :: svd_cutoff = 1e-5                  ! SVD singular value cutoff.
+  real(rp) :: unstable_penalty = 1e-3            ! Used in unstable_ring datum merit calculation.
+  real(rp) :: merit_stop_value = 0               ! Merit value below which an optimizer will stop.
+  real(rp) :: dmerit_stop_value = 0              ! Fractional Merit change below which an optimizer will stop.
+  real(rp) :: random_sigma_cutoff = -1           ! Cut-off in sigmas.
+  real(rp) :: delta_e_chrom = 0                  ! Delta E used from chrom calc.
+  integer :: default_universe = 1                ! Default universe to work with.
+  integer :: default_branch = 0                  ! Default lattice branch to work with.
+  integer :: n_opti_cycles = 20                  ! Number of optimization cycles
+  integer :: n_opti_loops = 1                    ! Number of optimization loops
+  integer :: phase_units = radians$              ! Phase units on output.
+  integer :: bunch_to_plot = 1                   ! Which bunch to plot
+  integer :: random_seed = -1                    ! Use system clock by default
+  integer :: n_top10_merit = 10                  ! Number of top merit constraints to print.
+  integer :: srdt_gen_n_slices = 10              ! Number times to slice elements for summation RDT calculation
+  integer :: datum_err_messages_max = 10         ! Maximum number of error messages per cycle.
+  integer :: srdt_sxt_n_slices = 20              ! Number times to slice sextupoles for summation RDT calculation
+  logical :: srdt_use_cache = .true.             ! Create cache for SRDT calculations.  Can use lots of memory if srdt_*_n_slices large.
+  character(12) :: quiet = 'off'                 ! "all", or "output". Print I/O when running a command file?
+  character(16) :: random_engine = ''            ! Non-beam random number engine
+  character(16) :: random_gauss_converter = ''   ! Non-beam
+  character(16) :: track_type    = 'single'      ! or 'beam'  
   character(40) :: prompt_string = 'Tao'
-  character(16) :: prompt_color = 'DEFAULT'         ! See read_a_line routine for possible settings.
-  character(16) :: optimizer     = 'lm'             ! optimizer to use.
+  character(16) :: prompt_color = 'DEFAULT'      ! See read_a_line routine for possible settings.
+  character(16) :: optimizer     = 'lm'          ! optimizer to use.
   character(40) :: print_command = 'lpr'
   character(80) :: var_out_file  = 'var#.out'
   character(100) :: history_file = '~/.history_tao'
@@ -766,54 +767,54 @@ type tao_common_struct
   logical :: all_merit_weights_positive = .true.  
   logical :: multi_turn_orbit_is_plotted = .false.   ! Is a multi_turn_orbit being plotted?
   logical :: force_chrom_calc = .false.              ! Used by a routine to force calculation
-  character(100) :: cmd = ''                         ! Used for the cmd history
   character(16) :: valid_plot_who(10) = ''           ! model, base, ref etc...
+  character(200) :: single_mode_buffer = ''
+  character(200) :: cmd = ''                         ! Used for the cmd history
   character(200) :: saved_cmd_line = ''              ! Saved part of command line when there are mulitple commands on a line
-  character(80) :: single_mode_buffer = ''
 end type
 
 ! Initialization parameters
 
 type tao_init_struct
-  logical :: parse_cmd_args = .true.               ! Used by custom programs to control Tao init
-  logical :: debug_switch = .false.                ! Is the "-debug" switch present?
-  logical :: external_plotting_switch = .false.    ! Is "-external_plotting" switch present?
-  character(16) :: init_name = 'Tao'               ! label for initialization
-  character(200) :: hook_init_file = ''            ! 
-  character(200) :: hook_lat_file = ''             ! To be set by tao_hook_parse_command_args
-  character(200) :: hook_beam_file = ''            ! To be set by tao_hook_parse_command_args
-  character(200) :: hook_data_file = ''            ! To be set by tao_hook_parse_command_args
-  character(200) :: hook_plot_file = ''            ! To be set by tao_hook_parse_command_args
-  character(200) :: hook_startup_file = ''         ! To be set by tao_hook_parse_command_args
-  character(200) :: hook_var_file = ''             ! To be set by tao_hook_parse_command_args
-  character(200) :: hook_building_wall_file = ''   ! To be set by tao_hook_parse_command_args
-  character(200) :: init_file_arg_path = ''        ! Path part of init_tao_file
-  character(200) :: lattice_file_arg = ''          ! -lattice_file        command line argument.
-  character(200) :: hook_init_file_arg = ''        ! -hook_init_file      command line argument
-  character(200) :: init_file_arg = ''             ! -init_file           command line argument.
-  character(200) :: beam_file_arg = ''             ! -beam_file           command line argument.
+  logical :: parse_cmd_args = .true.                 ! Used by custom programs to control Tao init
+  logical :: debug_switch = .false.                  ! Is the "-debug" switch present?
+  logical :: external_plotting_switch = .false.      ! Is "-external_plotting" switch present?
+  character(16) :: init_name = 'Tao'                 ! label for initialization
+  character(200) :: hook_init_file = ''              ! 
+  character(200) :: hook_lat_file = ''               ! To be set by tao_hook_parse_command_args
+  character(200) :: hook_beam_file = ''              ! To be set by tao_hook_parse_command_args
+  character(200) :: hook_data_file = ''              ! To be set by tao_hook_parse_command_args
+  character(200) :: hook_plot_file = ''              ! To be set by tao_hook_parse_command_args
+  character(200) :: hook_startup_file = ''           ! To be set by tao_hook_parse_command_args
+  character(200) :: hook_var_file = ''               ! To be set by tao_hook_parse_command_args
+  character(200) :: hook_building_wall_file = ''     ! To be set by tao_hook_parse_command_args
+  character(200) :: init_file_arg_path = ''          ! Path part of init_tao_file
+  character(200) :: lattice_file_arg = ''            ! -lattice_file        command line argument.
+  character(200) :: hook_init_file_arg = ''          ! -hook_init_file      command line argument
+  character(200) :: init_file_arg = ''               ! -init_file           command line argument.
+  character(200) :: beam_file_arg = ''               ! -beam_file           command line argument.
   character(200) :: beam_init_position_file_arg = '' ! -beam_init_position_file command line argument.
-  character(500) :: command_arg = ''               ! -command             command line argument.
-  character(200) :: data_file_arg = ''             ! -data_file           command line argument.
-  character(200) :: plot_file_arg = ''             ! -plot_file           command line argument.
-  character(200) :: startup_file_arg = ''          ! -startup_file        command line argument.
-  character(200) :: var_file_arg = ''              ! -var_file            command line argument.
-  character(200) :: building_wall_file_arg = ''    ! -building_wall_file  command line argument.
-  character(16) :: geometry_arg = ''               ! -geometry            command line argument.
-  character(80) :: slice_lattice_arg = ''          ! -slice_lattice       command line argument.
-  character(40) :: start_branch_at_arg = ''        ! -start_branch_at     command line argument.
-  character(12) :: log_startup_arg = ''            ! -log_startup         command line argument
-  character(12) :: no_stopping_arg = ''            ! -no_stopping         command line argument
-  character(12) :: noplot_arg = ''                 ! -noplot              command line argument
-  character(12) :: no_rad_int_arg = ''             ! -no_rad_int          command line argument
-  character(12) :: debug_arg = ''                  ! -debug               command line argument
+  character(500) :: command_arg = ''                 ! -command             command line argument.
+  character(200) :: data_file_arg = ''               ! -data_file           command line argument.
+  character(200) :: plot_file_arg = ''               ! -plot_file           command line argument.
+  character(200) :: startup_file_arg = ''            ! -startup_file        command line argument.
+  character(200) :: var_file_arg = ''                ! -var_file            command line argument.
+  character(200) :: building_wall_file_arg = ''      ! -building_wall_file  command line argument.
+  character(16) :: geometry_arg = ''                 ! -geometry            command line argument.
+  character(80) :: slice_lattice_arg = ''            ! -slice_lattice       command line argument.
+  character(40) :: start_branch_at_arg = ''          ! -start_branch_at     command line argument.
+  character(12) :: log_startup_arg = ''              ! -log_startup         command line argument
+  character(12) :: no_stopping_arg = ''              ! -no_stopping         command line argument
+  character(12) :: noplot_arg = ''                   ! -noplot              command line argument
+  character(12) :: no_rad_int_arg = ''               ! -no_rad_int          command line argument
+  character(12) :: debug_arg = ''                    ! -debug               command line argument
   character(12) :: disable_smooth_line_calc_arg = '' ! -disable_smooth_line_calc
-  character(12) :: rf_on_arg = ''                  ! -rf_on               command line argument
-  character(12) :: prompt_color_arg = ''           ! -prompt_color        command line argument
-  character(12) :: quiet_arg = ''                  ! -quiet               command line argument
-  character(12) :: noinit_arg = ''                 ! -noinit              command line argument
-  character(12) :: nostartup_arg = ''              ! -nostartup           command line argument
-  character(12) :: symbol_import_arg = ''          ! -symbol_import       command line argument
+  character(12) :: rf_on_arg = ''                    ! -rf_on               command line argument
+  character(12) :: prompt_color_arg = ''             ! -prompt_color        command line argument
+  character(12) :: quiet_arg = ''                    ! -quiet               command line argument
+  character(12) :: noinit_arg = ''                   ! -noinit              command line argument
+  character(12) :: nostartup_arg = ''                ! -nostartup           command line argument
+  character(12) :: symbol_import_arg = ''            ! -symbol_import       command line argument
   character(100) :: unique_name_suffix = ''
 end type
 
@@ -895,11 +896,11 @@ end type
 ! tao_lattice_branch_equal_tao_lattice_branch must be modified as well.
 
 type tao_lattice_branch_struct
-  type (tao_lattice_struct), pointer :: tao_lat => null()       ! Parent tao_lat
-  type (tao_lat_sigma_struct), allocatable :: lat_sigma(:)      ! Sigma matrix derived from lattice (not beam).
-  type (tao_dn_dpz_struct), allocatable :: dn_dpz(:)            ! Spin invariant field
-  type (bunch_params_struct), allocatable :: bunch_params(:)    ! Per element
-  type (bunch_params_struct), allocatable :: bunch_params_comb(:) ! Evenly spaced per global%beam_track_ds_step step
+  type (tao_lattice_struct), pointer :: tao_lat => null()        ! Parent tao_lat
+  type (tao_lat_sigma_struct), allocatable :: lat_sigma(:)       ! Sigma matrix derived from lattice (not beam).
+  type (tao_dn_dpz_struct), allocatable :: dn_dpz(:)             ! Spin invariant field
+  type (bunch_params_struct), allocatable :: bunch_params(:)     ! Per element
+  type (bunch_track_struct), allocatable :: bunch_params_comb(:) ! A comb for each bunch in beam.
   type (coord_struct), allocatable :: orbit(:)
   type (tao_plot_cache_struct), allocatable :: plot_cache(:)  ! Plotting data cache
   type (tao_plot_cache_struct) :: plot_ref_cache              ! Plotting data cache
@@ -912,11 +913,11 @@ type tao_lattice_branch_struct
   type (ptc_normal_form_struct) ptc_normal_form
   type (bmad_normal_form_struct) bmad_normal_form
   real(rp) :: cache_x_min = 0, cache_x_max = 0
+  real(rp) :: comb_ds_save = -1                               ! Master parameter for %bunch_params_comb(:)%ds_save
   integer track_state
   integer :: cache_n_pts = 0
   integer ix_rad_int_cache                                    ! Radiation integrals cache index.
   integer :: n_hterms = 0                                     ! Number of distinct res driving terms to evaluate.
-  integer :: n_bunch_params_comb                              ! Number of %bunch_params_comb(:)
   logical has_open_match_element
   logical :: plot_cache_valid = .false.                       ! Valid plotting data cache?
   logical :: spin_valid = .false.
@@ -974,7 +975,6 @@ type tao_beam_uni_struct
   character(200) :: saved_at = ''
   character(200) :: dump_file = ''
   character(200) :: dump_at = ''
-  real(rp) :: comb_ds_step = -1                  ! Tracking step size to calculate %bunch_param_comb.
   logical :: track_beam_in_universe = .false.    ! Beam tracking enabled in this universe?
   logical :: always_reinit = .false.
 end type

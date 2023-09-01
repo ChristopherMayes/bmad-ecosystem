@@ -17,7 +17,7 @@
 
 subroutine track_a_thick_multipole (orbit, ele, param, mat6, make_matrix)
 
-use fringe_mod, except_dummy => track_a_thick_multipole
+use bmad_interface, except_dummy => track_a_thick_multipole
 
 implicit none
 
@@ -27,7 +27,7 @@ type (lat_param_struct) :: param
 type (fringe_field_info_struct) fringe_info
 
 real(rp), optional :: mat6(6,6)
-real(rp) rel_tracking_charge, charge_dir, r_step, step_len, s_off, mass
+real(rp) rel_tracking_charge, charge_dir, r_step, step_len, s_off, mass, length
 real(rp) an(0:n_pole_maxx), bn(0:n_pole_maxx), an_elec(0:n_pole_maxx), bn_elec(0:n_pole_maxx)
 real(rp) rtc, hk, vk, kick, angle_E, k_E, beta_ref, mc2, ac_amp, s_pos
 
@@ -39,6 +39,7 @@ logical drifting, include_kicks
 !
 
 start_orb = orbit
+length = ele%value(l$) * start_orb%time_dir
 orientation = ele%orientation * start_orb%direction
 rel_tracking_charge = rel_tracking_charge_to_mass(start_orb, param%particle)
 charge_dir = rel_tracking_charge * orientation
@@ -57,7 +58,7 @@ if (ele%key == elseparator$) then
 
   angle_E = atan2(vk, hk)
 
-  if (ele%value(l$) == 0) then
+  if (length == 0) then
     k_E = 1  ! Something non-zero
   else
     k_E = kick / ele%value(l$)
@@ -72,10 +73,10 @@ call multipole_ele_to_ab (ele, .false., ix_elec_max, an_elec, bn_elec, electric$
 if (kick == 0 .and. ix_mag_max == -1 .and. ix_elec_max == -1) then
   n_step = 1
 else
-  n_step = max(nint(ele%value(l$) / ele%value(ds_step$)), 1)
+  n_step = max(nint(abs(length / ele%value(ds_step$))), 1)
 endif
-r_step = 1.0_rp / n_step
-step_len = ele%value(l$) * r_step
+r_step = real(orbit%time_dir, rp) / n_step
+step_len = length / n_step
 
 ! Entrance edge
 
@@ -92,8 +93,8 @@ endif
 
 ac_amp = ac_kicker_amp(ele, orbit)
 
-if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  param%particle, ele, orbit, magnetic$, ac_amp*r_step/2,   mat6, make_matrix)
-if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, param%particle, ele, orbit, electric$, ac_amp*step_len/2, mat6, make_matrix)
+if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  ele, orbit, magnetic$, ac_amp*r_step/2,   mat6, make_matrix)
+if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, ele, orbit, electric$, ac_amp*step_len/2, mat6, make_matrix)
 
 ! Body
 
@@ -110,11 +111,11 @@ do i = 1, n_step
   ac_amp = ac_kicker_amp(ele, orbit)
 
   if (i == n_step) then
-    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  param%particle, ele, orbit, magnetic$, ac_amp*r_step/2,   mat6, make_matrix)
-    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, param%particle, ele, orbit, electric$, ac_amp*step_len/2, mat6, make_matrix)
+    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  ele, orbit, magnetic$, ac_amp*r_step/2,   mat6, make_matrix)
+    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, ele, orbit, electric$, ac_amp*step_len/2, mat6, make_matrix)
   else
-    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  param%particle, ele, orbit, magnetic$, ac_amp*r_step,   mat6, make_matrix)
-    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, param%particle, ele, orbit, electric$, ac_amp*step_len, mat6, make_matrix)
+    if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  ele, orbit, magnetic$, ac_amp*r_step,   mat6, make_matrix)
+    if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, ele, orbit, electric$, ac_amp*step_len, mat6, make_matrix)
   endif
 
 enddo
@@ -129,7 +130,7 @@ endif
 
 call offset_particle (ele, unset$, orbit, set_hvkicks = .false., mat6 = mat6, make_matrix = make_matrix)
 
-orbit%t = start_orb%t + ele%value(delta_ref_time$) + (start_orb%vec(5) - orbit%vec(5)) / (orbit%beta * c_light)
+orbit%t = start_orb%t + orbit%direction*orbit%time_dir*ele%value(delta_ref_time$) + (start_orb%vec(5) - orbit%vec(5)) / (orbit%beta * c_light)
 
 !---------------------------------------------
 contains

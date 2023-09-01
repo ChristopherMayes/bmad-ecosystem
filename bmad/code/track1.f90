@@ -40,19 +40,18 @@
 !                      An error is something like start_orb not being properly initialized.
 !-
 
-recursive subroutine track1 (start_orb, ele, param, end_orb, track, err_flag, ignore_radiation, &
-                                                                                     make_map1, init_to_edge)
+recursive subroutine track1 (start_orb, ele, param, end_orb, track, err_flag, ignore_radiation, make_map1, init_to_edge)
 
 use bmad, except_dummy1 => track1
 use mad_mod, only: track1_mad
-use high_energy_space_charge_mod, except_dummy2 => track1
+use high_energy_space_charge_mod, only: track1_high_energy_space_charge
+use radiation_mod, only: track1_radiation
 
 implicit none
 
 type (coord_struct) :: start_orb, start2_orb
 type (coord_struct) :: end_orb
 type (ele_struct)   :: ele
-type (ele_struct), pointer :: lord
 type (lat_param_struct) :: param
 type (track_struct), optional :: track
 
@@ -63,43 +62,56 @@ character(*), parameter :: r_name = 'track1'
 
 logical, optional :: make_map1
 logical, optional :: err_flag, ignore_radiation, init_to_edge
-logical err, do_extra, finished, radiation_included, do_spin_tracking, time_RK_tracking
+logical err, do_extra, finished, radiation_included, do_spin_tracking, time_RK_tracking, do_save
 
-! Use start2_orb since start_orb is strictly input.
-
-if (present(err_flag)) err_flag = .true.
-start2_orb = start_orb
-time_RK_tracking = (ele%tracking_method == time_runge_kutta$ .or. ele%tracking_method == fixed_step_time_runge_kutta$)
-
-do_extra = .not. logic_option(.false., ignore_radiation)
-
-! symp_lie_bmad tracking does include radiation effects
-
-radiation_included = (ele%tracking_method == symp_lie_bmad$) 
-
-! For historical reasons, the calling routine may not have correctly 
-! initialized the starting orbit. If so, we do an init here.
-! Time Runge-Kutta is tricky so do not attempt to do a set.
-
-if (start2_orb%state == not_set$) then
-  if (time_RK_tracking) then
-    call out_io (s_error$, r_name, 'STARTING ORBIT NOT PROPERLY INITIALIZED! [NEEDS AN INIT_COORD CALL?]')
-    return
-  endif
-  call init_coord(start2_orb, start2_orb, ele, upstream_end$, particle = default_tracking_species(param)) 
-endif
-
-! Set start2_orb%location appropriate for tracking through the element.
+! Set end_orb%location appropriate for tracking through the element.
 ! For time runge-kutta the particle may be starting inside the element.
 ! In this case, do not set the location.
 
+if (present(err_flag)) err_flag = .true.
+
+start2_orb = start_orb    ! Don't want to modify start_orb
+
 if (logic_option(.true., init_to_edge)) then
-  if (start2_orb%direction == 1) then
+  if (start2_orb%direction*start2_orb%time_dir == 1) then
     start2_orb%location = upstream_end$
     start2_orb%s = ele%s_start
   else
     start2_orb%location = downstream_end$
     start2_orb%s = ele%s
+  endif
+endif
+
+! For historical reasons, the calling routine may not have correctly 
+! initialized the starting orbit. If so, we do an init here.
+! Time Runge-Kutta is tricky so do not attempt to do a set.
+
+time_RK_tracking = (ele%tracking_method == time_runge_kutta$ .or. ele%tracking_method == fixed_step_time_runge_kutta$)
+if (start2_orb%state == not_set$) then
+  if (time_RK_tracking) then
+    call out_io (s_error$, r_name, 'STARTING ORBIT NOT PROPERLY INITIALIZED FOR TIME_RUNGE_KUTTA!', &
+                                   'PLEASE REPORT THIS!')
+    return
+  endif
+  call init_coord(start2_orb, start2_orb, ele, upstream_end$, particle = default_tracking_species(param)) 
+endif
+
+! Other tracking methods save their own trajectories
+
+do_save = present(track)
+select case (ele%tracking_method)
+case (bmad_standard$)
+  if (ele%key == beambeam$) do_save = .false.
+case (linear$, taylor$, mad$)
+case default
+  do_save = .false.
+end select
+
+if (do_save) then
+  if (start2_orb%direction*start2_orb%time_dir == 1) then
+    call save_a_step(track, ele, param, .false., start2_orb, 0.0_rp)
+  else
+    call save_a_step(track, ele, param, .false., start2_orb, ele%value(l$))
   endif
 endif
 
@@ -110,10 +122,14 @@ finished = .false.
 call track1_preprocess (start2_orb, ele, param, err, finished, radiation_included, track)
 if (err) return
 if (finished) then
-  end_orb = start2_orb
   if (present(err_flag)) err_flag = err
   return
 endif
+
+! symp_lie_bmad tracking does include radiation effects
+
+do_extra = .not. logic_option(.false., ignore_radiation)
+radiation_included = (ele%tracking_method == symp_lie_bmad$) 
 
 ! Energy sanity checks.
 
@@ -131,7 +147,8 @@ if (start2_orb%species /= photon$ .and. start2_orb%state == alive$) then
   endif
 
   if (err) then
-    call out_io (s_error$, r_name, 'STARTING ORBIT NOT PROPERLY INITIALIZED! [NEEDS AN INIT_COORD CALL?]')
+    call out_io (s_error$, r_name, 'STARTING ORBIT NOT PROPERLY INITIALIZED! [NEEDS AN INIT_COORD CALL?]', &
+                                   'TRACKING THROUGH ELEMENT: ' // ele_full_name(ele, '@N (&#)'))
     return
   endif
 endif
@@ -145,8 +162,8 @@ endif
 ! Check for particle lost even before we begin
 
 if (start2_orb%state /= alive$) then
-  end_orb = start_orb
-  end_orb%vec = 0
+  end_orb = start2_orb
+  start2_orb%vec = 0
   if (present(err_flag)) err_flag = .false.
   return
 endif
@@ -167,17 +184,20 @@ if (bmad_com%auto_bookkeeper) call attribute_bookkeeper (ele)
 
 call check_aperture_limit (start2_orb, ele, first_track_edge$, param)
 
-if (start2_orb%state /= alive$) then
-  end_orb = start2_orb
-  if (present(err_flag)) err_flag = .false.
-  return
-endif
-
 ! Radiation damping and/or fluctuations for the 1st half of the element.
 
 if ((bmad_com%radiation_damping_on .or. bmad_com%radiation_fluctuations_on) .and. &
                                            .not. radiation_included .and. ele%is_on .and. do_extra) then
   call track1_radiation (start2_orb, ele, start_edge$) 
+endif
+
+!
+
+end_orb = start2_orb
+
+if (end_orb%state /= alive$) then
+  if (present(err_flag)) err_flag = .false.
+  return
 endif
 
 ! bmad_standard handles the case when the element is turned off.
@@ -190,42 +210,37 @@ if (.not. ele%is_on) tracking_method = bmad_standard$
 select case (tracking_method)
 
 case (bmad_standard$)
-  if (start2_orb%species == photon$) then
-    call track1_bmad_photon (start2_orb, ele, param, end_orb, err)
+  if (end_orb%species == photon$) then
+    call track1_bmad_photon (end_orb, ele, param, err)
   else
-    call track1_bmad (start2_orb, ele, param, end_orb, err, track, mat6 = ele%mat6, make_matrix = make_map1)
+    call track1_bmad (end_orb, ele, param, err, track, mat6 = ele%mat6, make_matrix = make_map1)
     if (ele%key == beambeam$) do_spin_tracking = .false.
   endif
-
-  if (present(track) .and. ele%key /= beambeam$) call add_to_track(start2_orb, end_orb)
   if (err) return
 
 case (runge_kutta$, fixed_step_runge_kutta$) 
-  call track1_runge_kutta (start2_orb, ele, param, end_orb, err, track, mat6 = ele%mat6, make_matrix = make_map1)
+  call track1_runge_kutta (end_orb, ele, param, err, track, mat6 = ele%mat6, make_matrix = make_map1)
   if (err) return
 
 case (linear$) 
-  call track1_linear (start2_orb, ele, param, end_orb)
-  if (present(track)) call add_to_track(start2_orb, end_orb)
+  call track1_linear (end_orb, ele, param)
 
 case (taylor$) 
-  call track1_taylor (start2_orb, ele, param, end_orb)
-  if (present(track)) call add_to_track(start2_orb, end_orb)
+  call track1_taylor (end_orb, ele, param)
 
 case (symp_lie_bmad$) 
-  call symp_lie_bmad (ele, param, start2_orb, end_orb, track, mat6 = ele%mat6, make_matrix = make_map1)
+  call symp_lie_bmad (ele, param, end_orb, track, mat6 = ele%mat6, make_matrix = make_map1)
 
 case (symp_lie_ptc$)
-  call track1_symp_lie_ptc (start2_orb, ele, param, end_orb, track)
+  call track1_symp_lie_ptc (end_orb, ele, param, track)
   stm = ele%spin_tracking_method
   if (stm == tracking$ .or. stm == symp_lie_ptc$) do_spin_tracking = .false.
 
 case (mad$)
-  call track1_mad (start2_orb, ele, param, end_orb)
-  if (present(track)) call add_to_track(start2_orb, end_orb)
+  call track1_mad (end_orb, ele, param)
 
 case (custom$)
-  call track1_custom (start2_orb, ele, param, end_orb, err, finished, track)
+  call track1_custom (end_orb, ele, param, err, finished, track)
   if (err) return
   if (finished) then
     if (present(err_flag)) err_flag = err
@@ -233,7 +248,7 @@ case (custom$)
   endif
 
 case (time_runge_kutta$, fixed_step_time_runge_kutta$)
-  call track1_time_runge_kutta (start2_orb, ele, param, end_orb, err, track)
+  call track1_time_runge_kutta (end_orb, ele, param, err, track)
   if (err) return
 
 case default
@@ -258,16 +273,11 @@ if (orbit_too_large (end_orb, param)) then
   return
 endif
 
-! spin tracking. Must do after regular tracking in the case of spin_tracking_method = bmad_standard
- 
-if (do_spin_tracking) call track1_spin (start2_orb, ele, param, end_orb, make_map1)
-
 ! Set ix_ele. If the element is a slice_slave then the appropriate ix_ele is given by the lord.
 
 if (ele%slave_status == slice_slave$) then
-  lord => pointer_to_lord (ele, 1)
-  end_orb%ix_ele    = lord%ix_ele
-  end_orb%ix_branch = lord%ix_branch
+  end_orb%ix_ele    = ele%lord%ix_ele
+  end_orb%ix_branch = ele%lord%ix_branch
 else
   end_orb%ix_ele    = ele%ix_ele
   end_orb%ix_branch = ele%ix_branch
@@ -276,12 +286,21 @@ endif
 if (.not. time_RK_tracking) then
   if (end_orb%state /= alive$) then
     end_orb%location = inside$
-  elseif (start2_orb%direction == 1) then
+  elseif (end_orb%direction*end_orb%time_dir == 1) then
     end_orb%location = downstream_end$
   else
     end_orb%location = upstream_end$
   endif
 endif
+
+if (end_orb%state /= alive$) then
+  if (present(err_flag)) err_flag = .false.
+  return
+endif
+
+! spin tracking. Must do after regular tracking in the case of spin_tracking_method = bmad_standard
+ 
+if (do_spin_tracking) call track1_spin (start2_orb, ele, param, end_orb, make_map1)
 
 ! Radiation damping and/or fluctuations for the last half of the element
 
@@ -298,28 +317,16 @@ if (bmad_com%high_energy_space_charge_on .and. do_extra) call track1_high_energy
 
 call check_aperture_limit (end_orb, ele, second_track_edge$, param)
 
-call track1_postprocess (start2_orb, ele, param, end_orb)
+call track1_postprocess (start_orb, ele, param, end_orb)
+
+if (do_save) then
+  if (start_orb%direction*start_orb%time_dir == 1) then
+    call save_a_step(track, ele, param, .false., end_orb, ele%value(l$))
+  else
+    call save_a_step(track, ele, param, .false., end_orb, 0.0_rp)
+  endif
+endif
 
 if (present(err_flag)) err_flag = .false.
-
-!--------------------------------------------------------------------
-contains
-
-! Add the the track. 
-
-subroutine add_to_track(start_orb, end_orb)
-
-type (coord_struct) start_orb, end_orb
-
-!
-
-if (start_orb%direction == 1) then
-  call save_a_step(track, ele, param, .false., start_orb, 0.0_rp)
-  call save_a_step(track, ele, param, .false., end_orb, ele%value(l$))
-else
-  call save_a_step(track, ele, param, .false., start_orb, ele%value(l$))
-  call save_a_step(track, ele, param, .false., end_orb, 0.0_rp)
-endif
-end subroutine add_to_track
 
 end subroutine

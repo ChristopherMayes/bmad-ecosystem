@@ -1,6 +1,5 @@
 module opal_interface_mod
 
-use em_field_mod
 use write_lat_file_mod
 
 private write_opal_line
@@ -299,7 +298,7 @@ ele_loop: do ie = ix_start, ix_end
   ! end line
   write (line, '(2a)') trim(line), trim(eol_char)
 
-  ! call write_opal_field_map()
+  ! call write_opal_fieldmap()
 
   !----------------------------------------------------------
   !----------------------------------------------------------

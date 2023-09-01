@@ -1,69 +1,69 @@
 !+
-! Subroutine track1_symp_lie_ptc (start_orb, ele, param, end_orb, track)
+! Subroutine track1_symp_lie_ptc (orbit, ele, param, track)
 !
 ! Particle tracking through a single element using a hamiltonian
 ! and a symplectic integrator. This uses Etienne's PTC code. For a 
 ! "native" BMAD version see track1_symp_lie_bmad.
 !
 ! Input:
-!   start_orb  -- Coord_struct: Starting position
+!   orbit      -- Coord_struct: Starting position
 !   ele        -- Ele_struct: Element
 !   param      -- lat_param_struct:
 !
 ! Output:
-!   end_orb    -- Coord_struct: End position
+!   orbit      -- Coord_struct: End position
 !   track      -- Track_struct, optional: Structure holding the track information.
 !-
 
-subroutine track1_symp_lie_ptc (start_orb, ele, param, end_orb, track)
+subroutine track1_symp_lie_ptc (orbit, ele, param, track)
 
 use ptc_interface_mod, except_dummy => track1_symp_lie_ptc
 use ptc_spin, only: probe, assignment(=), operator(+), SPIN0, TOTALPATH0, &
                                               track_probe, track_probe_x, CONVERSION_XPRIME_IN_ABELL
-use s_tracking, only: alloc_fibre, integration_node
+use s_tracking, only: alloc_fibre, integration_node, check_stable
 use mad_like, only: fibre, kill
 
 implicit none
 
-type (coord_struct) :: start_orb, start2_orb
-type (coord_struct) :: end_orb
+type (coord_struct) :: orbit, start_orb
 type (track_struct), optional :: track
 type (ele_struct) :: ele, drift_ele
 type (lat_param_struct) :: param
 type (fibre), pointer :: ptc_fibre
 type (probe) ptc_probe
 type (integration_node), pointer :: ptc_track
-type (internal_state) state, state0
+type (internal_state) state
 
 real(dp) re(6)
 integer i, stm
+logical err_flag
 
 character(20) :: r_name = 'track1_symp_lie_ptc'
 
 ! call the PTC routines to track through the fibre.
 
 CONVERSION_XPRIME_IN_ABELL = (.not. bmad_com%convert_to_kinetic_momentum) ! Only affects cylindrical map eles
+state = ptc_private%base_state
 
-STATE0 = ptc_private%base_state
-if (ptc_private%use_totalpath) STATE0 = STATE0 + TOTALPATH0
-
-STATE = STATE0
-if (bmad_com%spin_tracking_on) STATE = STATE0 + SPIN0
-
-re = start_orb%vec
+re = orbit%vec
 
 !-----------------------------
 ! track element
 
-start2_orb = start_orb   ! Save initial state
-end_orb = start_orb
+start_orb = orbit   ! Save initial state
 
-call ele_to_fibre (ele, ptc_fibre, param, .true., ref_in = start_orb)
+call ele_to_fibre (ele, ptc_fibre, param, .true., err_flag, ref_in = orbit)
+if (err_flag) then
+  orbit%state = lost$
+  return
+endif
 
 !
 
 stm = ele%spin_tracking_method
 if (bmad_com%spin_tracking_on .and. (stm == tracking$ .or. stm == symp_lie_ptc$) .or. present(track)) then
+  if (bmad_com%spin_tracking_on) state = state + spin0
+
   ptc_probe = re
   ptc_probe%q%x = [1, 0, 0, 0]
 
@@ -72,45 +72,48 @@ if (bmad_com%spin_tracking_on .and. (stm == tracking$ .or. stm == symp_lie_ptc$)
     call save_this_step(track, ptc_probe, ele)
 
     do while (.not. associated(ptc_track, ptc_fibre%t2))
-      call track_probe (ptc_probe, STATE, node1 = ptc_track, node2 = ptc_track%next)
+      call track_probe (ptc_probe, state, node1 = ptc_track, node2 = ptc_track%next)
       call save_this_step(track, ptc_probe, ele)
+      if (.not. check_stable) exit
       ptc_track => ptc_track%next
     enddo
 
-    call track_probe (ptc_probe, STATE, node1 = ptc_track, node2 = ptc_track%next)
+    call track_probe (ptc_probe, state, node1 = ptc_track, node2 = ptc_track%next)
     call save_this_step(track, ptc_probe, ele)
 
   else
-    call track_probe (ptc_probe, STATE, fibre1 = ptc_fibre)
+    call track_probe (ptc_probe, state, fibre1 = ptc_fibre)
   endif
 
-  end_orb%spin = quat_rotate(ptc_probe%q%x, start2_orb%spin)
+  orbit%spin = quat_rotate(ptc_probe%q%x, start_orb%spin)
   re = ptc_probe%x
 
 else
-  ! Orignally used track (ptc_fibre, re, STATE) but this will not track taylor elements correctly.
-  call track_probe_x (re, STATE0, fibre1 = ptc_fibre)
+  ! Orignally used track (ptc_fibre, re, state) but this will not track taylor elements correctly.
+  call track_probe_x (re, state, fibre1 = ptc_fibre)
 endif
 
 !-----------------------------
 
-end_orb%vec = re
+orbit%vec = re
 
 ! 
 
-if (ele%value(p0c$) /= ele%value(p0c_start$) .or. start2_orb%vec(6) /= end_orb%vec(6)) then
-  call convert_pc_to (ele%value(p0c$) * (1 + end_orb%vec(6)), end_orb%species, beta = end_orb%beta)
+if (ele%value(p0c$) /= ele%value(p0c_start$) .or. start_orb%vec(6) /= orbit%vec(6)) then
+  call convert_pc_to (ele%value(p0c$) * (1 + orbit%vec(6)), orbit%species, beta = orbit%beta)
 endif
 
-end_orb%s = ele%s
-end_orb%p0c = ele%value(p0c$)
+orbit%s = ele%s
+orbit%p0c = ele%value(p0c$)
 
-if (ptc_private%use_totalpath) then
-  end_orb%t = start2_orb%t + start2_orb%vec(5) / (start2_orb%beta * c_light) - end_orb%vec(5) / (end_orb%beta * c_light)
+if (state%totalpath == 1) then
+  orbit%t = start_orb%t + start_orb%vec(5) / (start_orb%beta * c_light) - orbit%vec(5) / (orbit%beta * c_light)
 else
-  end_orb%t = start2_orb%t + ele%value(delta_ref_time$) + &
-                          start2_orb%vec(5) / (start2_orb%beta * c_light) - end_orb%vec(5) / (end_orb%beta * c_light)
+  orbit%t = start_orb%t + ele%value(delta_ref_time$) + &
+                          start_orb%vec(5) / (start_orb%beta * c_light) - orbit%vec(5) / (orbit%beta * c_light)
 endif
+
+if (.not. check_stable) orbit%state = lost$
 
 CONVERSION_XPRIME_IN_ABELL = .true. ! Reset to normal.
 
@@ -127,15 +130,13 @@ real(dp) re(6)
 
 ! The complication is that PTC pz is the true canonical momentum which includes the electrostatic potential.
 ! But Bmad pz does not include the electrostatic potential.
-
 ! Note: ptc_track%s(2) is the same as %s(1) except in a true rbend where %s(2) is the chord distance.
 
-! print '(i4, f10.6, 4x, 6f10.6, 4x, es16.8)', ptc_track%cas, ptc_track%s(1), ptc_probe%x, ptc_probe%E
-
-orbit = start2_orb
+orbit = start_orb
 orbit%vec = ptc_probe%x
 orbit%s = ptc_track%s(1) + ele%s_start
-orbit%spin = quat_rotate(ptc_probe%q%x, start2_orb%spin)
+orbit%spin = quat_rotate(ptc_probe%q%x, start_orb%spin)
+if (.not. check_stable) orbit%state = lost$
 call save_a_step (track, ele, param, .false., orbit, ptc_track%s(1))
 
 end subroutine save_this_step

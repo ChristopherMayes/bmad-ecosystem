@@ -147,19 +147,12 @@ invertible, \Eq{mtz} can be written in the form
   \bfM_{21} = \bigl( \boldsymbol{1} + \bfZ_{21} \, \bfT_{21}^{-1} \bigr) \, \bfT_{21} 
   \equiv \bfD_{21} \, \bfT_{21} 
 \end{equation}
-$\bfD$ is defined by this equation.
+$\bfD$ is defined by this equation. The 1-turn damping decrement $\alpha$ for each mode $a$, $b$,
+and $c$ of oscillation can be calculated from $\bfD$ using Eq.~(86) of Ohmi\cite{b:ohmi}.
 
-The 1-turn damping decrement $\alpha$ for each mode $a$, $b$, and $c$ of oscillation can be
-calculated from the eigen values $\lambda_i$ (cf. \Eq{lleit}) of the one-turn matrix with damping via
-\begin{equation}
-  \alpha_a = -\re(\log\lambda_1), \quad 
-  \alpha_b = -\re(\log\lambda_3), \quad 
-  \alpha_c = -\re(\log\lambda_5)
-  \label{allall}
-\end{equation}
-
-The $\Cal{S}$ matrix is calculated by first noting that, to linear order, the distribution of
-$\delta\bfr_2$ due to stochastic radiation over some length $ds$ as some point $s$ is
+The $\Cal{S}$ matrix (\Eq{rmrsx}) is calculated by first noting that, to linear order, the
+distribution of $\delta\bfr_2$ due to stochastic radiation over some length $ds$ as some point $s$
+is
 \begin{equation}
   \delta\bfr_2 = \sqrt{ds} \, \bfM_{2,s} \, \left( \bfF_\mk{f}(s) \, \xi_1 + \bfF_\mk{v} \, \xi_2 \right)
 \end{equation}
@@ -192,17 +185,18 @@ where the $t$ superscript indicates transpose. $\bfsig_{\gamma21}$ is related to
 \end{equation}
 The calculation of $\Cal{S}_{21}$ involves calculating $\bfsig_{\gamma21}$ via \Eq{smvvm} and then
 using \Eq{sxx} to solve for $\Cal{S}_{21}$ using, say, a Cholesky decomposition. Notice that while
-\Eq{sxx} does not have a unique solution, what matters here is that $\Cal{S}_{21} \, \Bf\Xi$ gives
-the correct distribution. The $\Cal{S}_{21}$ matrix may contain columns or rows that are all
-zero. This can happen if there are vectors $\bfz$ where $\bfz^t \bfsig_{\gamma21} \bfz$ is zero. For
-example, in a planer ring where the vertical emittance is zero there will be rows that are zero.
+\Eq{sxx} does not have a unique solution, what matters here is that $\Cal{S}_{21} \, \Bf\Xi$ (see
+\Eq{rmrsx}) gives the correct distribution. The $\Cal{S}_{21}$ matrix may contain columns or rows
+that are all zero. This can happen if there are vectors $\bfz$ where $\bfz^t \bfsig_{\gamma21} \bfz$
+is zero. For example, in a planer ring where the vertical emittance is zero there will be rows that
+are zero.
 
 The covariance matrix $\bfsig_\gamma(s_2)$ at $s_2$ relative to the covariance matrix at $s_1$ is
 \begin{equation}
   \bfsig_\gamma(s_2) = \bfsig_{\gamma21} + \bfM_{21} \, \bfsig_\gamma(s_1) \, \bfM_{21}^t
   \label{ssmsm}
 \end{equation}
-The beam size matrix $\sigma$ is not the same as the covariance matrix since the beam size matrix is
+The beam size matrix $\bfsig$ is not the same as the covariance matrix since the beam size matrix is
 an average over the particles of a beam and not an average over the photon emission
 spectrum. However, in equilibrium, the two are the same. To calculate the equilibrium beam size
 matrix, \Eq{ssmsm} is recast. For any symmetric $6\times6$ matrix $\bfA$, define the 21-vector
@@ -247,13 +241,6 @@ stochastic kick coefficient $\bfF_\mk{f}$ (\Eq{fk000}) is independent of the tra
 Other approximations involve the assumption of linearity of the guide fields and the ignoring of any
 resonance or wakefield effects. To the extent that these assumptions are violated, this will lead to
 a non-Gaussian beam shape.
-
-The accuracy of the calculation of the emittance and other parameters derived from the damping
-matrix will scale with the damping decrement (\Eq{allall}).  For most practical cases this is not an
-issue. For example, a calculation using double precision numbers (with have a precision of order
-$10^{-16}$) for a machine with a 1-turn damping decrement of $10^{-7}$ will lead to an accuracy of
-order $10^{-16}/10^{-7} = 10^{-9}$. It should be kept in mind that in any case in the limit of zero
-damping the approximations made as discussed in the previous paragraph will not be valid.
 
 %-----------------------------------------------------------------
 \section{Synchrotron Radiation Integrals}

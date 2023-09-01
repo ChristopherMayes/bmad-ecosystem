@@ -3,7 +3,6 @@ module bookkeeper_mod
 use wall3d_mod
 use multipole_mod
 use equality_mod
-use em_field_mod
 use expression_mod
 use changed_attribute_bookkeeper
 use attribute_mod
@@ -243,7 +242,7 @@ endif
 
 ! Evaluate value and old value.
 
-if (lord%control%type == expression$) then
+if (allocated(ctl%stack)) then
   ctl%value = expression_stack_value (ctl%stack, err_flag, err_str, lord%control%var, .false.)
   val_old   = expression_stack_value (ctl%stack, err_flag, err_str, lord%control%var, .true.)
   if (err_flag) then
@@ -253,9 +252,9 @@ if (lord%control%type == expression$) then
 
 else
   val_old = knot_interpolate(lord%control%x_knot, ctl%y_knot, lord%control%var(1)%old_value, &
-                                                            nint(lord%value(interpolation$)), err_flag)
+                                                                  nint(lord%value(interpolation$)), err_flag)
   ctl%value = knot_interpolate(lord%control%x_knot, ctl%y_knot, lord%control%var(1)%value, &
-                                                            nint(lord%value(interpolation$)), err_flag)
+                                                                  nint(lord%value(interpolation$)), err_flag)
   if (err_flag) then
     call out_io (s_error$, r_name, 'EVALUATION PROBLEM FOR GROUP ELEMENT: ' // lord%name, &
                     'WHILE CALCULATING VALUE FOR: ' // trim(ele%name) // '[' // trim(attrib_name) // ']')
@@ -538,8 +537,9 @@ if (associated(slave%a_pole_elec)) deallocate(slave%a_pole_elec, slave%b_pole_el
 if (allocated(slave%multipole_cache)) deallocate(slave%multipole_cache)
 
 ! Bookkeeping for EM_Field slave is mostly independent of the lords.
+! Exception: If only one lord then treat em_field slave same as other slaves.
 
-if (slave%key == em_field$) then
+if (slave%key == em_field$ .and. slave%n_lord > 1) then
   value = slave%value
   slave%value = 0
   slave%value(l$)                     = value(l$)
@@ -624,7 +624,7 @@ if (n_major_lords < 2) then
         slave%multipole_cache%ix_kick_mag_max = invalid$
         slave%multipole_cache%ix_kick_elec_max = invalid$
       endif
-      if (associated(slave%rad_int_cache)) slave%rad_int_cache%stale = .true. ! Forces recalc
+      if (associated(slave%rad_map)) slave%rad_map%stale = .true. ! Forces recalc
     endif
   endif
 
@@ -736,7 +736,7 @@ do j = 1, slave%n_lord
         slave%multipole_cache%ix_pole_mag_max = invalid$
         slave%multipole_cache%ix_pole_elec_max = invalid$
       endif
-      if (associated(slave%rad_int_cache)) slave%rad_int_cache%stale = .true. ! Forces recalc
+      if (associated(slave%rad_map)) slave%rad_map%stale = .true. ! Forces recalc
     endif
   endif
 
@@ -753,9 +753,11 @@ do j = 1, slave%n_lord
   ! n_major_lords counts how many major lords there are.
 
   if (n_major_lords == 0) then
-    slave%mat6_calc_method = lord%mat6_calc_method
-    slave%tracking_method  = lord%tracking_method
+    slave%mat6_calc_method            = lord%mat6_calc_method
+    slave%tracking_method             = lord%tracking_method
     slave%taylor_map_includes_offsets = lord%taylor_map_includes_offsets
+    slave%csr_method                  = lord%csr_method
+    slave%space_charge_method         = lord%space_charge_method
   endif
 
   if (has_attribute (lord, 'FRINGE_TYPE')) then
@@ -800,6 +802,9 @@ do j = 1, slave%n_lord
           err_flag = .true.
         endif
       endif
+
+      if (slave%csr_method == off$) slave%csr_method = lord%csr_method
+      if (slave%space_charge_method == off$) slave%space_charge_method = lord%space_charge_method
 
       if (slave%taylor_map_includes_offsets .neqv. lord%taylor_map_includes_offsets) then
         call out_io(s_abort$, r_name, &
@@ -1267,7 +1272,7 @@ end select
 
 if (has_orientation_attributes(slave)) then
 
-  if (slave%key == sbend$ .and. value(g$) /= 0) then
+  if ((slave%key == sbend$ .or. slave%key == rf_bend$) .and. value(g$) /= 0) then
 
     roll = value(roll_tot$);     tilt = value(ref_tilt_tot$)
     off = [value(x_offset_tot$), value(y_offset_tot$), value(z_offset_tot$)]
@@ -1276,7 +1281,7 @@ if (has_orientation_attributes(slave)) then
     value(ref_tilt$) = tilt
 
     if (any(off /= 0) .or. xp /= 0 .or. yp /= 0 .or. roll /= 0) then
-      from_pos = floor_position_struct([0,0,0], w_unit$, 0, 0, 0)
+      from_pos = floor_position_struct([0,0,0], mat3_unit$, 0, 0, 0)
       from_pos%r(3) = offset + len_slave/2
       to_pos = coords_body_to_rel_exit (from_pos, lord)
       to_pos = bend_shift (to_pos, lord%value(g$), offset + len_slave/2 - len_lord, ref_tilt = tilt)
@@ -1374,6 +1379,8 @@ slave%symplectify                 = lord%symplectify
 slave%multipoles_on               = lord%multipoles_on
 slave%scale_multipoles            = lord%scale_multipoles
 slave%is_on                       = lord%is_on
+slave%csr_method                  = lord%csr_method
+slave%space_charge_method         = lord%space_charge_method
 
 if (slave%tracking_method == bmad_standard$ .and. slave%key == em_field$) slave%tracking_method = runge_kutta$
 if (slave%mat6_calc_method == bmad_standard$ .and. slave%key == em_field$) slave%mat6_calc_method = tracking$
@@ -1550,7 +1557,7 @@ do i = 1, slave%n_lord
     w_slave_mis_tot = matmul(w_slave_mis_tot, w_slave_mis)
 
     ! If slave is an sbend then correct offsets since roll axis is displaced from the bend center.
-    if (slave%key == sbend$ .and. vs(g$) /= 0) then
+    if ((slave%key == sbend$ .or. slave%key == rf_bend$) .and. vs(g$) /= 0) then
       call floor_w_mat_to_angles (w_slave_mis_tot, vs(x_pitch_tot$), vs(y_pitch_tot$), vs(roll_tot$))
       dr = (1 - cos(vs(angle$)/2)) / vs(g$)
       vs(x_offset_tot$) = l_slave_off_tot(1) + dr * (1 - cos(vs(roll_tot$)))
@@ -1664,7 +1671,7 @@ enddo
 
 if (.not. on_an_offset_girder .and. has_orientation_attributes(slave)) then
   select case (slave%key)
-  case (sbend$)
+  case (sbend$, rf_bend$)
     slave%value(roll_tot$)     = slave%value(roll$)
     slave%value(ref_tilt_tot$) = slave%value(ref_tilt$)
   case (crystal$, mirror$, multilayer_mirror$)
@@ -1705,7 +1712,7 @@ character(100) err_str
 
 if (.not. lord%is_on) return
 
-if (lord%control%type == expression$) then
+if (allocated(c%stack)) then
   c%value = expression_stack_value(c%stack, err_flag, err_str, lord%control%var, .false.)
   if (err_flag) then
     call out_io (s_error$, r_name, err_str, 'FOR SLAVE: ' // slave%name, 'OF LORD: ' // lord%name)
@@ -1715,7 +1722,7 @@ if (lord%control%type == expression$) then
 
 else
   c%value = knot_interpolate (lord%control%x_knot, c%y_knot, lord%control%var(1)%value, &
-                  nint(lord%value(interpolation$)), err_flag)
+                                                                      nint(lord%value(interpolation$)), err_flag)
   if (err_flag) then
     call out_io (s_error$, r_name, 'VARIABLE VALUE OUTSIDE OF SPLINE KNOT RANGE.')
     return

@@ -27,6 +27,7 @@ character(*), parameter :: r_name = 'tao_graph_setup'
 
 !
 
+if (.not. graph%is_valid) return
 graph%text_legend_out = graph%text_legend
 
 if (graph%type == 'floor_plan') return  ! Nothing to do.
@@ -215,9 +216,9 @@ do i = 1, size(graph%curve)
   var0 = ele%control%var(1)%value
 
   do j = 1, n_curve_pts
-    var = graph%x%min + (j - 1) * (graph%x%max - graph%x%min) / n_curve_pts
+    var = graph%x%eval_min + (j - 1) * (graph%x%eval_max - graph%x%eval_min) / n_curve_pts
     ele%control%var(1)%value = var
-    if (ele%control%type == expression$) then
+    if (allocated(ctl%stack)) then
       value = expression_stack_value(ctl%stack, err, err_str, ele%control%var, .false.)
     else
       call spline_akima_interpolate (ele%control%x_knot, ctl%y_knot, value, ok, value)
@@ -452,10 +453,10 @@ n_curve_pts = s%plot_page%n_curve_pts
 if (plot%n_curve_pts > 0) n_curve_pts = plot%n_curve_pts
 
 same_uni = .true.
-ix = tao_universe_number(tao_curve_ix_uni(graph%curve(1)))
+ix = tao_universe_index(tao_curve_ix_uni(graph%curve(1)))
 do k = 2, size(graph%curve)
   curve => graph%curve(k)
-  if (tao_universe_number(tao_curve_ix_uni(curve)) /= ix) same_uni = .false.
+  if (tao_universe_index(tao_curve_ix_uni(curve)) /= ix) same_uni = .false.
 enddo
 
 graph%title_suffix = ''
@@ -493,12 +494,6 @@ do k = 1, size(graph%curve)
   curve => graph%curve(k)
   u => tao_pointer_to_universe (tao_curve_ix_uni(curve))
 
-  ! find phase space axes to plot
-
-  err = .false.
-  call tao_phase_space_axis (curve%data_type_x, ix1_ax, err = err); if (err) return
-  call tao_phase_space_axis (curve%data_type,   ix2_ax, err = err); if (err) return
-
   ! fill the curve data arrays
 
   if (allocated (curve%ix_symb) .and. curve%data_source /= 'multi_turn_orbit' .and. &
@@ -515,8 +510,9 @@ do k = 1, size(graph%curve)
       return
     endif
 
-    beam => u%model_branch(curve%ix_branch)%ele(curve%ix_ele_ref_track)%beam
-    ele => u%model%lat%branch(curve%ix_branch)%ele(curve%ix_ele_ref_track)
+    ib = tao_branch_index(curve%ix_branch)
+    beam => u%model_branch(ib)%ele(curve%ix_ele_ref_track)%beam
+    ele => u%model%lat%branch(ib)%ele(curve%ix_ele_ref_track)
     if (.not. allocated(beam%bunch)) then
       call out_io (s_warn$, r_name, 'NO BEAM AT ELEMENT: ' // trim(ele%name), &
                     'CANNOT DO PHASE_SPACE PLOTTING FOR CURVE: ' // tao_curve_name(curve))
@@ -553,12 +549,12 @@ do k = 1, size(graph%curve)
       if (curve%ix_bunch /= 0 .and. curve%ix_bunch /= ib) cycle
       p => beam%bunch(ib)%particle
       m = count(beam%bunch(ib)%particle%state == alive$)
-      call tao_phase_space_axis (curve%data_type_x, ix1_ax, p, scratch%axis1, ele)
-      call tao_phase_space_axis (curve%data_type,   ix2_ax, p, scratch%axis2, ele)
+      call tao_particle_data_value (curve%data_type_x, p, scratch%axis1, err, ele, ib); if (err) return
+      call tao_particle_data_value (curve%data_type,   p, scratch%axis2, err, ele, ib); if (err) return
       curve%x_symb(n+1:n+m) = pack(scratch%axis1, mask = (p%state == alive$))
       curve%y_symb(n+1:n+m) = pack(scratch%axis2, mask = (p%state == alive$))
       if (curve%z_color%is_on) then
-        call tao_phase_space_axis (curve%z_color%data_type, ix3_ax, p, scratch%axis3, ele)
+        call tao_particle_data_value (curve%z_color%data_type, p, scratch%axis3, err, ele, ib); if (err) return
         curve%z_symb(n+1:n+m) = pack(scratch%axis3, mask = (p%state == alive$))
       endif
       if (graph%symbol_size_scale > 0) curve%symb_size(n+1:n+m) = pack(graph%symbol_size_scale * &
@@ -595,6 +591,11 @@ do k = 1, size(graph%curve)
     sigma_mat(4,4) = emit_b
     sigma_mat = matmul (matmul (mat4, sigma_mat), transpose(mat4))
 
+    ! find phase space axes to plot
+
+    ix1_ax = tao_phase_space_axis_index (curve%data_type_x, err); if (err) return
+    ix2_ax = tao_phase_space_axis_index (curve%data_type, err); if (err) return
+
     if (ix1_ax > 4 .or. ix2_ax > 4) then
       call out_io (s_warn$, r_name, &
         'Z OR PZ PHASE SPACE PLOTTING NOT YET IMPLEMENTED FOR "twiss" DATA_SOURCE.')
@@ -619,7 +620,7 @@ do k = 1, size(graph%curve)
       phi = 0.5 *atan2((rx**2+ry**2) * sin(2*theta_xy), &
                               (rx**2-ry**2) * cos(2*theta_xy)) - theta_xy
       write (graph%text_legend_out(n+3), '(a, f10.4)') 'Theta_tilt (rad):', phi
-  endif
+    endif
 
     n = 2 * n_curve_pts
     call re_allocate (curve%x_line, n)
@@ -658,7 +659,7 @@ type (tao_universe_struct), pointer :: u
 type (tao_dynamic_aperture_struct), pointer :: da
 type (aperture_scan_struct), pointer :: scan
 type (coord_struct), allocatable :: orbit(:)
-integer :: i, j, k, n_da, n_da_curve, n, ix_ele_ref
+integer :: i, j, k, ib, n_da, n_da_curve, n, ix_ele_ref
 
 logical err
 
@@ -870,10 +871,10 @@ endif
 ! Set up the graph suffix
 
 same_uni = .true.
-ix = tao_universe_number(tao_curve_ix_uni(graph%curve(1)))
+ix = tao_universe_index(tao_curve_ix_uni(graph%curve(1)))
 do k = 2, size(graph%curve)
   curve => graph%curve(k)
-  if (tao_universe_number(tao_curve_ix_uni(curve)) /= ix) same_uni = .false.
+  if (tao_universe_index(tao_curve_ix_uni(curve)) /= ix) same_uni = .false.
 enddo
 
 graph%title_suffix = ''
@@ -913,18 +914,14 @@ do k = 1, size(graph%curve)
   curve => graph%curve(k)
   u => tao_pointer_to_universe (tao_curve_ix_uni(curve))
 
-  ! find phase space axes to plot
-
-  err = .false.
-  call tao_phase_space_axis (curve%data_type, ix1_ax, err = err); if (err) return
-
   ! fill the data array
 
   if (allocated (curve%ix_symb)) deallocate (curve%ix_symb, curve%x_symb, curve%y_symb)
   if (allocated (curve%x_line))  deallocate (curve%x_line, curve%y_line)
 
   if (curve%data_source == 'beam') then
-    beam => u%model_branch(curve%ix_branch)%ele(curve%ix_ele_ref_track)%beam
+    ib = tao_branch_index(curve%ix_branch)
+    beam => u%model_branch(ib)%ele(curve%ix_ele_ref_track)%beam
     if (.not. allocated(beam%bunch)) then
       call out_io (s_warn$, r_name, 'NO ALLOCATED BEAM WITH PHASE_SPACE PLOTTING.')
       if (.not. u%is_on) call out_io (s_blank$, r_name, '   REASON: UNIVERSE IS TURNED OFF!')
@@ -947,7 +944,7 @@ do k = 1, size(graph%curve)
     do ib = 1, size(beam%bunch)
       p => beam%bunch(ib)%particle
       m = count(p%state == alive$)
-      call tao_phase_space_axis (curve%data_type, ix1_ax, p, scratch%axis1, ele)
+      call tao_particle_data_value (curve%data_type, p, scratch%axis1, err, ele, ib)
       data(n+1:n+m) = pack(scratch%axis1, mask = (p%state == alive$))
       if (curve%hist%weight_by_charge) weight(n+1:n+m) = pack(p%charge, mask = (p%state == alive$))
       n = n + m
@@ -1015,71 +1012,132 @@ end subroutine tao_graph_histogram_setup
 !----------------------------------------------------------------------------
 !----------------------------------------------------------------------------
 !----------------------------------------------------------------------------
+!+
+! Function tao_phase_space_axis_index (data_type, err) result (ix_axis)
+!
+! Routine to calculate the phase space axis index for a given data type.
+!
+! Input:
+!   data_type   -- character(*): Type of data.
+!   err         -- logical: Set True if there is an error.
+!
+! Output:
+!   ix_axis     -- integer: Axis index.
+!-
 
-subroutine tao_phase_space_axis (data_type, ix_axis, p, axis, ele, err)
+function tao_phase_space_axis_index (data_type, err) result (ix_axis)
 
 implicit none
 
-type (coord_struct), optional, target :: p(:)
-type (coord_struct) :: p1
-type (ele_struct), optional :: ele
+integer ix_axis
 
-real(rp), allocatable, optional :: axis(:)
-
-integer ix_axis, i
-
-logical, optional :: err
+logical :: err
 
 character(*) data_type
-character(16) :: r_name = 'phase_space_axis'
+character(*), parameter :: r_name = 'tao_phase_space_axis_index'
 
 !
 
-if (present(p)) call re_allocate (axis, size(p))
+err = .false.
 
 select case (data_type)
-case ('x');   ix_axis = 1; if (present(p)) axis = p%vec(1)
-case ('px');  ix_axis = 2; if (present(p)) axis = p%vec(2)
-case ('y');   ix_axis = 3; if (present(p)) axis = p%vec(3)
-case ('py');  ix_axis = 4; if (present(p)) axis = p%vec(4)
-case ('z');   ix_axis = 5; if (present(p)) axis = p%vec(5)
-case ('pz');  ix_axis = 6; if (present(p)) axis = p%vec(6)
-case ('intensity_x'); ix_axis =  7; if (present(p)) axis = p%field(1)**2
-case ('intensity_y'); ix_axis =  8; if (present(p)) axis = p%field(2)**2
-case ('phase_x');     ix_axis =  9; if (present(p)) axis = p%phase(1)
-case ('phase_y');     ix_axis = 10; if (present(p)) axis = p%phase(2)
-case ('t', 'time');   ix_axis = 14; if (present(p)) axis = p%t
+case ('x');   ix_axis = 1
+case ('px');  ix_axis = 2
+case ('y');   ix_axis = 3
+case ('py');  ix_axis = 4
+case ('z');   ix_axis = 5
+case ('pz');  ix_axis = 6
+
+case default
+  call out_io (s_warn$, r_name, 'BAD PHASE_SPACE DATA_TYPE: ' // data_type, &
+                                'SHOULD BE ONE OF "x", "px", "y", "py", "z", OR "pz".')
+  err = .true.
+end select
+
+end function tao_phase_space_axis_index
+
+!----------------------------------------------------------------------------
+!----------------------------------------------------------------------------
+!----------------------------------------------------------------------------
+!+
+! Subroutine tao_particle_data_value (data_type, p, value, err, ele, ix_bunch)
+!
+! Routine to calculate the value array of a data_type for an array of particles.
+!
+! Input:
+!   data_type   -- character(*): Type of data.
+!   p(:)        -- coord_struct, Array of particles containing the data.
+!   ele         -- ele_struct: Needed for "Ja" evaluation.
+!   ix_bunch    -- integer: Bunch index.
+!
+! Output:
+!   value(:)    -- real(rp): Array of values.
+!   err         -- logical: Set True if there is an error. False otherwise.
+!-
+
+subroutine tao_particle_data_value (data_type, p, value, err, ele, ix_bunch)
+
+implicit none
+
+type (coord_struct), target :: p(:)
+type (coord_struct) :: p1
+type (ele_struct) :: ele
+
+real(rp), allocatable :: value(:)
+
+integer ix_bunch
+integer i
+
+logical :: err
+
+character(*) data_type
+character(*), parameter :: r_name = 'tao_particle_data_value'
+
+!
+
+err = .false.
+call re_allocate (value, size(p))
+
+select case (data_type)
+case ('x');   value = p%vec(1)
+case ('px');  value = p%vec(2)
+case ('y');   value = p%vec(3)
+case ('py');  value = p%vec(4)
+case ('z');   value = p%vec(5)
+case ('pz');  value = p%vec(6)
+case ('intensity_x'); value = p%field(1)**2
+case ('intensity_y'); value = p%field(2)**2
+case ('phase_x');     value = p%phase(1)
+case ('phase_y');     value = p%phase(2)
+case ('t', 'time');   value = p%t
+case ('bunch_index');    value = ix_bunch
 
 case ('intensity')
-  ix_axis = 11
-  if (present(p)) then
-    p%charge = p%field(1)**2 + p%field(2)**2
-    axis = p%charge
-  endif
+  value = p%field(1)**2 + p%field(2)**2
   
 case ('Ja')
-  ix_axis = 12
-  if (present(p) .and. present(ele)) then
-    do i=1, size(p)
-      call convert_coords('LAB', p(i), ele, 'ACTION-ANGLE', p1)
-      axis(i) = p1%vec(1)
-    enddo
-  endif
+  do i=1, size(p)
+    call convert_coords('LAB', p(i), ele, 'ACTION-ANGLE', p1)
+    value(i) = p1%vec(1)
+  enddo
+
+case ('Jb')
+  do i=1, size(p)
+    call convert_coords('LAB', p(i), ele, 'ACTION-ANGLE', p1)
+    value(i) = p1%vec(3)
+  enddo
 
 case ('energy')
-  ix_axis = 13
-  if (present(p)) then
-    do i=1, size(p)
-      call convert_pc_to((1 + p(i)%vec(6)) * p(i)%p0c, p(i)%species, e_tot =  axis(i))
-    enddo
-  endif
+  do i=1, size(p)
+    call convert_pc_to((1 + p(i)%vec(6)) * p(i)%p0c, p(i)%species, e_tot =  value(i))
+  enddo
   
 case default
   call out_io (s_warn$, r_name, 'BAD PHASE_SPACE CURVE DATA_TYPE: ' // data_type)
-  if (present(err)) err = .true.
+  err = .true.
 end select
 
-end subroutine tao_phase_space_axis
+end subroutine tao_particle_data_value
 
 !----------------------------------------------------------------------------
 !----------------------------------------------------------------------------
@@ -1177,8 +1235,8 @@ real(rp) f, eps, gs, l_tot, s0, s1, x_max, x_min, val, val0, dx, limit, len_bran
 real(rp), allocatable :: value_arr(:), x_arr(:), y_arr(:)
 real(rp), pointer :: var_ptr
 
-integer ii, k, m, n, n_dat, n2_dat, ie, jj, iv, ic
-integer ix, ir, jg, i, j, ix_this, ix_uni, ix1, ix2, n_curve_pts
+integer ii, k, m, n, n_dat, n2_dat, ib, ie, jj, iv, ic
+integer ix, ir, jg, i, j, ix_this, ix_uni, ix1, ix2, n_curve_pts, ix_slave
 integer, allocatable :: xx_arr(:)
 
 logical err, err_flag, smooth_curve, found, zero_average_phase, ok
@@ -1211,7 +1269,9 @@ if (.not. tao_curve_check_universe(curve, u)) return
 
 model_lat => u%model%lat
 base_lat => u%base%lat
-branch => model_lat%branch(curve%ix_branch)
+
+ib = tao_branch_index(curve%ix_branch)
+branch => model_lat%branch(ib)
 
 if (curve%ele_ref_name == '') then
   zero_average_phase = .true.
@@ -1222,7 +1282,8 @@ else
     call tao_set_curve_invalid (curve, 'CANNOT LOCATE ELEMENT: ' // trim(curve%ele_ref_name))
     return
   endif
-  curve%ix_branch  = scratch%eles(1)%ele%ix_branch
+  curve%ix_branch = scratch%eles(1)%ele%ix_branch
+  ib = curve%ix_branch
   curve%ix_ele_ref = scratch%eles(1)%ele%ix_ele
   call tao_ele_to_ele_track(tao_curve_ix_uni(curve), scratch%eles(1)%ele%ix_branch, &
                                       scratch%eles(1)%ele%ix_ele, curve%ix_ele_ref_track)
@@ -1244,14 +1305,14 @@ select case (data_source)
 case ('expression')
 
   if (plot%x_axis_type == 'index') then
-    n_dat = nint(graph%x%max) - nint(graph%x%min) + 1
+    n_dat = nint(graph%x%eval_max) - nint(graph%x%eval_min) + 1
 
     call re_allocate (curve%ix_symb, n_dat)
     call re_allocate (curve%x_symb,  n_dat) ! allocate space for the data
     call re_allocate (curve%y_symb,  n_dat) ! allocate space for the data
 
     n_dat = 0
-    do i = nint(graph%x%min), nint(graph%x%max)
+    do i = nint(graph%x%eval_min), nint(graph%x%eval_max)
       write (dflt_index, '(i0)') i
       call tao_evaluate_expression  (curve%data_type(12:), 0, graph%draw_only_good_user_data_or_vars, value_arr, &
                    err, .false., scratch%info, scratch%stack, curve%component, curve%data_source, dflt_dat_or_var_index = dflt_index)
@@ -1278,15 +1339,15 @@ case ('expression')
       n_dat = n_dat + 1
       curve%y_symb(n_dat) = value_arr(i)
 
-      dx = (graph%x%max - graph%x%min) / 100.0_rp
+      dx = (graph%x%eval_max - graph%x%eval_min) / 100.0_rp
 
       select case (plot%x_axis_type)
       case ('s')
-        if (scratch%info(i)%s < graph%x%min - dx .or. scratch%info(i)%s > graph%x%max + dx) cycle
+        if (scratch%info(i)%s < graph%x%eval_min - dx .or. scratch%info(i)%s > graph%x%eval_max + dx) cycle
         curve%x_symb(n_dat) = scratch%info(i)%s
       case ('ele_index')
         if (.not. associated(scratch%info(i)%ele)) cycle
-        if (scratch%info(i)%ele%ix_ele < graph%x%min - dx .or. scratch%info(i)%ele%ix_ele > graph%x%max + dx) cycle
+        if (scratch%info(i)%ele%ix_ele < graph%x%eval_min - dx .or. scratch%info(i)%ele%ix_ele > graph%x%eval_max + dx) cycle
         curve%x_symb(n_dat) = scratch%info(i)%ele%ix_ele
       end select
     enddo
@@ -1358,7 +1419,7 @@ case ('plot_x_axis_var')
 
   j = 0
   do i = 1, n_curve_pts 
-    val = graph%x%min + (graph%x%max - graph%x%min) * (i - 1.0_rp) / (n_curve_pts - 1)
+    val = graph%x%eval_min + (graph%x%eval_max - graph%x%eval_min) * (i - 1.0_rp) / (n_curve_pts - 1)
     if (plot%x_axis_type == 'lat')then
       var_ptr = val
       call tao_set_flags_for_changed_attribute (u, name(1:ix1-1), scratch%eles(1)%ele, var_ptr)
@@ -1396,6 +1457,7 @@ case ('plot_x_axis_var')
 
   if (plot%x_axis_type == 'lat')then
     var_ptr = val0
+    call tao_set_flags_for_changed_attribute (u, name(1:ix1-1), scratch%eles(1)%ele, var_ptr)
     s%u(ix_uni)%calc%lattice = .true.
   else
     call tao_set_var_model_value (scratch%var_array(1)%v, val0)
@@ -1473,16 +1535,8 @@ case ('data')
 
   ! make sure %useit_plot up-to-date & count the number of data points
 
-  call tao_data_useit_plot_calc (curve, graph, d1_ptr%d, plot%x_axis_type == 's') 
+  call tao_data_useit_plot_calc (curve, graph, d1_ptr%d, plot%x_axis_type == 's', curve%why_invalid) 
   n_dat = count (d1_ptr%d%useit_plot)       
-
-  if (n_dat == 0) then
-    if (all(d1_ptr%d%s == real_garbage$)) then
-      call out_io (s_error$, r_name, &
-          'DATA DOES NOT HAVE A WELL DEFINED S-POSITION FOR PLOT CURVE: ' //  curve%data_type, &
-          'SOLUTION: PLOT BY DATUM INDEX INSTEAD OF S-POSITION.')
-    endif
-  endif
 
   ! resize the curve data arrays
 
@@ -1686,7 +1740,7 @@ case ('lat', 'beam')
     n_dat = max(0, nint(x_max+1-x_min))
     call re_allocate_eles (scratch%eles, n_dat, exact = .true.)
     do i = 1, n_dat
-      scratch%eles(i)%ele => pointer_to_ele (model_lat, nint(i+x_min-1), curve%ix_branch)
+      scratch%eles(i)%ele => pointer_to_ele (model_lat, nint(i+x_min-1), ib)
     enddo
 
   ! x_axis_type == 's':
@@ -1770,7 +1824,7 @@ case ('lat', 'beam')
 
 case ('aperture')
 
-  branch => u%model%lat%branch(curve%ix_branch)
+  branch => u%model%lat%branch(ib)
   call re_allocate (xx_arr, 100)
   call re_allocate (x_arr, 100)
   call re_allocate (y_arr, 100)
@@ -1798,14 +1852,14 @@ case ('aperture')
       call re_allocate (y_arr, 2*size(y_arr))
     endif    
 
-    if (at_this_ele_end(physical_ele_end(first_track_edge$, 1, ele%orientation), ele%aperture_at)) then
+    if (at_this_ele_end(physical_ele_end(first_track_edge$, coord_struct(), ele%orientation), ele%aperture_at)) then
       ir = ir + 1
       y_arr(ir) = limit
       xx_arr(ir) = i - 1 
       x_arr(ir) = ele%s_start
     endif
 
-    if (at_this_ele_end(physical_ele_end(second_track_edge$, 1, ele%orientation), ele%aperture_at)) then
+    if (at_this_ele_end(physical_ele_end(second_track_edge$, coord_struct(), ele%orientation), ele%aperture_at)) then
       ir = ir + 1
       y_arr(ir) = limit
       xx_arr(ir) = i
@@ -1881,161 +1935,201 @@ end select
 
 !----------------------------------------------------------------------------
 !----------------------------------------------------------------------------
+! Line calc
 ! If the x-axis is by index or ele_index then these points are the same as the symbol points.
 ! That is, for x-axis = 'index' or 'ele_index' the line is piece-wise linear between the symbols.
 
-select case (plot%x_axis_type)
-case ('index', 'ele_index')
-  call re_allocate (curve%y_line, size(curve%x_symb)) ! allocate space for the data
-  call re_allocate (curve%x_line, size(curve%y_symb)) ! allocate space for the data
-  curve%x_line = curve%x_symb
-  curve%y_line = curve%y_symb
+if (curve%draw_line) then
+  select case (plot%x_axis_type)
+  case ('index', 'ele_index')
+    call re_allocate (curve%y_line, size(curve%x_symb)) ! allocate space for the data
+    call re_allocate (curve%x_line, size(curve%y_symb)) ! allocate space for the data
+    curve%x_line = curve%x_symb
+    curve%y_line = curve%y_symb
 
-! If the axis is by s-value then, if possible, the line is a "smooth" curve with n_curve_pts points.
+  ! If the axis is by s-value then, if possible, the line is a "smooth" curve with n_curve_pts points.
 
-case ('s')
+  case ('s')
 
-  ! beam data_source is not interpolated.
-  smooth_curve = (curve%data_source == 'lat' .and. curve%smooth_line_calc .and. .not. s%global%disable_smooth_line_calc)
-  if (index(curve%data_type, 'emit.') /= 0) smooth_curve = .false.
-  if (substr(curve%data_type,1,7) == 'smooth.') smooth_curve = .false.
-  if (substr(curve%data_type,1,4) == 'bpm_') smooth_curve = .false.
-  if (substr(curve%data_type,1,6) == 'bunch_') smooth_curve = .false.
-  if (substr(curve%data_type,1,6) == 'chrom.' .and. substr(curve%data_type,1,7) /= 'chrom.w') smooth_curve = .false.
+    ! beam data_source is not interpolated.
+    smooth_curve = (curve%data_source == 'lat' .and. curve%smooth_line_calc .and. .not. s%global%disable_smooth_line_calc)
+    if (index(curve%data_type, 'emit.') /= 0) smooth_curve = .false.
+    if (substr(curve%data_type,1,7) == 'smooth.') smooth_curve = .false.
+    if (substr(curve%data_type,1,15) == 'element_attrib.') smooth_curve = .false.
+    if (substr(curve%data_type,1,4) == 'bpm_') smooth_curve = .false.
+    if (substr(curve%data_type,1,6) == 'bunch_') smooth_curve = .false.
+    if (substr(curve%data_type,1,6) == 'chrom.' .and. substr(curve%data_type,1,7) /= 'chrom.w') smooth_curve = .false.
 
-  if (index(curve%component, 'meas') /= 0 .or. index(curve%component, 'ref') /= 0 .or. &
-      curve%data_source == 'data' .or. curve%data_source == 'var') then
-    straight_line_between_syms = .true.
-    smooth_curve = .false.
-  else
-    straight_line_between_syms = .false.
-  endif
-
-  ! Smooth curves using expressions...
-
-  if (smooth_curve) then
-    ! allocate data space
-
-    call re_allocate (curve%y_line, n_curve_pts) 
-    call re_allocate (curve%x_line, n_curve_pts)
-    call re_allocate (good, n_curve_pts) 
-    good = .true.
-    curve%y_line = 0
-
-    call tao_split_component(curve%component, scratch%comp, err)
-    if (err) then
-      call tao_set_curve_invalid (curve, 'BAD CURVE COMPONENT EXPRESSION: ' // curve%component)
-      return
-    endif
-    if (curve%component == '') then
-      call tao_set_curve_invalid (curve, 'BLANK CURVE COMPONENT STRING.')
-      return
-    endif
-
-    do m = 1, size(scratch%comp)
-      select case (scratch%comp(m)%name)
-      case ('') 
-        cycle
-      case ('model')
-        call tao_calc_data_at_s_pts (u%model, curve, scratch%comp(m)%sign, good)
-      case ('base')  
-        call tao_calc_data_at_s_pts (u%base, curve, scratch%comp(m)%sign, good)
-      case ('design')  
-        call tao_calc_data_at_s_pts (u%design, curve, scratch%comp(m)%sign, good)
-      case default
-        call tao_set_curve_invalid (curve, 'BAD CURVE COMPONENT: ' // curve%component)
-        return
-      end select
-    enddo
-
-    if (substr(curve%data_type, 1, 3) == 'b0_' .or. substr(curve%data_type, 1, 3) == 'e0_') then
-      ix = index(curve%legend_text, '[')
-      if (ix == 0) ix = len_trim(curve%legend_text) + 2
-      str = ''
-      if (curve%orbit%x /= 0) str = trim(str) // ', x=' // real_str(curve%orbit%x, 5)
-      if (curve%orbit%y /= 0) str = trim(str) // ', y=' // real_str(curve%orbit%y, 5)
-      if (curve%orbit%t /= 0) str = trim(str) // ', t=' // real_str(curve%orbit%t, 5)
-      if (len_trim(str) == 0) then
-        curve%legend_text = curve%legend_text(:ix-1) // '[x=y=t=0]'
-      else
-        curve%legend_text = curve%legend_text(:ix-1) // '[' // trim(str(3:)) // ']'
-      endif
-    endif
-
-    !! if (all(.not. good)) exit
-    n_dat = count(good)
-    curve%x_line(1:n_dat) = pack(curve%x_line, mask = good)
-    curve%y_line(1:n_dat) = pack(curve%y_line, mask = good)
-    call re_allocate (curve%y_line, n_dat) ! allocate space for the data
-    call re_allocate (curve%x_line, n_dat) ! allocate space for the data
-
-  ! For non-smooth curves: Draw straight lines through the symbols if
-  ! the data uses "ref" or "meas" values. Else evaluate at the element ends.
-
-  else if (straight_line_between_syms) then
-    if (allocated (curve%x_symb)) then
-      n_dat = size(curve%x_symb)
-      call re_allocate (curve%y_line, n_dat) 
-      call re_allocate (curve%x_line, n_dat) 
-      curve%x_line = curve%x_symb 
-      curve%y_line = curve%y_symb 
+    if (index(curve%component, 'meas') /= 0 .or. index(curve%component, 'ref') /= 0 .or. &
+        curve%data_source == 'data' .or. curve%data_source == 'var') then
+      straight_line_between_syms = .true.
+      smooth_curve = .false.
     else
-      call tao_curve_datum_calc (scratch%eles, plot, curve, 'LINE')
-      if (.not. curve%valid) return
+      straight_line_between_syms = .false.
     endif
 
-  ! Evaluate at element ends
+    ! Smooth curves using expressions...
 
-  else
+    if (smooth_curve) then
+      ! Allocate data space. 
+      ! Tracking is problematical if the step size is less than significant_length so adjust if needed.
 
-    eps = 1e-4 * (graph%x%max - graph%x%min)             ! a small number
-    l_tot = branch%param%total_length
-    branch%ele%logic = .false.
-    do i = 0, branch%n_ele_track
-      ele => branch%ele(i)
-      if (graph%x%min == graph%x%max) cycle
-      s1 = ele%s
-      ele%logic = (s1 >= graph%x%min-eps) .and. (s1 <= graph%x%max+eps)
-      if (branch%param%geometry == closed$ .and. graph%allow_wrap_around) then
-        ele%logic = ele%logic .or. ((s1-l_tot >= graph%x%min-eps) .and. (s1-l_tot <= graph%x%max+eps))
+      n_curve_pts = nint(min(1.0_rp*n_curve_pts, &
+                          2+0.1_rp*u%model%lat%branch(ib)%param%total_length/bmad_com%significant_length))
+      call re_allocate (curve%y_line, n_curve_pts) 
+      call re_allocate (curve%x_line, n_curve_pts)
+      call re_allocate (good, n_curve_pts) 
+      good = .true.
+      curve%y_line = 0
+
+      call tao_split_component(curve%component, scratch%comp, err)
+      if (err) then
+        call tao_set_curve_invalid (curve, 'BAD CURVE COMPONENT EXPRESSION: ' // curve%component)
+        return
       endif
-    enddo
-    n_dat = count (branch%ele(:)%logic)
-    call re_allocate_eles (scratch%eles, n_dat, exact = .true.)
-    i = 0
-    do j = 0, ubound(branch%ele, 1)
-      if (.not. branch%ele(j)%logic) cycle
-      i = i + 1
-      scratch%eles(i)%ele => branch%ele(j)
-    enddo
+      if (curve%component == '') then
+        call tao_set_curve_invalid (curve, 'BLANK CURVE COMPONENT STRING.')
+        return
+      endif
 
-    ! If there is a wrap-around then reorder the data
-
-    ix1 = 0
-    if (branch%param%geometry == closed$ .and. graph%allow_wrap_around) then
-      do i = 1, n_dat
-        if (ix1 == 0 .and. branch%ele(scratch%eles(i)%ele%ix_ele)%s - l_tot > graph%x%min) ix1 = i
-        if (branch%ele(scratch%eles(i)%ele%ix_ele)%s < graph%x%max+eps) ix2 = i
+      do m = 1, size(scratch%comp)
+        select case (scratch%comp(m)%name)
+        case ('') 
+          cycle
+        case ('model')
+          call tao_calc_data_at_s_pts (u%model, curve, scratch%comp(m)%sign, good)
+        case ('base')  
+          call tao_calc_data_at_s_pts (u%base, curve, scratch%comp(m)%sign, good)
+        case ('design')  
+          call tao_calc_data_at_s_pts (u%design, curve, scratch%comp(m)%sign, good)
+        case default
+          call tao_set_curve_invalid (curve, 'BAD CURVE COMPONENT: ' // curve%component)
+          return
+        end select
       enddo
-      if (ix1 /= 0) then
-        call re_allocate_eles(scratch%eles, n_dat + ix2 + 1 - ix1, .true., .true.)
-        scratch%eles = [scratch%eles(ix1:n_dat), scratch%eles(1:ix2)]
-      endif
-    endif
 
-    if (curve%draw_line) then
+      if (substr(curve%data_type, 1, 3) == 'b0_' .or. substr(curve%data_type, 1, 3) == 'e0_') then
+        ix = index(curve%legend_text, '[')
+        if (ix == 0) ix = len_trim(curve%legend_text) + 2
+        str = ''
+        if (curve%orbit%x /= 0) str = trim(str) // ', x=' // real_str(curve%orbit%x, 5)
+        if (curve%orbit%y /= 0) str = trim(str) // ', y=' // real_str(curve%orbit%y, 5)
+        if (curve%orbit%t /= 0) str = trim(str) // ', t=' // real_str(curve%orbit%t, 5)
+        if (len_trim(str) == 0) then
+          curve%legend_text = curve%legend_text(:ix-1) // '[x=y=t=0]'
+        else
+          curve%legend_text = curve%legend_text(:ix-1) // '[' // trim(str(3:)) // ']'
+        endif
+      endif
+
+      !! if (all(.not. good)) exit
+      n_dat = count(good)
+      curve%x_line(1:n_dat) = pack(curve%x_line, mask = good)
+      curve%y_line(1:n_dat) = pack(curve%y_line, mask = good)
+      call re_allocate (curve%y_line, n_dat) ! allocate space for the data
+      call re_allocate (curve%x_line, n_dat) ! allocate space for the data
+
+    ! For non-smooth curves: Draw straight lines through the symbols if
+    ! the data uses "ref" or "meas" values. Else evaluate at the element ends.
+
+    else if (straight_line_between_syms) then
+      if (allocated (curve%x_symb)) then
+        n_dat = size(curve%x_symb)
+        call re_allocate (curve%y_line, n_dat) 
+        call re_allocate (curve%x_line, n_dat) 
+        curve%x_line = curve%x_symb 
+        curve%y_line = curve%y_symb 
+      else
+        call tao_curve_datum_calc (scratch%eles, plot, curve, 'LINE')
+        if (.not. curve%valid) return
+      endif
+
+    ! Evaluate at element ends
+
+    else
+
+      eps = 1e-4 * (graph%x%max - graph%x%min)             ! a small number
+      l_tot = branch%param%total_length
+      branch%ele%logic = .false.
+      do i = 0, branch%n_ele_track
+        ele => branch%ele(i)
+        if (graph%x%min == graph%x%max) cycle
+        s1 = ele%s
+        ele%logic = (s1 >= graph%x%min-eps) .and. (s1 <= graph%x%max+eps)
+        if (branch%param%geometry == closed$ .and. graph%allow_wrap_around) then
+          ele%logic = ele%logic .or. ((s1-l_tot >= graph%x%min-eps) .and. (s1-l_tot <= graph%x%max+eps))
+        endif
+      enddo
+      n_dat = count (branch%ele(:)%logic)
+      call re_allocate_eles (scratch%eles, n_dat, exact = .true.)
+      i = 0
+      do j = 0, ubound(branch%ele, 1)
+        if (.not. branch%ele(j)%logic) cycle
+        i = i + 1
+        scratch%eles(i)%ele => branch%ele(j)
+      enddo
+
+      ! If there is a wrap-around then reorder the data
+
+      ix1 = 0
+      if (branch%param%geometry == closed$ .and. graph%allow_wrap_around) then
+        do i = 1, n_dat
+          if (ix1 == 0 .and. branch%ele(scratch%eles(i)%ele%ix_ele)%s - l_tot > graph%x%min) ix1 = i
+          if (branch%ele(scratch%eles(i)%ele%ix_ele)%s < graph%x%max+eps) ix2 = i
+        enddo
+        if (ix1 /= 0) then
+          call re_allocate_eles(scratch%eles, n_dat + ix2 + 1 - ix1, .true., .true.)
+          scratch%eles = [scratch%eles(ix1:n_dat), scratch%eles(1:ix2)]
+        endif
+      endif
+
       call tao_curve_datum_calc (scratch%eles, plot, curve, 'LINE')
       if (.not. curve%valid) return
+
+      if (substr(curve%data_type, 1, 15) == 'element_attrib.') then
+        n = size(curve%x_line)
+        call re_allocate(curve%x_line, 4*n)
+        call re_allocate(curve%y_line, 4*n)
+        do i = n, 1, -1
+          ele => branch%ele(scratch%eles(i)%ele%ix_ele)
+          j = 4*i - 4
+
+          if (ele%slave_status == super_slave$) then
+            ele => pointer_to_lord(ele, 1, ix_slave_back = ix_slave)
+            if (ix_slave /= ele%n_slave) then ! Will be duplicate
+              curve%x_line(j+1:j+4) = real_garbage$
+              cycle
+            endif
+          endif
+
+          curve%y_line(j+2:j+3) = curve%y_line(i)
+          curve%y_line(j+1) = 0
+          curve%y_line(j+4) = 0
+          curve%x_line(j+1:j+2) = ele%s_start
+          curve%x_line(j+3:j+4) = ele%s
+          if (ix1 /= 0 .and. i <= n_dat - ix1 + 1) curve%x_line(j+1:j+4) = curve%x_line(j+1:j+4) - l_tot
+        enddo
+
+        k = 0
+        do j = 0, 4*(n-1), 4
+          if (curve%x_line(j+1) == real_garbage$) cycle
+          curve%x_line(k+1:k+4) = curve%x_line(j+1:j+4)
+          curve%y_line(k+1:k+4) = curve%y_line(j+1:j+4)
+          k = k + 4
+        enddo
+        call re_allocate(curve%x_line, k)
+        call re_allocate(curve%y_line, k)
+
+      else
+        do i = 1, size(curve%x_line)
+          curve%x_line(i) = branch%ele(scratch%eles(i)%ele%ix_ele)%s
+          if (ix1 /= 0 .and. i <= n_dat - ix1 + 1) curve%x_line(i) = curve%x_line(i) - l_tot
+        enddo
+      endif
+
     endif
-
-    do i = 1, size(curve%x_line)
-      curve%x_line(i) = branch%ele(scratch%eles(i)%ele%ix_ele)%s
-      if (ix1 /= 0 .and. i <= n_dat - ix1 + 1) curve%x_line(i) = curve%x_line(i) - l_tot
-    enddo
-
-  endif
-
-end select
+  end select
+endif
 
 !----------------------------------------------------------------------------
 ! Note: Since there is an arbitrary overall phase, the phase data 
@@ -2070,7 +2164,8 @@ implicit none
 type (tao_lattice_struct), target :: tao_lat
 type (tao_curve_struct) curve
 type (tao_lattice_branch_struct), pointer :: tao_branch
-type (bunch_params_struct), pointer :: bunch_params0, bunch_params1, bunch_params_array(:)
+type (bunch_track_struct), pointer :: bunch_track
+type (bunch_params_struct), pointer :: bunch_params0, bunch_params1
 type (bunch_params_struct) :: bunch_params
 type (coord_struct), pointer :: orb(:), orb_ref
 type (coord_struct) orbit_end, orbit_last, orbit
@@ -2100,7 +2195,7 @@ logical err, good(:), first_time, radiation_fluctuations_on, ok, gd
 
 data_type = curve%data_type
 
-ix_branch = curve%ix_branch
+ix_branch = tao_branch_index(curve%ix_branch)
 lat => tao_lat%lat
 tao_branch => tao_lat%tao_branch(ix_branch)
 orb => tao_branch%orbit
@@ -2230,6 +2325,32 @@ do ii = 1, size(curve%x_line)
   endif
 
   !-----------------------------
+  ! Fields at constant transverse position do not need tracking and should not be affected by lost particles.
+
+  select case (data_type_select)
+  case ('b0_field', 'b0_curve', 'b0_div', 'e0_field', 'e0_curve', 'e0_div')
+    orbit = ele_here%time_ref_orb_in
+    orbit%vec(1:5:2) = [curve%orbit%x, curve%orbit%y, 0.0_rp]
+    orbit%t = curve%orbit%t
+    orbit%s = s_now
+    value = tao_param_value_at_s (data_type, ele_here, orbit, err, why_invalid)
+    if (err) then
+      call tao_set_curve_invalid(curve, why_invalid, .true.)
+      good = .false.
+      bmad_com%radiation_fluctuations_on = radiation_fluctuations_on
+      if (cache_status == loading_cache$) tao_branch%plot_cache_valid = .false.
+      ok = .false.
+      return
+    endif
+
+    curve%y_line(ii) = curve%y_line(ii) + comp_sign * value
+    s_last = s_now
+    if (cache_status == loading_cache$) tao_branch%plot_cache_valid = .false. ! The cache is not getting loaded.
+    cycle
+  end select
+
+
+  !-----------------------------
 
   select case (curve%data_source)
   case ('beam')
@@ -2239,16 +2360,19 @@ do ii = 1, size(curve%x_line)
     endif
  
     if (allocated(tao_branch%bunch_params_comb)) then
-      bunch_params_array => tao_branch%bunch_params_comb
-      np = tao_branch%n_bunch_params_comb
+      ix = max(1, curve%ix_bunch)
+      bunch_track => tao_branch%bunch_params_comb(ix)
+      np = bunch_track%n_pt
+      ix = bracket_index (s_now, bunch_track%pt(0:np)%s, 0)
+      bunch_params0 => bunch_track%pt(ix)
+      bunch_params1 => bunch_track%pt(min(ix,np))
     else
-      bunch_params_array => tao_branch%bunch_params
       np = n_ele_track
+      ix = bracket_index (s_now, tao_branch%bunch_params(0:np)%s, 0)
+      bunch_params0 => tao_branch%bunch_params(ix)
+      bunch_params1 => tao_branch%bunch_params(min(ix,np))
     endif
 
-    ix = bracket_index (s_now, bunch_params_array(0:np)%s, 0)
-    bunch_params0 => bunch_params_array(ix)
-    bunch_params1 => bunch_params_array(min(ix,np))
 
     if (bunch_params0%s == bunch_params1%s) then
       r_bunch = 0
@@ -2599,12 +2723,6 @@ case ('chrom')
   value = sqrt(aa**2 + bb**2)
 
 case default
-  select case (data_type_select)
-  case ('b0_field', 'b0_curve', 'b0_div', 'e0_field', 'e0_curve', 'e0_div')
-    orbit%vec(1:5:2) = [curve%orbit%x, curve%orbit%y, 0.0_rp]
-    orbit%t = curve%orbit%t
-  end select
-
   value = tao_param_value_at_s (data_type, ele, orbit, err, why_invalid)
   if (err) then
     call tao_set_curve_invalid(curve, why_invalid, .true.)
@@ -2632,41 +2750,97 @@ end subroutine tao_calc_data_at_s_pts
 !----------------------------------------------------------------------------
 !----------------------------------------------------------------------------
 !+
-! Subroutine tao_data_useit_plot_calc (curve, graph, data)
+! Subroutine tao_data_useit_plot_calc (curve, graph, data, check_s_position, most_invalid)
 !
 ! Routine to set the data for plotting.
 !
 ! Input:
 !   graph             -- tao_graph_struct
 !   curve             -- tao_curve_struct
-!   check_s_position  -- logical, optional: If present and True then 
+!   check_s_position  -- logical: If present and True then 
 !                           veto data that does not have an s-position.
 ! Output:
-!   data     -- Tao_data_struct:
-!     %useit_plot -- True if good for plotting.
+!   data(:)           -- Tao_data_struct:
+!     %useit_plot         -- True if good for plotting.
+!   most_invalid      -- character(*): String documenting biggest invalid data problem. 
 !-
 
-subroutine tao_data_useit_plot_calc (curve, graph, data, check_s_position)
+subroutine tao_data_useit_plot_calc (curve, graph, data, check_s_position, most_invalid)
 
 implicit none
 
 type (tao_curve_struct) curve
 type (tao_graph_struct) graph
 type (tao_data_struct) data(:)
-logical, optional :: check_s_position
+integer id, n_bad_exists, n_bad_plot, n_bad_user, n_bad_meas, n_bad_ref, n_bad_model, n_bad_s
+logical check_s_position
+character(*) most_invalid
 
 !
 
-data%useit_plot = data%exists .and. data%good_plot .and. &
-                  (data%good_user .or. .not. graph%draw_only_good_user_data_or_vars)
+n_bad_exists = 0;  n_bad_plot = 0;  n_bad_user = 0;  n_bad_meas = 0;  
+n_bad_ref = 0;  n_bad_model = 0;  n_bad_s = 0
 
-if (index(curve%component, 'meas') /= 0)   data%useit_plot = data%useit_plot .and. data%good_meas
-if (index(curve%component, 'ref') /= 0)    data%useit_plot = data%useit_plot .and. data%good_ref
-if (index(curve%component, 'model') /= 0)  data%useit_plot = data%useit_plot .and. data%good_model
+do id = 1, size(data)
+  data(id)%useit_plot = data(id)%exists
+  if (is_bad(data(id)%useit_plot, n_bad_exists)) cycle
 
-if (logic_option(.false., check_s_position)) then
-  data%useit_plot = data%useit_plot .and. (data%s /= real_garbage$)
+  data(id)%useit_plot = data(id)%useit_plot .and. data(id)%good_plot
+  if (is_bad(data(id)%useit_plot, n_bad_plot)) cycle
+
+  if (graph%draw_only_good_user_data_or_vars) then
+    data(id)%useit_plot = data(id)%useit_plot .and. data(id)%good_user
+    if (is_bad(data(id)%useit_plot, n_bad_user)) cycle
+  endif
+
+  if (index(curve%component, 'meas') /= 0) then
+    data(id)%useit_plot = data(id)%useit_plot .and. data(id)%good_meas
+    if (is_bad(data(id)%useit_plot, n_bad_user)) cycle
+  endif
+
+  if (index(curve%component, 'ref') /= 0) then
+    data(id)%useit_plot = data(id)%useit_plot .and. data(id)%good_ref
+    if (is_bad(data(id)%useit_plot, n_bad_user)) cycle
+  endif
+
+  if (index(curve%component, 'model') /= 0) then
+    data(id)%useit_plot = data(id)%useit_plot .and. data(id)%good_model
+    if (is_bad(data(id)%useit_plot, n_bad_user)) cycle
+  endif
+
+  if (check_s_position) then
+    data(id)%useit_plot = data(id)%useit_plot .and. (data(id)%s /= real_garbage$)
+    if (is_bad(data(id)%useit_plot, n_bad_user)) cycle
+  endif
+enddo
+
+if (max(n_bad_exists,n_bad_plot, n_bad_user, n_bad_meas, n_bad_ref, n_bad_model, n_bad_s) < size(data)/2) then
+  most_invalid = ''
+elseif (n_bad_exists >= max(n_bad_plot, n_bad_user, n_bad_meas, n_bad_ref, n_bad_model, n_bad_s)) then
+  most_invalid = 'Biggest problem: Data does not exist.'
+elseif (n_bad_plot >= max(n_bad_user, n_bad_meas, n_bad_ref, n_bad_model, n_bad_s)) then
+  most_invalid = 'Biggest problem: Data ouside of plot range.'
+elseif (n_bad_user >= max(n_bad_meas, n_bad_ref, n_bad_model, n_bad_s)) then
+  most_invalid = 'Biggest problem: Data vetoed by user.'
+elseif (n_bad_meas >= max(n_bad_ref, n_bad_model, n_bad_s)) then
+  most_invalid = 'Biggest problem: Lack of valid meas data values'
+elseif (n_bad_ref >= max(n_bad_model, n_bad_s)) then
+  most_invalid = 'Biggest problem: Lack of valid ref data values.'
+elseif (n_bad_model >= n_bad_s) then
+  most_invalid = 'Biggest problem: Lack of valid model data values.'
+else
+  most_invalid = 'Data not having a well defined s-position. (plot by datum index instead?)'
 endif
+!-------------------------------------
+contains
+
+function is_bad(useit_plot, n_bad) result (bad)
+integer n_bad
+logical useit_plot, bad
+!
+bad = (.not. useit_plot)
+if (bad) n_bad = n_bad + 1
+end function
 
 end subroutine tao_data_useit_plot_calc
 
@@ -2699,7 +2873,8 @@ type (tao_curve_struct) curve
 type (tao_universe_struct), pointer :: u
 type (tao_data_struct) datum
 type (taylor_struct) t_map(6)
-type (ele_pointer_struct), allocatable :: eles(:)
+type (ele_pointer_struct), allocatable, target :: eles(:)
+type (ele_struct), pointer :: ele
 
 real(rp) y_val
 
@@ -2731,7 +2906,7 @@ datum%merit_type     = 'target'
 datum%data_type      = curve%data_type
 datum%ele_ref_name   = curve%ele_ref_name
 datum%data_source    = curve%data_source
-datum%ix_branch      = curve%ix_branch
+datum%ix_branch      = tao_branch_index(curve%ix_branch)
 
 call tao_split_component (curve%component, scratch%comp, err)
 if (err) then
@@ -2793,7 +2968,14 @@ if (who == 'SYMBOL') then
     if (.not. good(i)) cycle
     j = j + 1
     if (plot%x_axis_type == 's') then
-      curve%x_symb(j)  = eles(i)%ele%s
+      if (substr(datum%data_type, 1, 15) == 'element_attrib.') then
+        ! Element attributes reference ele center.
+        ele => eles(i)%ele
+        if (ele%slave_status == super_slave$) ele => pointer_to_lord(ele, 1)
+        curve%x_symb(j)  = 0.5_rp * (ele%s_start + ele%s)  
+      else        
+        curve%x_symb(j)  = eles(i)%ele%s
+      endif
     else  ! 'index' or 'ele_index'
       curve%x_symb(j)  = eles(i)%ele%ix_ele
     endif
@@ -2926,13 +3108,13 @@ s_max = branch%ele(n)%s
 
 len_tot = s_max - s_min
 
-if (graph%x%min /= graph%x%max) then
+if (graph%x%eval_min /= graph%x%eval_max) then
   if (branch%param%geometry == closed$) then
-    s_min = min(branch%ele(n)%s, max(graph%x%min, s_min-len_tot))
-    s_max = min(s_max, max(graph%x%max, branch%ele(0)%s-len_tot))
+    s_min = min(branch%ele(n)%s, max(graph%x%eval_min, s_min-len_tot))
+    s_max = min(s_max, max(graph%x%eval_max, branch%ele(0)%s-len_tot))
   else
-    s_min = min(branch%ele(n)%s, max(graph%x%min, s_min))
-    s_max = min(s_max, max(graph%x%max, branch%ele(0)%s))
+    s_min = min(branch%ele(n)%s, max(graph%x%eval_min, s_min))
+    s_max = min(s_max, max(graph%x%eval_max, branch%ele(0)%s))
   endif
 endif
 

@@ -54,7 +54,7 @@ character(*), parameter :: r_name = 'multipole_ele_to_ab'
 
 ix_pole_max = -1
 
-if (.not. ele%is_on .or. ele%key == drift$) then
+if (.not. ele%is_on) then
   a = 0;  b = 0
   if (present(b1)) b1 = 0
   return
@@ -189,7 +189,7 @@ if (ele%multipoles_on .and. associated(a_pole)) then
   call convert_this_ab (ele, p_type, a_pole, b_pole, a, b)
 endif
 
-call this_ele_non_multipoles (ele, a_kick, b_kick)
+call this_ele_non_multipoles (ele, can_use_cache, a_kick, b_kick)
 
 ix_pole_max = max_nonzero(0, a, b)
 if (can_use_cache) call load_this_cache(cache, p_type, ix_pole_max, a, b, a_kick, b_kick)
@@ -207,12 +207,14 @@ if (present(b1)) b1 = pull_this_b1(a, b, ix_pole_max)
 !---------------------------------------------
 contains
 
-subroutine this_ele_non_multipoles (ele, a_kick, b_kick)
+subroutine this_ele_non_multipoles (ele, can_use_cache, a_kick, b_kick)
 
 type (ele_struct) ele
 
 real(rp) a_kick(0:3), b_kick(0:3)
 real(rp) an, bn, hk, vk, tilt, sin_t, cos_t
+
+logical can_use_cache
 
 ! Express non-multipoles in element body frame.
 
@@ -326,11 +328,11 @@ end subroutine tilt_this_multipole
 !---------------------------------------------
 ! contains
 
-subroutine convert_this_ab (this_ele, p_type, a_in, b_in, this_a, this_b)
+subroutine convert_this_ab (this_ele, p_type, a_pole, b_pole, this_a, this_b)
 
 type (ele_struct) this_ele
 type (branch_struct), pointer :: branch
-real(rp) a_in(0:n_pole_maxx), b_in(0:n_pole_maxx), this_a(0:n_pole_maxx), this_b(0:n_pole_maxx)
+real(rp) a_pole(0:n_pole_maxx), b_pole(0:n_pole_maxx), this_a(0:n_pole_maxx), this_b(0:n_pole_maxx)
 real(rp) tilt, an, bn, sin_t, cos_t
 integer p_type, ix_max, ref_exp
 logical has_nonzero

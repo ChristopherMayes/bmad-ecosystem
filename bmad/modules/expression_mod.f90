@@ -4,42 +4,6 @@ use bmad_struct
 
 implicit none
 
-! The numeric$ category is for numeric constants [EG: "1.3d-5"].
-! The constant$ category is for constants like pi.
-! The variable$ category includes symbolic constants defined in a lattice file, lattice parameters, etc.
-! The species$ category is for the species() function. 
-! The species_const$ category is for particle species ('He3', etc).
-
-integer, parameter :: end_stack$ = 0, plus$ = 1, minus$ = 2, times$ = 3, divide$ = 4
-integer, parameter :: l_parens$ = 5, r_parens$ = 6, power$ = 7
-integer, parameter :: unary_minus$ = 8, unary_plus$ = 9, no_delim$ = 10
-integer, parameter :: sin$ = 11, cos$ = 12, tan$ = 13
-integer, parameter :: asin$ = 14, acos$ = 15, atan$ = 16, abs$ = 17, sqrt$ = 18
-integer, parameter :: log$ = 19, exp$ = 20, ran$ = 21, ran_gauss$ = 22, atan2$ = 23
-integer, parameter :: factorial$ = 24, int$ = 25, nint$ = 26, floor$ = 27, ceiling$ = 28
-integer, parameter :: numeric$ = 29, variable$ = 30
-integer, parameter :: mass_of$ = 31, charge_of$ = 32, anomalous_moment_of$ = 33, species$ = 34, species_const$ = 35
-integer, parameter :: sinc$ = 36, constant$ = 37, comma$ = 38, rms$ = 39, average$ = 40, sum$ = 41, l_func_parens$ = 42
-integer, parameter :: arg_count$ = 43, antiparticle$ = 44, cot$ = 45, sec$ = 46, csc$ = 47, sign$ = 48
-integer, parameter :: sinh$ = 49, cosh$ = 50, tanh$ = 51, coth$ = 52, asinh$ = 53, acosh$ = 54, atanh$ = 55, acoth$ = 56
-
-! Names beginning with "?!+" are place holders that will never match to anything in an expression string.
-! Note: "rms" and "average" are not implemented here but is used by Tao.
-
-character(20), parameter :: expression_op_name(56) = [character(20) :: '+', '-', '*', '/', &
-                                    '(', ')', '^', '-', '+', '', 'sin', 'cos', 'tan', &
-                                    'asin', 'acos', 'atan', 'abs', 'sqrt', 'log', 'exp', 'ran', &
-                                    'ran_gauss', 'atan2', 'factorial', 'int', 'nint', 'floor', 'ceiling', &
-                                    '?!+Numeric', '?!+Variable', 'mass_of', 'charge_of', 'anomalous_moment_of', &
-                                    'species', '?!+Species', 'sinc', '?!+Constant', ',', 'rms', 'average', 'sum', &
-                                    '(', '?!+Arg Count', 'antiparticle', 'cot', 'sec', 'csc', 'sign', &
-                                    'sinh', 'cosh', 'tanh', 'coth', 'asinh', 'acosh', 'atanh', 'acoth']
-
-
-integer, parameter :: expression_eval_level(56) = [1, 1, 2, 2, 0, 0, 4, 3, 3, -1, &
-              9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, &
-              9, 9, 9, 9, 0, 9, 9, 9, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
-
 private pushit
 
 contains
@@ -491,10 +455,33 @@ else
   endif
 
   select case (word)
-  case ('c_light');  stack(n_stack) = expression_atom_struct(word, constant$, c_light)
-  case ('twopi');    stack(n_stack) = expression_atom_struct(word, constant$, twopi)
-  case ('pi');       stack(n_stack) = expression_atom_struct(word, constant$, pi)
-  case ('e');        stack(n_stack) = expression_atom_struct(word, constant$, exp(1.0_rp))
+  case ('twopi');                 stack(n_stack) = expression_atom_struct(word, constant$, twopi)
+  case ('fourpi');                stack(n_stack) = expression_atom_struct(word, constant$, fourpi)
+  case ('pi');                    stack(n_stack) = expression_atom_struct(word, constant$, pi)
+  case ('e', 'e_log');            stack(n_stack) = expression_atom_struct(word, constant$, exp(1.0_rp))
+  case ('sqrt_2');                stack(n_stack) = expression_atom_struct(word, constant$, sqrt_2)
+  case ('degrad');                stack(n_stack) = expression_atom_struct(word, constant$, 180 / pi)
+  case ('degrees', 'raddeg');     stack(n_stack) = expression_atom_struct(word, constant$, pi / 180)
+  case ('m_electron');            stack(n_stack) = expression_atom_struct(word, constant$, m_electron)
+  case ('m_muon');                stack(n_stack) = expression_atom_struct(word, constant$, m_muon)
+  case ('m_pion_0');              stack(n_stack) = expression_atom_struct(word, constant$, m_pion_0)
+  case ('m_pion_charged');        stack(n_stack) = expression_atom_struct(word, constant$, m_pion_charged)
+  case ('m_proton');              stack(n_stack) = expression_atom_struct(word, constant$, m_proton)
+  case ('m_deuteron');            stack(n_stack) = expression_atom_struct(word, constant$, m_deuteron)
+  case ('m_neutron');             stack(n_stack) = expression_atom_struct(word, constant$, m_neutron)
+  case ('c_light');               stack(n_stack) = expression_atom_struct(word, constant$, c_light)
+  case ('r_e');                   stack(n_stack) = expression_atom_struct(word, constant$, r_e)
+  case ('r_p');                   stack(n_stack) = expression_atom_struct(word, constant$, r_p)
+  case ('e_charge');              stack(n_stack) = expression_atom_struct(word, constant$, e_charge)
+  case ('h_planck');              stack(n_stack) = expression_atom_struct(word, constant$, h_planck)
+  case ('h_bar_planck');          stack(n_stack) = expression_atom_struct(word, constant$, h_bar_planck)
+  case ('fine_struct_const');     stack(n_stack) = expression_atom_struct(word, constant$, fine_structure_constant)
+  case ('anom_moment_electron');  stack(n_stack) = expression_atom_struct(word, constant$, anomalous_mag_moment_electron)
+  case ('anom_moment_proton');    stack(n_stack) = expression_atom_struct(word, constant$, anomalous_mag_moment_proton)
+  case ('anom_moment_neutron');   stack(n_stack) = expression_atom_struct(word, constant$, anomalous_mag_moment_neutron)
+  case ('anom_moment_muon');      stack(n_stack) = expression_atom_struct(word, constant$, anomalous_mag_moment_muon)
+  case ('anom_moment_deuteron');  stack(n_stack) = expression_atom_struct(word, constant$, anomalous_mag_moment_deuteron)
+  case ('anom_moment_he3');       stack(n_stack) = expression_atom_struct(word, constant$, anomalous_mag_moment_he3)
   end select
 endif
 
@@ -1156,7 +1143,7 @@ function linear_coef (stack, err_flag) result (coef)
 type (expression_atom_struct) stack(:)
 
 real(rp) coef
-logical, optional :: err_flag
+logical :: err_flag
 
 integer i, i0, i1, n
 

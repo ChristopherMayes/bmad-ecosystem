@@ -278,7 +278,7 @@ if (found_it) then
   read (d_unit, iostat = ios3) space_charge_com_read
   read (d_unit, iostat = ios4) ptc_com_read%max_fringe_order, ptc_com_read%exact_model, ptc_com_read%exact_misalign, &
           ptc_com_read%vertical_kick, ptc_com_read%cut_factor, ptc_com_read%old_integrator, &
-          ptc_com_read%use_orientation_patches, ptc_com_read%print_info_messages
+          ptc_com_read%use_orientation_patches, ptc_com_read%print_info_messages, ptc_com_read%translate_patch_drift_time
 
 
   if (ios /= 0 .or. ios2 /= 0 .or. ios3 /= 0 .or. ios4 /= 0) then
@@ -301,6 +301,7 @@ if (found_it) then
   if (extra%autoscale_phase_tol_set)              bmad_com%autoscale_phase_tol             = bmad_com_read%autoscale_phase_tol
   if (extra%rf_phase_below_transition_ref_set)    bmad_com%rf_phase_below_transition_ref   = bmad_com_read%rf_phase_below_transition_ref
   if (extra%electric_dipole_moment_set)           bmad_com%electric_dipole_moment          = bmad_com_read%electric_dipole_moment
+  if (extra%synch_rad_scale_set)                  bmad_com%synch_rad_scale                 = bmad_com_read%synch_rad_scale
   if (extra%taylor_order_set)                     bmad_com%taylor_order                    = bmad_com_read%taylor_order
   if (extra%d_orb_set)                            bmad_com%d_orb                           = bmad_com_read%d_orb
   if (extra%default_integ_order_set)              bmad_com%default_integ_order             = bmad_com_read%default_integ_order
@@ -310,7 +311,6 @@ if (found_it) then
   if (extra%high_energy_space_charge_on_set)      bmad_com%high_energy_space_charge_on     = bmad_com_read%high_energy_space_charge_on
   if (extra%csr_and_space_charge_on_set)          bmad_com%csr_and_space_charge_on         = bmad_com_read%csr_and_space_charge_on
   if (extra%spin_tracking_on_set)                 bmad_com%spin_tracking_on                = bmad_com_read%spin_tracking_on
-  if (extra%backwards_time_tracking_on_set)       bmad_com%backwards_time_tracking_on      = bmad_com_read%backwards_time_tracking_on
   if (extra%spin_sokolov_ternov_flipping_on_set)  bmad_com%spin_sokolov_ternov_flipping_on = bmad_com_read%spin_sokolov_ternov_flipping_on
   if (extra%radiation_damping_on_set)             bmad_com%radiation_damping_on            = bmad_com_read%radiation_damping_on
   if (extra%radiation_zero_average_set)           bmad_com%radiation_zero_average          = bmad_com_read%radiation_zero_average
@@ -332,7 +332,8 @@ if (found_it) then
   if (extra%sc_rel_tol_tracking_set)              space_charge_com%rel_tol_tracking                 = space_charge_com_read%rel_tol_tracking
   if (extra%sc_abs_tol_tracking_set)              space_charge_com%abs_tol_tracking                 = space_charge_com_read%abs_tol_tracking
   if (extra%beam_chamber_height_set)              space_charge_com%beam_chamber_height              = space_charge_com_read%beam_chamber_height
-  if (extra%sigma_cutoff_set)                     space_charge_com%sigma_cutoff                     = space_charge_com_read%sigma_cutoff
+  if (extra%lsc_sigma_cutoff_set)                 space_charge_com%lsc_sigma_cutoff                 = space_charge_com_read%lsc_sigma_cutoff
+  if (extra%particle_sigma_cutoff_set)            space_charge_com%particle_sigma_cutoff            = space_charge_com_read%particle_sigma_cutoff
   if (extra%space_charge_mesh_size_set)           space_charge_com%space_charge_mesh_size           = space_charge_com_read%space_charge_mesh_size
   if (extra%csr3d_mesh_size_set)                  space_charge_com%csr3d_mesh_size                  = space_charge_com_read%csr3d_mesh_size
   if (extra%n_bin_set)                            space_charge_com%n_bin                            = space_charge_com_read%n_bin
@@ -340,6 +341,7 @@ if (found_it) then
   if (extra%n_shield_images_set)                  space_charge_com%n_shield_images                  = space_charge_com_read%n_shield_images
   if (extra%sc_min_in_bin_set)                    space_charge_com%sc_min_in_bin                    = space_charge_com_read%sc_min_in_bin
   if (extra%lsc_kick_transverse_dependence_set)   space_charge_com%lsc_kick_transverse_dependence   = space_charge_com_read%lsc_kick_transverse_dependence
+  if (extra%sc_debug_set)                         space_charge_com%debug                            = space_charge_com_read%debug
   if (extra%diagnostic_output_file_set)           space_charge_com%diagnostic_output_file           = space_charge_com_read%diagnostic_output_file
 
   if (extra%use_orientation_patches_set)          ptc_com%use_orientation_patches                   = ptc_com_read%use_orientation_patches
@@ -350,6 +352,13 @@ if (found_it) then
   if (extra%old_integrator_set)                   ptc_com%old_integrator                            = ptc_com_read%old_integrator
   if (extra%exact_model_set)                      ptc_com%exact_model                               = ptc_com_read%exact_model
   if (extra%exact_misalign_set)                   ptc_com%exact_misalign                            = ptc_com_read%exact_misalign
+  if (extra%translate_patch_drift_time_set)       ptc_com%translate_patch_drift_time                = ptc_com_read%translate_patch_drift_time
+
+  if (extra%undeterministic_ran_function_called) err_found = .true.  ! So lattice will be reparsed
+
+  if (extra%ran_seed /= 0) then
+    call ran_default_state (set_state = extra%ran_state) ! Get random state.
+  endif
 endif
 
 ! Setup any attribute aliases in the global attribute name table.
@@ -374,7 +383,7 @@ if (present(err_flag)) err_flag = err_found
 
 if (.not. err_found .and. allocated(lat%print_str)) then
   do i = 1, size(lat%print_str)
-    call out_io (s_dwarn$, r_name, 'Print Message in Lattice File: ' // lat%print_str(i))
+    call out_io (s_important$, r_name, 'Message in Lattice File: ' // lat%print_str(i))
   enddo
 endif
 
@@ -465,19 +474,20 @@ type (photon_element_struct), pointer :: ph
 type (surface_grid_pt_struct), pointer :: s_pt
 type (cylindrical_map_struct), pointer :: cl_map
 type (cartesian_map_struct), pointer :: ct_map
+type (gen_grad_map_struct), pointer :: gg_map
+type (gen_grad1_struct), pointer :: ggcoef
 type (grid_field_struct), pointer :: g_field
-type (taylor_field_struct), pointer :: t_field
 type (ac_kicker_struct), pointer :: ac
 type (wake_struct), pointer :: wake
 type (converter_distribution_struct), pointer :: c_dist
 type (converter_prob_pc_r_struct), pointer :: ppcr
 type (converter_direction_out_struct), pointer :: c_dir
 
-integer i, j, lb1, lb2, lb3, ub1, ub2, ub3, n_cyl, n_cart, n_tay, n_grid, ix_ele, ix_branch, ix_wall3d
+integer i, j, lb1, lb2, lb3, ub1, ub2, ub3, n_cyl, n_cart, n_gen, n_grid, ix_ele, ix_branch, ix_wall3d
 integer i_min(3), i_max(3), ix_ele_in, ix_t(6), ios, k_max, ix_e
 integer ix_r, ix_s, n_var, ix_d, ix_m, idum, n_cus, ix_convert, ix_c 
 integer ix_sr_long, ix_sr_trans, ix_lr_mode, ix_wall3d_branch, ix_st(0:3)
-integer i0, i1, j0, j1, j2, ix_ptr, lb(3), ub(3), nt, n0, n1, n2, nn(7), ne, nr, ns
+integer i0, i1, j0, j1, j2, ix_ptr, lb(3), ub(3), nt, n0, n1, n2, nn(7), ne, nr, ns, nc
 
 logical error, is_alloc_grid, is_alloc_pix, ac_kicker_alloc
 
@@ -488,7 +498,7 @@ error = .true.
 read (d_unit, err = 9100, end = 9100) &
         mode3, ix_r, ix_s, ix_wall3d_branch, ac_kicker_alloc, &
         ix_convert, ix_d, ix_m, ix_t, ix_st, ix_e, ix_sr_long, ix_sr_trans, &
-        ix_lr_mode, ix_wall3d, ix_c, n_cart, n_cyl, n_grid, n_tay, n_cus, ix_convert
+        ix_lr_mode, ix_wall3d, ix_c, n_cart, n_cyl, n_gen, n_grid, idum, n_cus, ix_convert ! idum not used
 
 read (d_unit, err = 9100, end = 9100) &
         ele%name, ele%type, ele%alias, ele%component_name, ele%x, ele%y, &
@@ -518,7 +528,7 @@ enddo
 
 if (ix_c /= 0) then
   allocate (ele%control)
-  read (d_unit, err = 9120, end = 9120) ele%control%type, n_var, nk, nr
+  read (d_unit, err = 9120, end = 9120) n_var, nk, nr
 
   if (nk > -1) then
     allocate(ele%control%x_knot(nk))
@@ -645,12 +655,34 @@ if (n_cyl > 0) then
   enddo
 endif
 
+! Gen_grad_field
+
+if (n_gen > 0) then
+  allocate (ele%gen_grad_map(n_gen))
+
+  do i = 1, n_gen
+    gg_map => ele%gen_grad_map(i)
+
+    read (d_unit, err = 9120, end = 9120) gg_map%field_scale, gg_map%master_parameter, gg_map%curved_ref_frame, &
+                            gg_map%ele_anchor_pt, gg_map%field_type, gg_map%dz, gg_map%r0, ns, gg_map%iz0, gg_map%iz1
+    allocate (gg_map%gg(ns))
+    n0 = gg_map%iz0;  n1 = gg_map%iz1
+
+    do j = 1, size(gg_map%gg)
+      ggcoef => gg_map%gg(j)
+      read (d_unit, err = 9120, end = 9120) ggcoef%m, ggcoef%sincos, ggcoef%n_deriv_max, lb2
+      allocate (ggcoef%deriv(n0:n1, 0:lb2))
+      do k = n0, n1
+        read (d_unit, err = 9120, end = 9120) ggcoef%deriv(k,:)
+      enddo
+    enddo
+  enddo
+endif
 
 ! Grid_field
 
 if (n_grid > 0) then
   allocate (ele%grid_field(n_grid))
-
 
   do i = 1, n_grid
     g_field => ele%grid_field(i)
@@ -669,38 +701,6 @@ if (n_grid > 0) then
       allocate (g_field%ptr%pt(lb(1):ub(1), lb(2):ub(2), lb(3):ub(3)))
       do j = lb(3), ub(3)
         read (d_unit, err = 9120, end = 9120) g_field%ptr%pt(:, :, j)
-      enddo
-    endif
-  enddo
-endif
-
-! Taylor_field
-
-if (n_tay > 0) then
-  allocate (ele%taylor_field(n_tay))
-
-
-  do i = 1, n_tay
-    t_field => ele%taylor_field(i)
-    read (d_unit, err = 9120, end = 9120) t_field%field_scale, t_field%master_parameter, t_field%curved_ref_frame, &
-           t_field%ele_anchor_pt, t_field%field_type, t_field%dz, t_field%r0, t_field%canonical_tracking
-    read (d_unit, err = 9120, end = 9120) ix_ele, ix_branch, ix_ptr, n0, n1
-
-    if (ix_ele > 0) then
-      ele%taylor_field(i)%ptr => lat%branch(ix_branch)%ele(ix_ele)%taylor_field(ix_ptr)%ptr
-      ele%taylor_field(i)%ptr%n_link = ele%taylor_field(i)%ptr%n_link + 1
-    else
-      allocate (ele%taylor_field(i)%ptr)
-      read (d_unit, err = 9120, end = 9120) t_field%ptr%file
-      allocate (t_field%ptr%plane(n0:n1))
-      do j = n0, n1
-        do k = 1, 3
-          read (d_unit, err = 9120, end = 9120) nt
-          allocate (t_field%ptr%plane(j)%field(k)%term(nt))
-          do n = 1, nt
-           read (d_unit, err = 9120, end = 9120) t_field%ptr%plane(j)%field(k)%term(n)
-          enddo
-        enddo
       enddo
     endif
   enddo

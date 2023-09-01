@@ -17,11 +17,6 @@ cmake_policy (SET CMP0015 NEW)
 
 
 #-----------------------------------------------------------
-# Disable the inclusion of RPATH from the Acc Build System
-#-----------------------------------------------------------
-SET (CMAKE_SKIP_RPATH TRUE)
-
-#-----------------------------------------------------------
 # Set CESR_FLAGS depening on OS type
 #-----------------------------------------------------------
 IF (${WIN32})
@@ -69,13 +64,18 @@ ENDIF ()
 
 #-------------------------------------------------------
 # Import environment variables that influence the build
+# Also disable the inclusion of RPATH for Releases but not Distributions RT#64118
 #-------------------------------------------------------
 set (DISTRIBUTION_BUILD $ENV{DIST_BUILD})
 
 IF (${DISTRIBUTION_BUILD})
   set (FORTRAN_COMPILER $ENV{DIST_F90})
   set (RELEASE_DIR $ENV{DIST_BASE_DIR})
-  set (PACKAGES_DIR ${RELEASE_DIR})
+	IF (EXISTS ${RELEASE_DIR}/packages)
+    set (PACKAGES_DIR ${RELEASE_DIR}/packages)
+	ELSE ()
+    set (PACKAGES_DIR ${RELEASE_DIR})
+	ENDIF ()
 
   # Explicitly remove 32-bit Libraries from Linux build PATH for 64-bit builds - RT#43178
   # Added /lib to further restict 32-bit Linux build PATH - RT#56203
@@ -84,14 +84,16 @@ IF (${DISTRIBUTION_BUILD})
     SET (CMAKE_SYSTEM_IGNORE_PATH /lib /usr/lib)
   ENDIF ()
 
-ELSEIF ("$ENV{ACC_SET_F_COMPILER}" MATCHES "gfortran")
-  set (FORTRAN_COMPILER "gfortran")
-  set (RELEASE_DIR $ENV{ACC_RELEASE_DIR})
-  set (PACKAGES_DIR ${RELEASE_DIR}/packages)
 ELSE ()
-  set (FORTRAN_COMPILER "ifort")
+	SET (CMAKE_SKIP_RPATH TRUE)
   set (RELEASE_DIR $ENV{ACC_RELEASE_DIR})
   set (PACKAGES_DIR ${RELEASE_DIR}/packages)
+
+	IF ("$ENV{ACC_SET_F_COMPILER}" MATCHES "gfortran")
+		SET (FORTRAN_COMPILER "gfortran")
+	ELSE ()
+		SET (FORTRAN_COMPILER "ifort")
+	ENDIF ()
 ENDIF ()
   
 IF (FORTRAN_COMPILER MATCHES "gfortran")
@@ -491,9 +493,11 @@ SET (INCLUDE_OUTPUT_PATH ${OUTPUT_BASEDIR}/include)
 # that requires that library while leaving the local souce tree and include files intact.
 # This new build will then perform the divergent action of linking against the release library
 # but extracting constants and other header information from the LOCAL source tree.  
+#
+# Moved X11_INCLUDE_DIR to end of include PATH flags, as per RT#65425 and GitHub Issue #315
+# for Bmad - https://github.com/DavidSagan/Bmad/issues/315
 
 SET (MASTER_INC_DIRS
-  ${X11_INCLUDE_DIR}
   ${INC_DIRS}
   ${OUTPUT_BASEDIR}/include
   ${ROOT_INC}
@@ -501,6 +505,7 @@ SET (MASTER_INC_DIRS
   ${RELEASE_OUTPUT_BASEDIR}/modules
   ${RELEASE_OUTPUT_BASEDIR}/include
   ${ACC_INC_DIRS}
+  ${X11_INCLUDE_DIR}
 )
 
 # If not building a distribution, include the include directories which are not part 

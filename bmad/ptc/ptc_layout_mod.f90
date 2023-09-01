@@ -8,7 +8,6 @@
 module ptc_layout_mod
 
 use ptc_interface_mod
-use fringe_mod
 use changed_attribute_bookkeeper
 
 implicit none
@@ -86,7 +85,7 @@ type (ele_struct), pointer :: ele
 type (ele_pointer_struct), allocatable :: chain_ele(:)
 
 integer n, ib, ie, ix_pass, ix_pass0, n_links
-logical doneit, ele_inserted_in_layout
+logical err_flag, doneit, ele_inserted_in_layout
 
 ! Transfer elements.
 
@@ -115,7 +114,7 @@ do ie = 0, branch%n_ele_track
     ele_inserted_in_layout = .false.
   endif
 
-  call ele_to_fibre (ele, ele%ptc_fibre, branch%param, .true., for_layout = .true.)
+  call ele_to_fibre (ele, ele%ptc_fibre, branch%param, .true., err_flag, for_layout = .true.)
 
   ele_inserted_in_layout = .true.
   ix_pass0 = ix_pass
@@ -389,7 +388,6 @@ ptc_layout => ptc_fibre%parent_layout
 call find_orbit_x (closed_orb%vec, ptc_state, 1e-8_rp, fibre1 = ptc_fibre) 
 
 ptc_state = ptc_state + ENVELOPE0
-call init_all(ptc_state, 1, 0)
 
 call alloc (id)
 call alloc (xs)
@@ -406,6 +404,8 @@ norm_mode%e_loss = energy_loss * 1e9_rp
 lielib_print(16) = 0    ! Do not print eigenvalue info.
 epsc = EPS_EIGENVALUES_OFF_UNIT_CIRCLE
 EPS_EIGENVALUES_OFF_UNIT_CIRCLE = max(1d-1, epsc)  ! Set larger since rad damping is on.
+
+call ptc_set_rf_state_for_c_normal(ptc_state%nocavity)
 call c_normal(id, cc_norm)
 lielib_print(16) = 1
 EPS_EIGENVALUES_OFF_UNIT_CIRCLE = epsc
@@ -431,8 +431,6 @@ sigma_mat = cc_norm%s_ij0
 call kill (id)
 call kill (xs)
 call kill (cc_norm)
-
-call init_all (ptc_private%base_state, ptc_private%taylor_order_ptc, 0)
 
 end subroutine ptc_emit_calc 
 
@@ -500,12 +498,12 @@ ptc_layout => ptc_fibre%parent_layout
 call find_orbit_x (closed_orb%vec, ptc_state, 1e-8_rp, fibre1 = ptc_fibre) 
 
 ptc_state = ptc_state + ENVELOPE0
-!! call init_all(ptc_state, 1, 0)
 
 call alloc (id, U_1, as, a0, a1, a2)
 call alloc (xs)
 call alloc (cc_norm)
 call alloc (isf)
+
 
 id=1
 xs0=closed_orb%vec
@@ -515,7 +513,8 @@ id=xs
 call GET_loss(ptc_layout, energy_loss, dp_loss)
 norm_mode%e_loss = energy_loss * 1e9_rp
 
-call c_normal(id, cc_norm)
+call ptc_set_rf_state_for_c_normal(ptc_state%nocavity)
+call c_normal(id, cc_norm, dospin = ptc_state%spin)
 call c_full_canonise(cc_norm%atot, U_1, as, a0, a1, a2)
 
 isf = 2   ! isf = (0,1,0)
@@ -697,7 +696,7 @@ end subroutine ptc_closed_orbit_calc
 !-----------------------------------------------------------------------------
 !-----------------------------------------------------------------------------
 !+
-! Subroutine ptc_one_turn_map_at_ele (ele, orb0, map, ptc_state, pz, order, rf_on)
+! Subroutine ptc_one_turn_map_at_ele (ele, orb0, map, ptc_state, pz, rf_on)
 !
 ! Routine to calculate the PTC one turn map for a ring.
 !
@@ -706,7 +705,6 @@ end subroutine ptc_closed_orbit_calc
 !   map     -- probe_8: Will be allocated.
 !   pz      -- real(rp), optional: momentum deviation of closed orbit. 
 !                                  Default = 0
-!   order   -- integer, optional: Order of the map. If not given then default order is used.
 !   rf_on   -- integer, optional: RF state for calculation. yes$, no$, or maybe$ (default)
 !                   maybe$ means that RF state in branch is used.
 !
@@ -718,7 +716,7 @@ end subroutine ptc_closed_orbit_calc
 !   ptc_state   -- internal_state: PTC state used for tracking.
 !-
 
-subroutine ptc_one_turn_map_at_ele (ele, orb0, map, ptc_state, pz, order, rf_on)
+subroutine ptc_one_turn_map_at_ele (ele, orb0, map, ptc_state, pz, rf_on)
 
 use madx_ptc_module
 
@@ -732,8 +730,7 @@ type (probe) p0
 real(rp), optional :: pz
 real(dp) orb0(6)
 
-integer :: map_order
-integer, optional :: order, rf_on
+integer, optional :: rf_on
 
 logical rf_on_state, spin_on
 
@@ -758,12 +755,6 @@ case default
 end select
 
 if (spin_on) ptc_state = ptc_state + spin0
-
-! The call to init is needed since otherwiase FPP is not properly setup and a 
-! call to something like c_normal will then bomb.
-
-map_order = integer_option(ptc_private%taylor_order_ptc, order)
-call init_all (ptc_state, map_order, 0) ! The third argument is the number of parametric variables
 
 ! Find closed orbit
 
@@ -790,13 +781,14 @@ end subroutine ptc_one_turn_map_at_ele
 !-----------------------------------------------------------------------------
 !-----------------------------------------------------------------------------
 !+
-! Subroutine ptc_map_to_normal_form (one_turn_map, normal_form, phase_map, spin_tune)
+! Subroutine ptc_map_to_normal_form (one_turn_map, ptc_nocavity, normal_form, phase_map, spin_tune)
 !
 ! Routine to do normal form analysis on a map.
 ! Note: All output quantities must be allocated prior to calling this routine.
 !
 ! Input:
 !   one_turn_map    -- probe_8: One turn map.
+!   ptc_nocavity    -- logical: PTC nocavity parameter setting when map was made.
 !
 ! Output:
 !   normal_form     -- c_normal_form: Normal form decomposition.
@@ -804,7 +796,7 @@ end subroutine ptc_one_turn_map_at_ele
 !   spin_tune       -- c_taylor, optional: Spin tune Taylor map.
 !-
 
-subroutine ptc_map_to_normal_form (one_turn_map, normal_form, phase_map, spin_tune)
+subroutine ptc_map_to_normal_form (one_turn_map, ptc_nocavity, normal_form, phase_map, spin_tune)
 
 use pointer_lattice
 
@@ -815,6 +807,9 @@ type (c_normal_form) normal_form
 type (c_taylor) phase_map(3)
 type (c_taylor), optional :: spin_tune
 type (c_damap) c_map
+
+logical ptc_nocavity
+
 !! type (c_damap) as, a2, a1, a0
 !! integer n(6)
 
@@ -822,7 +817,10 @@ type (c_damap) c_map
 
 call alloc(c_map)
 c_map = one_turn_map
+
+call ptc_set_rf_state_for_c_normal(ptc_nocavity)
 call c_normal (c_map, normal_form, dospin = bmad_com%spin_tracking_on, phase = phase_map, nu_spin = spin_tune)
+
 call kill(c_map)
 
 
@@ -841,7 +839,7 @@ call kill(c_map)
 !! print *, (normal_form%atot%v(1).sub.n)
 !! call kill(c_map, as, a2, a1, a0)
 
-call print (normal_form%atot)
+!! call print (normal_form%atot)
 
 end subroutine ptc_map_to_normal_form
 
@@ -894,7 +892,6 @@ else
   state = ptc_private%base_state + nocavity0
 endif
 
-!! call init_all (state, ptc_private%taylor_order_ptc, 0) 
 call alloc(map8)
 call alloc(da_map)
 call alloc(normal)
@@ -930,8 +927,6 @@ call kill(map8)
 call kill(da_map)
 call kill(normal)
 
-!! call init_all (ptc_private%base_state, ptc_private%taylor_order_ptc, 0)
-
 end subroutine normal_form_taylors
 
 !-----------------------------------------------------------------------------
@@ -956,13 +951,11 @@ type (real_8) :: map8(6)
 type (c_normal_form) :: complex_normal_form
 type(c_vector_field) :: fvecfield
 type (internal_state) :: state
-integer :: i, order_for_normal_form
+integer :: i
 integer, optional :: order
 logical :: rf_on, c_verbose_save
 
 !
-
-order_for_normal_form = integer_option(1, order)
 
 if (rf_on) then
   state = ptc_private%base_state - nocavity0
@@ -970,11 +963,11 @@ else
   state = ptc_private%base_state + nocavity0
 endif
 
-! Set PTC state
-!no longer needed: use_complex_in_ptc=my_true
+!
+
 c_verbose_save = c_verbose
 c_verbose = .false.
-!! call init_all (state, ptc_private%taylor_order_ptc, 0)
+
 call alloc(map8)
 call alloc(da)
 call alloc(cda)
@@ -990,7 +983,9 @@ cda = da
 ! Complex normal form in phasor basis
 ! See: fpp-ptc-read-only/build_book_example_g95/the_fpp_on_line_glossary/complex_normal.htm
 ! M = A o N o A_inverse.
-call c_normal(cda, complex_normal_form, dospin=my_false, no_used=order_for_normal_form)
+
+call ptc_set_rf_state_for_c_normal(state%nocavity)
+call c_normal(cda, complex_normal_form, dospin=my_false, no_used=integer_option(1, order))
 
 if (present(F) .or. present(L)) then
   cda = complex_normal_form%N
@@ -1035,7 +1030,6 @@ call kill(complex_normal_form)
 ! Reset PTC state
 use_complex_in_ptc=my_false
 c_verbose = c_verbose_save
-!! call init_all (ptc_private%base_state, ptc_private%taylor_order_ptc, 0)
 
 end subroutine normal_form_complex_taylors
 
@@ -1092,7 +1086,6 @@ endif
 
 c_verbose_save = c_verbose
 c_verbose = .false.
-!! call init_all (state, ptc_private%taylor_order_ptc, 0) 
 
 call alloc(vb)
 call alloc(F)
@@ -1108,6 +1101,7 @@ call alloc(acs1_a)
 
 cda = one_turn_map
 
+call ptc_set_rf_state_for_c_normal(state%nocavity)
 call c_normal(cda, complex_normal_form, dospin=my_false)  !, no_used=1) 
 call c_fast_canonise(complex_normal_form%a_t,acs1_a)
 
@@ -1155,32 +1149,6 @@ logical :: on
 c_verbose = on
 
 end subroutine set_ptc_verbose
-
-!-----------------------------------------------------------------------------
-!-----------------------------------------------------------------------------
-!-----------------------------------------------------------------------------
-!+
-! Subroutine write_ptc_flat_file_lattice (file_name, branch)
-!
-! Routine to create a PTC flat file lattice from a Bmad branch.
-!
-! Input:
-!   file_name     -- character(*): Flat file name.
-!   branch        -- branch_struct: Branch containing a layout.
-!-
-
-subroutine write_ptc_flat_file_lattice (file_name, branch)
-
-use pointer_lattice
-
-type (branch_struct) branch
-character(*) file_name
-
-!
-
-call print_complex_single_structure (branch%ptc%m_t_layout, file_name)
-
-end subroutine write_ptc_flat_file_lattice
 
 !-----------------------------------------------------------------------------
 !-----------------------------------------------------------------------------
@@ -1235,6 +1203,11 @@ if (name(1:1) /= '!') call update_this_real (ele%value(integrator_order$), real(
 
 ! Multipole
 
+a_pole = 0
+b_pole = 0
+a_pole_elec = 0
+b_pole_elec = 0
+
 if (associated(fib%mag%an)) then
   nmul = size(fib%mag%an)
   a_pole(0:nmul-1) = fib%mag%an
@@ -1269,19 +1242,19 @@ select case (ele%key)
 case (octupole$)
   call update_this_real (ele%value(k3$), knl(3))
   call update_this_real (ele%value(tilt$), tn(3))
-  knl(3) = 0
-  tn(3) = 0
+  a_pole(3) = 0
+  b_pole(3) = 0
 
 case (quadrupole$)
   call update_this_real (ele%value(k1$), knl(1))
   call update_this_real (ele%value(tilt$), tn(1))
-  knl(1) = 0
-  tn(1) = 0
+  a_pole(1) = 0
+  b_pole(1) = 0
 
 case (hkicker$)
   call update_this_real (ele%value(kick$), knl(1))
-  knl(1) = 0
-  tn(1) = 0
+  a_pole(1) = 0
+  b_pole(1) = 0
 
 case (lcavity$, rfcavity$)
   call update_this_real (ele%value(rf_frequency$), fib%mag%freq)
@@ -1301,6 +1274,8 @@ case (lcavity$, rfcavity$)
 case (multipole$)
   ele%a_pole = knl
   ele%b_pole = tn
+  a_pole = 0
+  b_pole = 0
 
 case (sbend$)
   call update_this_real (ele%value(g$), fib%mag%p%b0)
@@ -1321,8 +1296,8 @@ case (sbend$)
 case (sextupole$)
   call update_this_real (ele%value(k2$), knl(2))
   call update_this_real (ele%value(tilt$), tn(2))
-  knl(2) = 0
-  tn(2) = 0
+  a_pole(2) = 0
+  b_pole(2) = 0
 
 case (solenoid$)
   call update_this_real (ele%value(ks$), fib%mag%b_sol)
@@ -1331,11 +1306,10 @@ case (sol_quad$)
   call update_this_real (ele%value(ks$), fib%mag%b_sol)
   call update_this_real (ele%value(k1$), knl(1))
   call update_this_real (ele%value(tilt$), tn(1))
-  knl(1) = 0
-  tn(1) = 0
+  a_pole(1) = 0
+  b_pole(1) = 0
 
 case (wiggler$, undulator$)
-
 
 case default
 end select

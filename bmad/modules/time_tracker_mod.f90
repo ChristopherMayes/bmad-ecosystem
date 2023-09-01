@@ -1,15 +1,6 @@
 module time_tracker_mod
 
-use em_field_mod
 use element_at_s_mod
-
-type time_runge_kutta_common_struct
-  integer :: num_steps_done = -1              ! Number of integration steps. Not used by Bmad. For external use.
-  logical :: print_too_many_step_err = .true.
-end type
-
-type (time_runge_kutta_common_struct), save :: time_runge_kutta_com
-
 
 contains
 
@@ -89,7 +80,7 @@ s_fringe_ptr => s_fringe_edge   ! To get around an intel bug: s_fringe_ptr is us
 
 if (ele%key == patch$) then
   s_stop_fwd = 0  ! By convention.
-elseif (orb%direction*ele%orientation == -1) then
+elseif (orb%direction*orb%time_dir*ele%orientation == -1) then
   s_stop_fwd = 0
 else
   s_stop_fwd = ele%value(l$)
@@ -102,7 +93,7 @@ if (ele%tracking_method == fixed_step_time_runge_kutta$) then
     call out_io (s_error$, r_name, 'FIXED_STEP_TIME_RUNGE_KUTTA TRACKING USED WITHOUT DS_STEP BEING SET!', &
                                    'WILL USE BMAD_COM%INIT_DS_ADAPTIVE_TRACKING AS A FALLBACK FOR ELEMENT: ' // ele%name)
   else
-    dt_next = ele%value(ds_step$) / c_light
+    dt_next = abs(ele%value(ds_step$) / c_light) * t_dir
   endif
 endif
 
@@ -138,7 +129,7 @@ do n_step = 1, bmad_com%max_num_runge_kutta_step
     if (n_step == 1) zbrent_needed = .false.
 
     add_ds_safe = .true.
-    if (orb%direction*ele%orientation == 1 .and. abs(s_fringe_edge - s_stop_fwd) < ds_safe) then
+    if (orb%direction*orb%time_dir*ele%orientation == 1 .and. abs(s_fringe_edge - s_stop_fwd) < ds_safe) then
       if (ele%orientation == 1) then
         orb%location = downstream_end$
       else
@@ -146,7 +137,7 @@ do n_step = 1, bmad_com%max_num_runge_kutta_step
       endif
       add_ds_safe = .false.
       exit_flag = .true.
-    elseif (orb%direction*ele%orientation == -1 .and. abs(s_fringe_edge) < ds_safe) then
+    elseif (orb%direction*orb%time_dir*ele%orientation == -1 .and. abs(s_fringe_edge) < ds_safe) then
       if (ele%orientation == 1) then
         orb%location = upstream_end$
       else
@@ -171,19 +162,21 @@ do n_step = 1, bmad_com%max_num_runge_kutta_step
     edge_kick_applied = .false. 
     do 
       if (.not. fringe_info%has_fringe .or. .not. associated(fringe_info%hard_ele)) exit
-      if ((s_body-s_fringe_edge)*sign_of(orb%vec(6)) < -ds_safe) exit
+      if ((s_body-s_fringe_edge)*orb%time_dir*sign_of(orb%vec(6)) < -ds_safe) exit
       ! Get radius before first edge kick
       if (.not. edge_kick_applied) edge_kick_applied = .true.
       call convert_particle_coordinates_t_to_s(orb, ele, s_save)
       track_spin = (ele%spin_tracking_method == tracking$ .and. ele%field_calc == bmad_standard$)
       call apply_element_edge_kick (orb, fringe_info, ele, param, track_spin, rf_time = rf_time)
       call convert_particle_coordinates_s_to_t(orb, s_save, ele%orientation)
+      if (orb%state /= alive$) return
       call calc_next_fringe_edge (ele, s_fringe_edge, fringe_info, orb, time_tracking = .true.)
       ! Trying to take a step through a hard edge can drive Runge-Kutta nuts.
       ! So offset s a very tiny amount to avoid this
       if (add_ds_safe) then
-        s_body = s_body + sign_of(orb%vec(6)) * ds_safe
-        orb%s = orb%s + orb%direction * ds_safe
+        s_body = s_body + orb%time_dir * sign_of(orb%vec(6)) * ds_safe
+        orb%s = orb%s + orb%direction * orb%time_dir * ds_safe
+        add_ds_safe = .false.
       endif
     enddo
   endif
@@ -206,7 +199,7 @@ do n_step = 1, bmad_com%max_num_runge_kutta_step
         dt = super_zbrent (wall_intersection_func, 0.0_rp, dt_did, 1e-15_rp, dt_tol, status)
         ! Due to the zbrent finite tolerance, the particle may not have crossed the wall boundary.
         ! So step a small amount to make sure that the particle is past the wall.
-        dummy = wall_intersection_func(dt+ds_safe/c_light, status) ! Final call to set orb
+        dummy = wall_intersection_func(dt+t_dir*ds_safe/c_light, status) ! Final call to set orb
       endif
       orb%location = inside$
       orb%state = lost$
@@ -237,7 +230,7 @@ do n_step = 1, bmad_com%max_num_runge_kutta_step
       call convert_particle_coordinates_t_to_s (save_orb, ele, s_body)
       call save_a_step (track, ele, param, .true., save_orb, s_body, .true., rf_time = rf_time)
       ! Set next save time 
-      t_save = rf_time + dt_save
+      t_save = rf_time + t_dir*dt_save
     endif
 
     if (dt_did == dt) then
@@ -249,7 +242,7 @@ do n_step = 1, bmad_com%max_num_runge_kutta_step
 
   ! Exit when the particle hits an aperture or gets to the end of the element
 
-  if (exit_flag) then
+  if (exit_flag .or. orb%state /= alive$) then
     err_flag = .false. 
     return
   endif
@@ -259,8 +252,8 @@ do n_step = 1, bmad_com%max_num_runge_kutta_step
   stop_time_limited = .false.
   dt = dt_next
   if (present(t_end)) then
-    if (present(dt_step) .and. dt + orb%t < t_end) dt_step = dt
-    dt = min(dt, t_end-orb%t)
+    if (present(dt_step) .and. t_dir*(dt + orb%t) < t_dir*t_end) dt_step = dt
+    dt = t_dir * min(t_dir*dt, t_dir*t_end-orb%t)
   endif
 
   if (stop_time /= real_garbage$ .and. t_dir * dt > t_dir * (stop_time - orb%t)) then
@@ -282,7 +275,7 @@ do n_step = 1, bmad_com%max_num_runge_kutta_step
   if (err) return
   if (ele%key == patch$) then
     s_stop_fwd = 0  ! By convention.
-  elseif (orb%direction*ele%orientation == -1) then
+  elseif (orb%direction*orb%time_dir*ele%orientation == -1) then
     s_stop_fwd = 0
   else
     s_stop_fwd = ele%value(l$)
@@ -292,7 +285,7 @@ do n_step = 1, bmad_com%max_num_runge_kutta_step
 
   if (stop_time_limited) then
     dt_next = dt_next_save
-    if (abs(orb%t - stop_time) < bmad_com%significant_length / c_light) then
+    if (abs(orb%t - stop_time) < bmad_com%significant_length / c_light / 2) then
       call time_runge_kutta_periodic_kick_hook (orb, ele, param, stop_time, false_int$)
     endif
   endif
@@ -424,7 +417,7 @@ abs_tol = bmad_com%abs_tol_adaptive_tracking / sqrt_N
 dt = dt_try
 new_orb = orb
 
-pc_ref = (ele%value(p0c_start$) + ele%value(p0c$)) / 2
+pc_ref = 0.5_rp * (ele%value(p0c_start$) + ele%value(p0c$))
 abs_scale = [1d-2, 1d-6*pc_ref, 1d-2, 1d-6*pc_ref, 1d-2, 1d-2*pc_ref, 1.0_rp, 1.0_rp, 1.0_rp, 1d-4] 
 
 do
@@ -450,7 +443,7 @@ do
   else
     ! r_scal(7:9) is for spin
     ! Note that cp is in eV, so 1.0_rp is 1 eV
-    r_scal(:) = [abs(orb%vec) + abs(new_orb%vec), 1.0_rp, 1.0_rp, 1.0_rp, abs(orb%dt_ref) + abs(new_orb%dt_ref)]
+    r_scal(:) = [0.5_rp*(abs(orb%vec) + abs(new_orb%vec)), 1.0_rp, 1.0_rp, 1.0_rp, 0.5_rp*(abs(orb%dt_ref) + abs(new_orb%dt_ref))]
     r_scal(2:6:2) = r_scal(2:6:2) + 1d-6 * (abs(orb%vec(2))+abs(orb%vec(4))+abs(orb%vec(6)))
     r_scaled_tot = r_scal(:) * rel_tol + abs_scale * abs_tol
     r_scaled_err = abs(r_err(:)/r_scaled_tot(:))
@@ -459,7 +452,7 @@ do
     dt_temp = safety * dt * (err_max**p_shrink)
   endif
 
-  dt = t_dir * sign(max(abs(dt_temp), 0.1_rp*abs(dt)), dt)
+  dt = t_dir * max(abs(dt_temp), 0.1_rp*abs(dt))
   t_new = rf_time + dt
 
   if (t_new == rf_time) then ! Can only happen if dt is very small
@@ -619,7 +612,6 @@ out_orb%dt_ref = in_orb%dt_ref + dt_now - dvec(10)
 pc = sqrt(out_orb%vec(2)**2 + out_orb%vec(4)**2 + out_orb%vec(6)**2)
 call convert_pc_to (pc, orb%species, beta = out_orb%beta)
 
-
 end subroutine transfer_this_orbit
 
 end subroutine rk_time_step1
@@ -661,6 +653,8 @@ real(rp) rf_time, s_pos, s_tiny
 real(rp) vel(3), force(3), momentum
 real(rp) :: pc, e_tot, mc2, gamma, charge, beta, p0, h, beta0, dp_dt, dbeta_dt
 
+integer ie
+
 logical :: err_flag
 logical, optional :: print_err
 
@@ -684,11 +678,7 @@ else
   if (s_pos > max(0.0_rp, ele%value(l$)) - s_tiny) s_pos = max(0.0_rp, ele%value(l$)) - s_tiny
 endif
 
-if (ele%key == patch$ .and. orbit%direction*ele%orientation == -1) then
-  call em_field_calc (ele, param, s_pos, orbit, .true., field, .false., err_flag, rf_time = rf_time, print_err = print_err)
-else
-  call em_field_calc (ele, param, s_pos, orbit, .true., field, .false., err_flag, rf_time = rf_time, print_err = print_err)
-endif
+call em_field_calc (ele, param, s_pos, orbit, .true., field, .false., err_flag, rf_time = rf_time, print_err = print_err)
 
 if (err_flag) return
 
@@ -738,7 +728,7 @@ dvec_dt(6) = c_light*force(3)
 
 ! Curvilinear coordinates have added terms
 
-if (ele%key == sbend$) then
+if (ele%key == sbend$ .or. ele%key == rf_bend$) then
   h = 1 + ele%value(g$) * orbit%vec(1)
   dvec_dt(2) = dvec_dt(2) + orbit%vec(6) * vel(3) * ele%value(g$) / h
   dvec_dt(5) = vel(3) / h
@@ -750,17 +740,22 @@ endif
 ! The effective reference velocity is different from the velocity of the reference particle for wigglers where the 
 ! reference particle is not traveling along the reference line and in elements where the reference velocity is not constant.
 
-! Note: There is a potential problem with RF and e_gun elements when calculating beta0 when there is slicing and where
-! the particle is non-relativistic. To avoid z-shifts with slicing, use the lord delta_ref_time.
-
 if (orbit%beta == 0) then
   dvec_dt(10) = 0
 else
   dp_dt = dot_product(force, vel) / (orbit%beta * c_light)
   dbeta_dt = mass_of(orbit%species)**2 * dp_dt * c_light / e_tot**3
 
-  if (ele%slave_status == slice_slave$ .or. ele%slave_status == super_slave$) then
-    ele0 => pointer_to_lord(ele, 1)
+  ! Note: There is a potential problem with RF and e_gun elements when calculating beta0 when there is slicing and where
+  ! the particle is non-relativistic. To avoid z-shifts with slicing, use the lord delta_ref_time.
+  ! There is a further potential problem in that a pipe with a lcavity superimposed on it will not have a 
+  ! constant reference energy
+
+  if (ele%slave_status == slice_slave$ .or. (ele%slave_status == super_slave$ .and. ele%key /= pipe$)) then
+    do ie = 1, ele%n_lord
+      ele0 => pointer_to_lord(ele, ie)
+      if (ele0%key /= pipe$) exit
+    enddo
   else
     ele0 => ele
   endif
@@ -778,7 +773,7 @@ endif
 
 if (bmad_com%spin_tracking_on .and. ele%spin_tracking_method == tracking$) then
   dvec_dt(7:9) = spin_omega (field, orbit, 0, .false.)
-  if (ele%key == sbend$) dvec_dt(7:9) = dvec_dt(7:9) + [0.0_rp, ele%value(g$), 0.0_rp] * vel(3) / h
+  if (ele%key == sbend$ .or. ele%key == rf_bend$) dvec_dt(7:9) = dvec_dt(7:9) + [0.0_rp, ele%value(g$), 0.0_rp] * vel(3) / h
 else
   dvec_dt(7:9) = 0
 endif
@@ -1199,11 +1194,11 @@ track_loop: do iteration = 1, max_iteration
   ele_now => ele
   
   ! step to next ele
-  ele => pointer_to_next_ele (ele, end_orb%direction)
+  ele => pointer_to_next_ele (ele, end_orb%direction*end_orb%time_dir)
   if (.not. associated(ele) ) exit
   
   ! Check for wrap around
-  if (end_orb%direction == -1 .and. ele%ix_ele == 0) then
+  if (end_orb%direction*end_orb%time_dir == -1 .and. ele%ix_ele == 0) then
     ! At beginning. Check that the lattice starts with a multipass element
     call multipass_chain (ele_now, ix_pass_now, n_links, chain_ele)
     call multipass_chain (ele, ix_pass, n_links)
@@ -1228,7 +1223,7 @@ track_loop: do iteration = 1, max_iteration
   endif
 
   !Place end_orb%s correctly 
-  if (end_orb%direction == +1) then
+  if (end_orb%direction*end_orb%time_dir == +1) then
     ! particle arrives at the beginning of the element
     end_orb%s        = ele%s_start
     end_orb%location = upstream_end$

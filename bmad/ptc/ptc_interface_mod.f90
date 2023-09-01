@@ -1974,7 +1974,7 @@ real(dp) c8(size(taylor_in)), c_ref(size(taylor_in))
 
 logical, optional :: err
 
-character(16) :: r_name = 'taylor_inverse'
+character(*), parameter :: r_name = 'taylor_inverse'
 
 !
 
@@ -2127,6 +2127,7 @@ type (fibre), pointer :: fib
 
 real(rp) beta0, beta1, tilt
 real(8) x_dp(6)
+logical err_flag
 
 ! Match elements are not implemented in PTC so just use the matrix.
 
@@ -2153,7 +2154,7 @@ call ptc_set_taylor_order_if_needed()
 ! and create map corresponding to ele%taylor.
 
 param%particle = positron$  ! Actually this does not matter to the calculation
-call ele_to_fibre (ele, fib, param, use_offsets = .true.)
+call ele_to_fibre (ele, fib, param, .true., err_flag)
 
 ! Init
 
@@ -2447,6 +2448,7 @@ type (fibre), pointer :: ptc_fibre
 type (coord_struct), optional :: ref_in
 
 real(rp) beta0, beta1, m2_rel
+logical err_flag
 
 ! If the element is a taylor then just concat since this is faster.
 
@@ -2469,7 +2471,7 @@ ptc_tlr = bmad_taylor
 
 ! track the map
 
-call ele_to_fibre (ele, ptc_fibre, param, .true., ref_in = ref_in)
+call ele_to_fibre (ele, ptc_fibre, param, .true., err_flag, ref_in = ref_in)
 call track_probe_x (ptc_tlr, ptc_private%base_state, fibre1 = bmadl%start)
 
 ! transfer ptc map back to bmad map
@@ -2730,17 +2732,19 @@ end subroutine beambeam_fibre_setup
 !------------------------------------------------------------------------
 !------------------------------------------------------------------------
 !+
-! Subroutine misalign_ptc_fibre (ele, use_offsets, ptc_fibre)
+! Subroutine misalign_ptc_fibre (ele, use_offsets, ptc_fibre, for_layout)
 !
 ! Routine to misalign a fibre associated with a Bmad element.
 !
 ! Input:
-!   ele -- ele_struct: Bmad element with misalignments.
-!   use_offsets -- Logical: Does ptc_fibre include element offsets, pitches and tilt?
+!   ele         -- ele_struct: Bmad element with misalignments.
+!   use_offsets -- logical: Does ptc_fibre include element offsets, pitches and tilt?
 !                   This argument is ignored if the element is a patch.
+!   for_layout  -- logical: If True then fibre is being created as part of a layout as
+!                   opposed to a stand-alone fibre
 !
 ! Output:
-!   ptc_fibre -- Fibre: PTC fibre element with misalignments.
+!   ptc_fibre   -- fibre: PTC fibre element with misalignments.
 !-
 
 subroutine misalign_ptc_fibre (ele, use_offsets, ptc_fibre, for_layout)
@@ -2757,7 +2761,7 @@ type (fibre), target :: dummy_fibre
 
 real(rp) dr(3), ang(3), exi(3,3), beta_start, beta_end
 real(rp) x(6), o_chord(3), o_arc(3), basis(3,3), orient(3,3), sagitta
-real(rp) r0(3), s_mat(3,3), s0_mat(3,3), r(3), b(3)
+real(rp) r0(3), s_mat(3,3), s0_mat(3,3), r(3), b(3), t, rot(2,2)
 
 logical use_offsets, for_layout, good_patch, addin
 
@@ -2786,7 +2790,7 @@ endif
 
 if (ele%key == patch$) then
   if (ele%orientation == -1) then
-    floor0 = floor_position_struct(r0_vec$, w_unit$, 0.0_rp, 0.0_rp, 0.0_rp)
+    floor0 = floor_position_struct(vec3_zero$, mat3_unit$, 0.0_rp, 0.0_rp, 0.0_rp)
     call ele_geometry (floor0, ele, floor1)
     dr = floor1%r
     ang = [floor1%phi, floor1%theta, floor1%psi]
@@ -2822,10 +2826,13 @@ if (ele%key == patch$) then
 
   ! PTC uses beta_start for the reference time calculation while Bmad uses beta_end so
   ! renormalize the patch length to get PTC to agree with Bmad.
+  ! For Etienne this can be an annoyance so he sets ptc_com%translate_patch_drift_time = False.
 
-  ptc_fibre%patch%time = 2     ! Subtract off reference time (which affects z in tracking).
-  ptc_fibre%patch%b_t = ele%value(l$) / beta_end + ele%orientation * ele%value(t_offset$) * c_light 
-  ptc_fibre%patch%b_l = ele%value(l$) + ele%orientation * ele%value(t_offset$) * c_light * beta_end
+  if (ptc_com%translate_patch_drift_time) then
+    ptc_fibre%patch%time = 2     ! Subtract off reference time (which affects z in tracking).
+    ptc_fibre%patch%b_t = ele%value(l$) / beta_end + ele%orientation * ele%value(t_offset$) * c_light 
+    ptc_fibre%patch%b_l = ptc_fibre%patch%b_t * beta_end
+  endif
 
 !----------------------------------------------------------------------
 ! Not patch nor floor_shift element.
@@ -2853,6 +2860,7 @@ elseif (use_offsets) then
     endif
 
     dr = [ele%value(x_offset_tot$), ele%value(y_offset_tot$), ele%value(z_offset_tot$)]
+
     if (any(dr /= 0)) then
       o_chord = ptc_fibre%mag%p%f%o
       o_arc = o_chord + sagitta * ptc_fibre%mag%p%f%mid(1,1:3)
@@ -2896,6 +2904,9 @@ elseif (use_offsets) then
 
   else ! Not a bend
     dr = [ele%value(x_offset_tot$), ele%value(y_offset_tot$), ele%value(z_offset_tot$)]
+    if (ele%key == sad_mult$ .and. ele%value(l$) == 0) &
+                              dr(1:2) = dr(1:2) + [ele%value(x_offset_mult$), ele%value(y_offset_mult$)]
+
     if (any(dr /= 0)) then
       o_chord = ptc_fibre%mag%p%f%o
       basis = ptc_fibre%mag%p%f%mid

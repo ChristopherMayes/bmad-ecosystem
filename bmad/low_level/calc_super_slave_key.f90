@@ -39,31 +39,45 @@ key2 = lord2%key
 slave%key = -1  ! Default if no superimpose possible
 slave%sub_key = 0
 
-! If one element is a drift then slave%key = key of other element.
+! * If one element is a drift then slave%key = key of other element.
+! * Control elements, etc. cannot be superimposed.
 
-if (key1 == drift$) then
+select case (key1)
+case (drift$)
   slave%key = key2
   slave%sub_key = lord2%sub_key
   return
-endif
-
-if (key2 == drift$) then
-  slave%key = key1
-  slave%sub_key = lord1%sub_key
-  return
-endif
-
-! control elements, etc. cannot be superimposed.
-
-select case (key1)
-case (overlay$, group$, girder$, taylor$, match$, patch$, fiducial$, floor_shift$, multipole$, ab_multipole$)
+case (overlay$, group$, girder$, taylor$, match$, patch$, fiducial$, floor_shift$, multipole$, ab_multipole$, sbend$, rf_bend$)
   return
 end select
 
 select case (key2)
-case (overlay$, group$, girder$, taylor$, match$, patch$, fiducial$, floor_shift$, multipole$, ab_multipole$)
+case (drift$)
+  slave%key = key1
+  slave%sub_key = lord1%sub_key
+  return
+case (overlay$, group$, girder$, taylor$, match$, patch$, fiducial$, floor_shift$, multipole$, ab_multipole$, sbend$, rf_bend$)
   return
 end select
+
+! If there are misalignments then no superposition is possible
+
+if (lord1%value(x_offset$) /= 0 .or. lord1%value(y_offset$) /= 0 .or. lord1%value(z_offset$) /= 0 .or. &
+    lord1%value(x_pitch$) /= 0 .or. lord1%value(y_pitch$) /= 0 .or. &
+    lord2%value(x_offset$) /= 0 .or. lord2%value(y_offset$) /= 0 .or. lord2%value(z_offset$) /= 0 .or. &
+    lord2%value(x_pitch$) /= 0 .or. lord2%value(y_pitch$) /= 0) then
+  slave%key = em_field$
+  if (key1 == lcavity$ .or. key2 == lcavity$) then
+    slave%value(constant_ref_energy$) = false$
+  elseif (key1 == em_field$) then
+    slave%value(constant_ref_energy$) = lord1%value(constant_ref_energy$)
+  elseif (key2 == em_field$) then
+    slave%value(constant_ref_energy$) = lord2%value(constant_ref_energy$)
+  else
+    slave%value(constant_ref_energy$) = true$
+  endif
+  return
+endif
 
 ! Superimposing two of like kind...
 
@@ -89,10 +103,6 @@ if (key1 == key2) then
   end select
   return
 endif
-
-! sbend elements are problematical due to the different reference orbit so cannot superimpose them.
-
-if (key1 == sbend$ .or. key2 == sbend$) return
 
 ! If one element is a pipe then slave%key = key of other element.
 

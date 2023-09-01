@@ -33,16 +33,17 @@ type (coord_struct), pointer :: orb
 real(rp) t, r
 
 integer, optional :: direction
-integer ip, ir, ie, n
+integer ip, ir, ie, n, iv
 
 logical err, finished
 
-! To save time, rampers are only applied to the element once per bunch. 
-! That is, it is assumed that the ramper control function variation is negligible over the
-! time scale of a bunch passage.
+! Rampers are only applied to the element once per bunch. That is, it is assumed 
+! that the ramper control function variation is negligible over the time scale of a bunch passage. 
+! To evaluate multiple times in a bunch passage would, in general, be wrong if using ran() or ran_gauss().
 
 err = .false.
 finished = .false.
+if (.not. ltt_params_global%ramping_on) return 
 if (ltt_params_global%ramp_update_each_particle) return 
 
 n = ltt_com_global%n_ramper_loc
@@ -53,12 +54,14 @@ t = sum(bunch%particle%t, bunch%particle%state == alive$) / &
            ltt_params_global%ramping_start_time
 
 do ir = 1, ltt_com_global%n_ramper_loc
-  if (ltt_com_global%ramper(ir)%ele%control%var(1)%name /= 'TIME') cycle
-  ltt_com_global%ramper(ir)%ele%control%var(1)%value = t
+  do iv = 1, size(ltt_com_global%ramper(ir)%ele%control%var)
+    if (ltt_com_global%ramper(ir)%ele%control%var(iv)%name /= 'TIME') cycle
+    ltt_com_global%ramper(ir)%ele%control%var(iv)%value = t
+  enddo
 enddo
 
 n = ltt_com_global%n_ramper_loc
-call apply_ramper (ele, ltt_com_global%ramper(1:n), err)
+call ltt_apply_rampers_to_slave (ele, ltt_com_global%ramper(1:n), err)
 
 ! The beginning element is never tracked through. If there is energy ramping and the user is writing out 
 ! p0c or E_tot from the beginning element, the user may be confused since these values will not change. 

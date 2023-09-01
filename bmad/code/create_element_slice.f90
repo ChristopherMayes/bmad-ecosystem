@@ -66,14 +66,16 @@ else
 endif
 sliced_ele%lord_status = not_a_lord$
 sliced_ele%slave_status = slice_slave$
+sliced_ele%n_slave = 0
+sliced_ele%n_slave_field = 0
 sliced_ele%ix_ele = ix_slice_slave$  ! Indicate sliced ele is not an element in the lattice.
 sliced_ele%s_start = ele_in%s - in_len + offset
 sliced_ele%s = sliced_ele%s_start + sliced_ele%value(l$)
 sliced_ele%map_ref_orb_in  = coord_struct()
 sliced_ele%map_ref_orb_out = coord_struct()
 
-! The sliced element is treated as a super_slave to the original element.
-! Except if the original element is itself a super_slave. Then the sliced element is a super_slave
+! The sliced element is treated as a super_slave to the original element except if
+! the original element is itself a super_slave. In this case the sliced element is a super_slave
 ! of the original elements lords.
 
 if (ele_in%slave_status == slice_slave$) then

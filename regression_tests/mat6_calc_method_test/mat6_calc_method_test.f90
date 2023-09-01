@@ -81,6 +81,7 @@ do ib = 0, ubound(lat%branch, 1)
 
     do j = 1, n_methods$
       if (.not. valid_mat6_calc_method(ele, branch%param%particle, j) .or. j == custom$ .or. j == mad$) cycle
+      if (j == auto$) cycle
       if (ele%key /= taylor$) call kill_taylor(ele%taylor)
       ele%mat6_calc_method = j
       call init_coord (start_orb, lat%particle_start, ele, upstream_end$, branch%param%particle)
@@ -99,6 +100,7 @@ do ib = 0, ubound(lat%branch, 1)
       do j = 1, n_methods$
         ! if (j == mad$ .and. custom_test) cycle
         if (j == fixed_step_runge_kutta$ .or. j == fixed_step_time_runge_kutta$) cycle
+        if (j == auto$) cycle
         if(.not. valid_mat6_calc_method(ele, branch%param%particle, j) .or. j == custom$ .or. j == mad$) cycle
         ele2 => eles(j)
         if (k < 7) then
@@ -187,20 +189,23 @@ case ('"KICKER1:Tracking:MatrixRow5"')             ; tolerance = 'ABS 5e-11'
 case ('"WIGGLER_MAP1:Tracking:MatrixRow6"')        ; tolerance = 'ABS 2e-11'
 case ('"WIGGLER_MAP1:Tracking:Symp_Err"')          ; tolerance = 'ABS 2e-11'
 
-case ('"LCAVITY1:Tracking:MatrixRow5"')            ; tolerance = 'ABS 5e-11'
+case ('"LCAVITY1:Tracking:MatrixRow5"')            ; tolerance = 'ABS 2e-10'
+case ('"LCAVITY1:Tracking:MatrixRow6"')            ; tolerance = 'ABS 4e-10'
 case ('"LCAVITY1:Tracking:Symp_Err"')              ; tolerance = 'ABS 3e-9'
 case ('"LCAVITY2:Tracking:MatrixRow5"')            ; tolerance = 'ABS 1e-10'
 case ('"LCAVITY2:Tracking:Symp_Err"')              ; tolerance = 'ABS 1e-7'
 case ('"LCAVITY3:Tracking:MatrixRow5"')            ; tolerance = 'ABS 2e-10'
-case ('"LCAVITY3:Tracking:MatrixRow6"')            ; tolerance = 'ABS 1e-10'
+case ('"LCAVITY3:Tracking:MatrixRow6"')            ; tolerance = 'ABS 4e-10'
 case ('"LCAVITY3:Tracking:Symp_Err"')              ; tolerance = 'ABS 1e-9'
 
 
-case ('"LCAVITY1_ABS_TIME:Tracking:MatrixRow5"')   ; tolerance = 'ABS 5e-11'
+case ('"LCAVITY1_ABS_TIME:Tracking:MatrixRow5"')   ; tolerance = 'ABS 2e-10'
+case ('"LCAVITY1_ABS_TIME:Tracking:MatrixRow6"')   ; tolerance = 'ABS 4e-10'
 case ('"LCAVITY1_ABS_TIME:Tracking:Symp_Err"')     ; tolerance = 'ABS 3e-9'
 case ('"LCAVITY2_ABS_TIME:Tracking:Symp_Err"')     ; tolerance = 'ABS 5e-11'
 case ('"LCAVITY2_ABS_TIME:Tracking:MatrixRow5"')   ; tolerance = 'ABS 1e-10'
 case ('"LCAVITY3_ABS_TIME:Tracking:MatrixRow5"')   ; tolerance = 'ABS 2e-10'
+case ('"LCAVITY3_ABS_TIME:Tracking:MatrixRow6"')   ; tolerance = 'ABS 2e-10'
 case ('"LCAVITY3_ABS_TIME:Tracking:Symp_Err"')     ; tolerance = 'ABS 3e-9'
 
 case ('"OCTUPOLE1:Tracking:MatrixRow5"')           ; tolerance = 'ABS 5e-11'

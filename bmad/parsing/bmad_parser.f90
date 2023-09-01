@@ -167,14 +167,6 @@ allocate(sequence(500))
 
 call init_bmad_parser_common()
 bp_com%extra = extra_parsing_info_struct()
-
-call ran_default_state (get_state = bp_com%extra%initial_state) ! Get initial random state.
-if (bp_com%extra%initial_state%ix == -1) then
-  bp_com%extra%deterministic = 0
-else
-  bp_com%extra%deterministic = 1
-endif
-
 bp_com%input_line_meaningful = .true.
 
 n_max => in_lat%n_ele_max   ! Number of elements encountered
@@ -280,7 +272,7 @@ parsing_loop: do
   ! PRINT
 
   if (word_1(:ix_word) == 'PRINT') then
-    call parser_print_line(in_lat, end_of_file)
+    call parser_print_line(lat, end_of_file)  ! Put directly in lat.
     cycle parsing_loop
   endif
 
@@ -340,7 +332,7 @@ parsing_loop: do
   ! Superimpose statement
 
   if (word_1(:ix_word) == 'SUPERIMPOSE') then
-    call new_element_init('superimpose-command:' // int_str(n_max+1), '', in_lat, err, null_ele$)
+    call new_element_init('superimpose-command:' // int_str(n_max+1), '', in_lat, plat, err, null_ele$)
     ele => in_lat%ele(n_max)
     call parse_superimpose_command(in_lat, ele, plat%ele(ele%ixx), delim)
     cycle parsing_loop   
@@ -654,7 +646,7 @@ parsing_loop: do
     sequence(iseq_tot)%name = word_1
     sequence(iseq_tot)%multipass = multipass
 
-    call new_element_init (word_1, '', in_lat, err)
+    call new_element_init (word_1, '', in_lat, plat, err)
     ele => in_lat%ele(n_max)
 
     if (delim /= '=') call parser_error ('EXPECTING: "=" BUT GOT: ' // delim)
@@ -679,7 +671,7 @@ parsing_loop: do
   !-------------------------------------------------------
   ! If not line or list then must be an element
 
-  call new_element_init (word_1, word_2, in_lat, err)
+  call new_element_init (word_1, word_2, in_lat, plat, err)
   if (err) cycle parsing_loop
 
   ! Check for valid element key name or if element is part of a element key.
@@ -694,6 +686,12 @@ parsing_loop: do
     in_lat%ele(n_max)%ixx = n_max  ! Restore correct value
     call set_ele_name (in_lat%ele(n_max), word_1)
     match_found = .true.
+  endif
+
+  if (.not. match_found .and. word_2 == 'RF') then
+    call parser_error ('"RF" ELEMENT TYPE IS AMBIGUOUS. COULD BE "RFCAVITY" OR "RF_BEND".', &
+                       'WILL ASSUME THIS IS A "RFCAVITY"', level = s_warn$)
+    word_2 = 'RFCAVITY'
   endif
 
   if (.not. match_found) then
@@ -1098,6 +1096,11 @@ do i = 1, n_max
     if (k == 0) cycle
     call parser_expand_line (-1, pele%control(j)%name, sequence, &
                                          seq_name, seq_indexx, .false., n_ele_use, expanded_line = a_line)
+    if (bp_com%fatal_error_flag) then
+      call parser_end_stuff (in_lat)
+      return
+    endif
+
     ! Put elements from the line expansion into the slave list.
 
     call move_alloc(pele%control, pcon)
@@ -1291,7 +1294,7 @@ if (err) bp_com%error_flag = .true.
 
 call parser_end_stuff (in_lat)
 
-if (bp_com%extra%ran_function_was_called) then
+if (bp_com%extra%undeterministic_ran_function_called) then
   call out_io(s_warn$, r_name, &
                 'NOTE: THE RANDOM NUMBER FUNCTION WAS USED IN THE LATTICE FILE SO THIS', &
                 '      LATTICE WILL DIFFER FROM OTHER LATTICES GENERATED FROM THE SAME FILE.')
@@ -1312,10 +1315,12 @@ logical, optional :: set_error_flag
 integer i, j, stat_b(24), stat, ierr
 character(200) name
 
+!
+
+if (present(parse_lat) .and. .not. bp_com%error_flag) parse_lat = lat0
+
 ! Calculate the creation hash which can be used by programs to verify that the lattice has not been changed since
 ! the last time the lattice was read in.
-
-if (present(parse_lat)) parse_lat = lat0
 
 lat%creation_hash = djb_hash(int_str(bmad_inc_version$))
 do i = 1, bp_com%num_lat_files
@@ -1371,9 +1376,10 @@ end subroutine parser_end_stuff
 !---------------------------------------------------------------------
 ! contains
 
-subroutine new_element_init (word1, class_word, lat0, err, ele_key)
+subroutine new_element_init (word1, class_word, lat0, plat, err, ele_key)
 
 type (lat_struct), target :: lat0
+type (parser_lat_struct), target :: plat
 
 integer, pointer :: n_max
 integer, optional :: ele_key

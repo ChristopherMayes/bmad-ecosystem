@@ -20,6 +20,7 @@ implicit none
 type (ele_struct) ele
 integer fringe_type
 logical is_valid
+character(*), parameter :: r_name = 'valid_fringe_type'
 
 ! 
 
@@ -30,6 +31,12 @@ select case (ele%key)
 case (sbend$, rbend$)
   select case (fringe_type)
   case (none$, soft_edge_only$, hard_edge_only$, full$, sad_full$, linear_edge$, basic_bend$)
+    is_valid = .true.
+  end select
+
+case (rf_bend$)
+  select case (fringe_type)
+  case (none$)
     is_valid = .true.
   end select
 

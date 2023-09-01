@@ -144,7 +144,7 @@ type (floor_position_struct) floor
 
 real(rp), optional :: s_start, s_end
 real(rp) s0_step, vec0(6), vec(6), theta_chord, theta0, theta1, L
-real(rp) e_tot, f1, x, z, ds_step
+real(rp) e_tot, f1, x, z, ds_step, s_save_last
 
 integer i, j, n, ie, ns, nb, n_step, n_live, i_step
 integer :: iu_wake
@@ -282,6 +282,8 @@ csr%actual_track_step = csr%ds_track_step * (csr%eleinfo(ele%ix_ele)%L_chord / e
 auto_bookkeeper = bmad_com%auto_bookkeeper ! save state
 bmad_com%auto_bookkeeper = .false.   ! make things go faster
 
+call save_a_bunch_step (ele, bunch, bunch_track, s_start)
+
 !----------------------------------------------------------------------------------------
 ! Loop over the tracking steps
 ! runt is the element that is tracked through at each step.
@@ -338,7 +340,7 @@ do i_step = 0, n_step
 
       csr%kick_factor = (-1)**ns
       if (i_step == 0 .or. i_step == n_step) csr%kick_factor = csr%kick_factor / 2
-      if (ns /= 0) csr%kick_factor = 2* csr%kick_factor
+      if (ns /= 0) csr%kick_factor = 2 * csr%kick_factor
 
       csr%y_source = ns * space_charge_com%beam_chamber_height
 
@@ -351,7 +353,7 @@ do i_step = 0, n_step
 
   call csr_and_sc_apply_kicks (ele, csr, bunch%particle)
 
-  call save_bunch_track (bunch, ele, s0_step)
+  call save_a_bunch_step (ele, bunch, bunch_track, s0_step)
 
   ! Record wake to file?
 
@@ -364,7 +366,7 @@ do i_step = 0, n_step
     endif
     write (iu_wake, '(a)') '!#-----------------------------'
     write (iu_wake, '(a, i4, f12.6)') '! Step index:', i_step
-    write (iu_wake, '(a, f12.6)') '! S-position:', ele%s_start + s0_step
+    write (iu_wake, '(a, f12.6)') '! S-position:', s0_step
     write (iu_wake, '(a)') '!         Z   Charge/Meter    CSR_Kick/m       I_CSR/m      S_Source' 
     if (allocated(csr%kick1)) then
       ds_step = csr%kick_factor * csr%actual_track_step
@@ -406,7 +408,7 @@ end subroutine track1_bunch_csr
 !   particle(:)          -- coord_struct: Array of particles
 !
 ! Other:
-!   space_charge_com     -- space_charge_common_struct: Space charte/CSR common block
+!   space_charge_com     -- space_charge_common_struct: Space charge/CSR common block
 !     %n_bin                 -- Number of bins.
 !     %particle_bin_span     -- Particle length / dz_slice. 
 !
@@ -588,8 +590,8 @@ do ib = space_charge_com%n_bin/2, space_charge_com%n_bin
     slice%sig_x = csr%slice(ib-1)%sig_x
     slice%sig_y = csr%slice(ib-1)%sig_y
   else
-    if (slice%sig_x < sig_x_ave * space_charge_com%sigma_cutoff) slice%sig_x = sig_x_ave * space_charge_com%sigma_cutoff
-    if (slice%sig_y < sig_y_ave * space_charge_com%sigma_cutoff) slice%sig_y = sig_y_ave * space_charge_com%sigma_cutoff
+    if (slice%sig_x < sig_x_ave * space_charge_com%lsc_sigma_cutoff) slice%sig_x = sig_x_ave * space_charge_com%lsc_sigma_cutoff
+    if (slice%sig_y < sig_y_ave * space_charge_com%lsc_sigma_cutoff) slice%sig_y = sig_y_ave * space_charge_com%lsc_sigma_cutoff
   endif
 enddo
 
@@ -599,8 +601,8 @@ do ib = space_charge_com%n_bin/2, 1, -1
     slice%sig_x = csr%slice(ib+1)%sig_x
     slice%sig_y = csr%slice(ib+1)%sig_y
   else
-    if (slice%sig_x < sig_x_ave * space_charge_com%sigma_cutoff) slice%sig_x = sig_x_ave * space_charge_com%sigma_cutoff
-    if (slice%sig_y < sig_y_ave * space_charge_com%sigma_cutoff) slice%sig_y = sig_y_ave * space_charge_com%sigma_cutoff
+    if (slice%sig_x < sig_x_ave * space_charge_com%lsc_sigma_cutoff) slice%sig_x = sig_x_ave * space_charge_com%lsc_sigma_cutoff
+    if (slice%sig_y < sig_y_ave * space_charge_com%lsc_sigma_cutoff) slice%sig_y = sig_y_ave * space_charge_com%lsc_sigma_cutoff
   endif
 enddo
 
@@ -1405,7 +1407,7 @@ if (ele%space_charge_method == fft_3d$) then
 
   call deposit_particles (csr%position(1:n)%r(1), csr%position(1:n)%r(2), csr%position(1:n)%r(3), csr%mesh3d, qa=csr%position(1:n)%charge)
   ! OLD ROUTINE: call space_charge_freespace(csr%mesh3d)
-   call space_charge_3d(csr%mesh3d)
+  call space_charge_3d(csr%mesh3d)
    
   do i = 1, size(particle)
     p => particle(i)
@@ -1420,10 +1422,6 @@ if (ele%space_charge_method == fft_3d$) then
     ! Set beta
     call convert_pc_to (p%p0c * (1 + p%vec(6)), p%species, beta = p%beta)
   enddo
-
- 
-  
-  
 endif
 
 end subroutine csr_and_sc_apply_kicks
@@ -1509,7 +1507,7 @@ real(rp) s_ref, s_chord, dtheta, dr(3), x, g, t
 ele => eleinfo%ele
 g = ele%value(g$)
 
-if (ele%key == sbend$ .and. abs(g) > 1d-5) then
+if ((ele%key == sbend$ .or. ele%key == rf_bend$) .and. abs(g) > 1d-5) then
   dtheta = eleinfo%floor0%theta - eleinfo%e_floor0%theta
   dr = eleinfo%e_floor0%r - eleinfo%floor0%r
   t = eleinfo%e_floor0%theta + pi/2
@@ -1534,7 +1532,7 @@ end function s_ref_to_s_chord
 !+
 ! Subroutine track1_bunch_csr3d (bunch, ele, centroid, err, bunch_track)
 !
-! EXPERIMENTAL
+! EXPERIMENTAL. NOT CURRENTLY OPERATIONAL!
 !
 ! Routine to track a bunch of particles through an element using
 ! steady-state 3D CSR.
@@ -1587,6 +1585,8 @@ integer i, j, n, ie, ns, nb, n_step, n_live, i_step
 character(*), parameter :: r_name = 'track1_bunch_csr3d'
 logical err, auto_bookkeeper, err_flag, parallel0, parallel1
 
+! EXPERIMENTAL. NOT CURRENTLY OPERATIONAL!
+
 ! Init
 
 err = .true.
@@ -1637,6 +1637,8 @@ endif
 !----------------------------------------------------------------------------------------
 ! Loop over the tracking steps
 ! runt is the element that is tracked through at each step.
+
+call save_a_bunch_step (ele, bunch, bunch_track, s_start)
 
 do i_step = 0, n_step
 
@@ -1695,8 +1697,8 @@ do i_step = 0, n_step
     ! Set beta
     call convert_pc_to (p%p0c * (1 + p%vec(6)), p%species, beta = p%beta)
   enddo
-  
-  call save_bunch_track (bunch, ele, s0_step)
+
+  call save_a_bunch_step (ele, bunch, bunch_track, s0_step+s_start)
 
 enddo
 
@@ -1704,14 +1706,5 @@ bmad_com%auto_bookkeeper = auto_bookkeeper  ! restore state
 err = .false.
 
 end subroutine track1_bunch_csr3d
-
-
-
-
-
-
-
-
-
 
 end module

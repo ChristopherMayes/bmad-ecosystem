@@ -1,7 +1,6 @@
 module runge_kutta_mod
 
-use fringe_mod
-use em_field_mod
+use bmad_interface
 
 type runge_kutta_common_struct
   integer :: num_steps_done = -1              ! Number of integration steps. Not used by Bmad. For external use.
@@ -141,7 +140,10 @@ do n_step = 1, n_step_max
     call calc_next_fringe_edge (ele, s_edge_body, fringe_info, orbit)
     ! Trying to take a step through a hard edge can drive Runge-Kutta nuts.
     ! So offset s a very tiny amount to avoid this
-    s_body = s_body + ds_tiny * s_dir
+    if (abs(s_body - s2_body) > ds_tiny) then
+      s_body = s_body + ds_tiny * s_dir
+      orbit%s = orbit%s + ds_tiny * s_dir * ele%orientation
+    endif
   enddo
 
   ! Check if we are done.
@@ -294,13 +296,13 @@ end subroutine odeint_bmad
 !-----------------------------------------------------------------
 !-----------------------------------------------------------------
 !+
-! Subroutine rk_adaptive_step (ele, param, orb, s, ds_try, ds_did, ds_next, err_flag, mat6, make_matrix)
+! Subroutine rk_adaptive_step (ele, param, orb, s_body, ds_try, ds_did, ds_next, err_flag, mat6, make_matrix)
 !
 ! Private routine used by odeint_bmad.
 ! Not meant for general use
 !-
 
-recursive subroutine rk_adaptive_step (ele, param, orb, s, ds_try, ds12, ds_did, ds_next, err_flag, mat6, make_matrix)
+recursive subroutine rk_adaptive_step (ele, param, orb, s_body, ds_try, ds12, ds_did, ds_next, err_flag, mat6, make_matrix)
 
 implicit none
 
@@ -308,7 +310,7 @@ type (ele_struct) ele
 type (lat_param_struct) param
 type (coord_struct) orb, orb_new, end1, end2
 
-real(rp), intent(inout) :: s
+real(rp), intent(inout) :: s_body
 real(rp), intent(in)    :: ds_try
 real(rp), intent(out)   :: ds_did, ds_next
 real(rp), optional :: mat6(6,6)
@@ -337,14 +339,14 @@ ds = ds_try
 orb_new = orb
 
 do
-  call rk_step1 (ele, param, orb, dr_ds, s, ds, orb_new, r_err, err_flag, .false.)
+  call rk_step1 (ele, param, orb, dr_ds, s_body, ds, orb_new, r_err, err_flag, .false.)
   ! Can get errors due to step size too large. For example, for a field map that is only slightly larger than
   ! the aperture, a particle that is outside the aperture and outside of the fieldmap will generate an error.
   ! The solution is to just take a smaller step.
   if (err_flag) then
     if (ds < 1d-3) then
       ! call rk_step1 to generate an error message.
-      call rk_step1 (ele, param, orb, dr_ds, s, ds, orb_new, r_err, err_flag, .true.)
+      call rk_step1 (ele, param, orb, dr_ds, s_body, ds, orb_new, r_err, err_flag, .true.)
       call out_io (s_error$, r_name, 'Problem with field calc. Tracked particle will be marked as dead.')
       orb%state = lost$
      return
@@ -368,14 +370,14 @@ do
 
   ds = sign(max(abs(ds_temp), 0.1_rp*abs(ds)), ds)
 
-  if (s + ds == s) then
+  if (s_body + ds == s_body) then
     err_flag = .true.
     call out_io (s_error$, r_name, 'STEPSIZE UNDERFLOW IN ELEMENT: ' // ele%name, &
                                    'AT (X,Y,Z) POSITION FROM ENTRANCE: \3F12.7\ ', &
                                    'TYPICALLY THIS IS DUE TO THE FIELD NOT OBEYING MAXWELL''S EQUATIONS.', &
                                    'OFTEN TIMES THE FIELD IS NOT EVEN CONTINUOUS!', &
                                    'THE PARTICLE WILL BE MARKED AS LOST.', &
-                                   r_array = [orb%vec(1), orb%vec(3), s])
+                                   r_array = [orb%vec(1), orb%vec(3), s_body])
     orb%state = lost$
     return
   endif
@@ -389,7 +391,7 @@ if (logic_option(.false., make_matrix)) then
     end2%vec(6) = end2%vec(6)
     end2%vec(ii) = end2%vec(ii) + bmad_com%d_orb(ii)
     call adjust_start(orb, end2)
-    call odeint_bmad (end2, ele, param, s, s+ds, err_flag)
+    call odeint_bmad (end2, ele, param, s_body, s_body+ds, err_flag)
     if (end2%state /= alive$ .or. err_flag) then
       call out_io (s_error$, r_name, 'PARTICLE LOST IN TRACKING (+). MATRIX NOT CALCULATED FOR ELEMENT: ' // ele%name)
       return
@@ -399,7 +401,7 @@ if (logic_option(.false., make_matrix)) then
     end1%vec(6) = end1%vec(6)
     end1%vec(ii) = end1%vec(ii) - bmad_com%d_orb(ii)
     call adjust_start(orb, end1)
-    call odeint_bmad (end1, ele, param, s, s+ds, err_flag)
+    call odeint_bmad (end1, ele, param, s_body, s_body+ds, err_flag)
     if (end1%state /= alive$ .or. err_flag) then
       call out_io (s_error$, r_name, 'PARTICLE LOST IN TRACKING (-). MATRIX NOT CALCULATED FOR ELEMENT: ' // ele%name)
       return
@@ -421,7 +423,7 @@ else
 end if
 
 ds_did = ds
-s = s + ds
+s_body = s_body + ds
 
 orb_new%s = orb%s + ds * ele%orientation
 
@@ -450,7 +452,7 @@ end subroutine rk_adaptive_step
 !-------------------------------------------------------------------------
 !-------------------------------------------------------------------------
 !+
-! Subroutine rk_step1 (ele, param, orb, dr_ds1, s, ds, orb_new, r_err, err, print_err)
+! Subroutine rk_step1 (ele, param, orb, dr_ds1, s_body, ds, orb_new, r_err, err, print_err)
 !
 ! Fifth-order Cash–Karp Runge-Kutta step. Adapted from the routine rkqs from NR. Not meant for general use.
 !
@@ -458,7 +460,7 @@ end subroutine rk_adaptive_step
 !   ele         -- ele_struct: Elemnet being tracked through.
 !   param       -- lat_param_struct: Some lattice parameters.
 !   orb         -- coord_struct: Initial position.
-!   s           -- real(rp): Initial longitudinal position.
+!   s_body      -- real(rp): Initial longitudinal position.
 !   ds          -- real(rp): Step to do.
 !
 ! Output:
@@ -470,7 +472,7 @@ end subroutine rk_adaptive_step
 !   print_err   -- logical, optional: Print message if there is an error? Default is True.
 !-
 
-recursive subroutine rk_step1 (ele, param, orb, dr_ds1, s, ds, orb_new, r_err, err, print_err)
+recursive subroutine rk_step1 (ele, param, orb, dr_ds1, s_body, ds, orb_new, r_err, err, print_err)
 
 implicit none
 
@@ -479,7 +481,7 @@ type (lat_param_struct) param
 type (coord_struct) orb, orb_new, orb_temp(5)
 
 real(rp) :: dr_ds1(11)
-real(rp), intent(in) :: s, ds
+real(rp), intent(in) :: s_body, ds
 real(rp), intent(out) :: r_err(11)
 real(rp) :: dr_ds2(11), dr_ds3(11), dr_ds4(11), dr_ds5(11), dr_ds6(11)
 real(rp), parameter :: a2=0.2_rp, a3=0.3_rp, a4=0.6_rp, &
@@ -500,32 +502,32 @@ logical, optional :: print_err
 
 !
 
-call kick_vector_calc (ele, param, s, orb, dr_ds1, err, print_err)
+call kick_vector_calc (ele, param, s_body, orb, dr_ds1, err, print_err)
 if (err) return
 
 !
 
-s1 = s + a2*ds
+s1 = s_body + a2*ds
 call transfer_this_orbit (orb, s1, b21*ds*dr_ds1, orb_temp(1), .true.)
 call kick_vector_calc(ele, param, s1, orb_temp(1), dr_ds2, err, print_err)
 if (err) return
 
-s1 = s + a3*ds
+s1 = s_body + a3*ds
 call transfer_this_orbit (orb, s1, ds*(b31*dr_ds1 + b32*dr_ds2), orb_temp(2), .true.)
 call kick_vector_calc(ele, param, s1, orb_temp(2), dr_ds3, err, print_err)
 if (err) return
 
-s1 = s + a4*ds
+s1 = s_body + a4*ds
 call transfer_this_orbit (orb, s1, ds*(b41*dr_ds1 + b42*dr_ds2 + b43*dr_ds3), orb_temp(3), .true.)
 call kick_vector_calc(ele, param, s1, orb_temp(3), dr_ds4, err, print_err)
 if (err) return
 
-s1 = s + a5*ds
+s1 = s_body + a5*ds
 call transfer_this_orbit (orb, s1, ds*(b51*dr_ds1 + b52*dr_ds2 + b53*dr_ds3 + b54*dr_ds4), orb_temp(4), .true.)
 call kick_vector_calc(ele, param, s1, orb_temp(4), dr_ds5, err, print_err)
 if (err) return
 
-s1 = s + a6*ds
+s1 = s_body + a6*ds
 call transfer_this_orbit (orb, s1, ds*(b61*dr_ds1 + b62*dr_ds2 + b63*dr_ds3 + b64*dr_ds4 + b65*dr_ds5), orb_temp(5), .true.)
 call kick_vector_calc(ele, param, s1, orb_temp(5), dr_ds6, err, print_err)
 if (err) return
@@ -600,6 +602,7 @@ end subroutine rk_step1
 !     dP_y/dt = EM_Force_y
 !     g_y = bending in y-plane.
 !
+!   NOTE: dr(5)/ds IS IGNORED WHEN CALCULATING Z. SEE TRANSFER_THIS_ORBIT ABOVE.
 !   dr(5)/ds = dz/ds = beta * c_light * [dt/ds(ref) - dt/ds] + dbeta/ds * c_light * [t(ref) - t]
 !                    = beta * c_light * [dt/ds(ref) - dt/ds] + dbeta/ds * vec(5) / beta
 !   where:
@@ -722,7 +725,7 @@ E_force = charge_of(orbit%species) * field%E
 B_force = charge_of(orbit%species) * cross_product(vel, field%B)
 
 
-if (ele%key == sbend$) then
+if (ele%key == sbend$ .or. ele%key == rf_bend$) then
   g_bend = ele%value(g$)
   dh_bend = orbit%vec(1) * g_bend
 else
@@ -752,7 +755,7 @@ dr_ds(11) = dt_ds_ref
 if (bmad_com%spin_tracking_on .and. ele%spin_tracking_method == tracking$) then
   ! dr_ds(8:10) = Omega/v_z
   dr_ds(8:10) = rel_dir * (1 + dh_bend) * spin_omega (field, orbit, rel_dir)
-  if (ele%key == sbend$) dr_ds(8:10) = dr_ds(8:10) + [0.0_rp, g_bend, 0.0_rp]
+  if (ele%key == sbend$ .or. ele%key == rf_bend$) dr_ds(8:10) = dr_ds(8:10) + [0.0_rp, g_bend, 0.0_rp]
 else
   dr_ds(8:10) = 0
 endif

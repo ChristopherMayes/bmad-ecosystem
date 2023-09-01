@@ -17,22 +17,23 @@
 
 subroutine track_a_sad_mult (orbit, ele, param, mat6, make_matrix)
 
-use fringe_mod, dummy1 => track_a_sad_mult
+use bmad_interface, dummy1 => track_a_sad_mult
 
 implicit none
 
 type (coord_struct) :: orbit
-type (ele_struct), target :: ele, ele2
+type (ele_struct), target :: ele
 type (lat_param_struct) :: param
+type (fringe_field_info_struct) fringe_info
 
 real(rp), optional :: mat6(6,6)
 real(rp) rel_pc, dz4_coef(4,4), mass, e_tot
-real(rp) ks, k1, length, z_start, t_start, charge_dir, kx, ky
-real(rp) xp_start, yp_start, mat4(4,4), mat1(6,6), f1, f2, ll, k0
-real(rp) knl(0:n_pole_maxx), tilt(0:n_pole_maxx), a_pole(0:n_pole_maxx), b_pole(0:n_pole_maxx), knsl(0:n_pole_maxx)
+real(rp) ks, k1, tilt1, length, z_start, t_start, charge_dir, kx, ky, sol_center(2)
+real(rp) xp_start, yp_start, mat4(4,4), mat1(6,6), f1, f2, ll, r_scale
+real(rp) a_pole(0:n_pole_maxx), b_pole(0:n_pole_maxx), a2_pole(0:n_pole_maxx), b2_pole(0:n_pole_maxx)
 real(rp) :: vec0(6), kmat(6,6)
 
-integer n, nd, orientation, n_div, np_max, physical_end, fringe_at, ix_pole_max
+integer n, nd, n_div, np_max, physical_end, fringe_at, ix_pole_max
 logical, optional :: make_matrix
 
 character(*), parameter :: r_name = 'track_a_sad_mult'
@@ -49,82 +50,50 @@ endif
 
 z_start = orbit%vec(5)
 t_start = orbit%t
-length = ele%value(l$)
+length = orbit%time_dir * ele%value(l$)
 rel_pc = 1 + orbit%vec(6)
 n_div = nint(ele%value(num_steps$))
 
 rel_pc = 1 + orbit%vec(6)
-orientation = ele%orientation * orbit%direction
-charge_dir = rel_tracking_charge_to_mass(orbit, param%particle) * orientation
+charge_dir = rel_tracking_charge_to_mass(orbit, param%particle) * ele%orientation * orbit%direction
 
-knl = 0; tilt = 0; knsl = 0
-call multipole_ele_to_kt (ele, .true., ix_pole_max, knl, tilt)
-
-! Setup ele2 which is used in offset_particle
-
-call transfer_ele(ele, ele2)
-ele2%value(x_pitch_tot$)  = ele%value(x_pitch_tot$)  + ele%value(x_pitch_mult$)
-ele2%value(y_pitch_tot$)  = ele%value(y_pitch_tot$)  + ele%value(y_pitch_mult$)
-ele2%value(x_offset_tot$) = ele%value(x_offset_tot$) + ele%value(x_offset_mult$)
-ele2%value(y_offset_tot$) = ele%value(y_offset_tot$) + ele%value(y_offset_mult$)
+call multipole_ele_to_ab (ele, .false., ix_pole_max, a_pole, b_pole)
 
 ! If element has zero length then the SAD ignores f1 and f2.
 
 if (length == 0) then
-  call offset_particle (ele2, set$, orbit, set_hvkicks = .false., set_tilt = .false., mat6 = mat6, make_matrix = make_matrix)
-
-  if (ix_pole_max > -1) then
-    call multipole_kicks (knl, tilt, param%particle, ele, orbit)
-    if (logic_option(.false., make_matrix)) then
-      call multipole_kick_mat (knl, tilt, param%particle, ele, orbit, 1.0_rp, mat6)
-    endif
-  endif
-
-  call offset_particle (ele2, unset$, orbit, set_hvkicks = .false., set_tilt = .false., mat6 = mat6, make_matrix = make_matrix)
+  call offset_particle (ele, set$, orbit, set_hvkicks = .false., mat6 = mat6, make_matrix = make_matrix)
+  call ab_multipole_kicks (a_pole, b_pole, ix_pole_max, ele, orbit, magnetic$, 1.0_rp, mat6, make_matrix)
+  call offset_particle (ele, unset$, orbit, set_hvkicks = .false., mat6 = mat6, make_matrix = make_matrix)
 
   orbit%s = ele%s
   orbit%location = downstream_end$
   return
 endif
 
-! Go to frame of reference of the multipole quad component
+! 
 
+call multipole1_ab_to_kt(a_pole(1), b_pole(1), 1, k1, tilt1)
+k1 = charge_dir * k1 / ele%value(l$)
 ks = rel_tracking_charge_to_mass(orbit, param%particle) * ele%value(ks$)
-k1 = charge_dir * knl(1) / length
+sol_center = rot_2d ([ele%value(x_offset_mult$), ele%value(y_offset_mult$)], -ele%value(tilt$))
 
-if (ele%value(x_pitch_mult$) /= 0 .or. ele%value(y_pitch_mult$) /= 0) then
-  kx = knl(0) * cos(tilt(0)) - ks * ele%value(x_pitch_mult$)
-  ky = knl(0) * sin(tilt(0)) + ks * ele%value(y_pitch_mult$)
-  knl(0) = norm2([kx, ky])
-  tilt(0) = atan2(ky, kx)
-endif
+call offset_particle (ele, set$, orbit, set_hvkicks = .false., mat6 = mat6, make_matrix = make_matrix)
 
-orbit%vec(2) = orbit%vec(2) + ele%value(y_offset_mult$) * ks / 2
-orbit%vec(4) = orbit%vec(4) - ele%value(x_offset_mult$) * ks / 2
-
-ele2%value(tilt_tot$) = tilt(1) 
-tilt = tilt - tilt(1)
-
-call multipole_kt_to_ab (knl, knsl, tilt, a_pole, b_pole)
-knl(1) = 0 ! So multipole_kicks does not conflict with sol_quad calc. 
-
-call offset_particle (ele2, set$, orbit, set_hvkicks = .false., mat6 = mat6, make_matrix = make_matrix)
+orbit%vec(2) = orbit%vec(2) + 0.5_rp * sol_center(2) * ks
+orbit%vec(4) = orbit%vec(4) - 0.5_rp * sol_center(1) * ks
 
 ! Entrance edge kicks
 ! The multipole hard edge routine takes care of the quadrupole hard edge.
 
-k0 = knl(0)/length
-
-call hard_multipole_edge_kick (ele, param, first_track_edge$, orbit, mat6, make_matrix, a_pole, b_pole)
-if (orbit_too_large (orbit, param)) return
-call soft_quadrupole_edge_kick (ele, param, first_track_edge$, orbit, mat6, make_matrix, k1)
-call sad_mult_hard_bend_edge_kick (ele, param, first_track_edge$, orbit, mat6, make_matrix, k0, tilt(0))
-if (orbit%state /= alive$) return
-call soft_bend_edge_kick (ele, param, first_track_edge$, orbit, mat6, make_matrix, k0, tilt(0))
+call init_fringe_info (fringe_info, ele)
+call apply_element_edge_kick(orbit, fringe_info, ele, param, .false., mat6, make_matrix, apply_sol_fringe = .false.)
 
 ! Body
 
-knl = knl / n_div
+r_scale = rp8(orbit%time_dir) / n_div
+a2_pole = a_pole;  a2_pole(1) = 0  ! Quad term taken care of by sol_quad_mat6_calc.
+b2_pole = b_pole;  b2_pole(1) = 0
 
 do nd = 0, n_div
 
@@ -136,49 +105,33 @@ do nd = 0, n_div
   if (abs(k1) < 1d-40) then
     call solenoid_track_and_mat (ele, ll, param, orbit, orbit, mat6, make_matrix)
   else
-    call sol_quad_mat6_calc (ks, k1, ll, ele, orbit, mat6, make_matrix)
+    call sol_quad_mat6_calc (ks, k1, tilt1, ll, ele, orbit, mat6, make_matrix)
   endif
 
   ! multipole kicks
 
   if (nd == n_div) exit
-
-  call multipole_kicks (knl, tilt, param%particle, ele, orbit)
-
-  if (logic_option(.false., make_matrix)) then
-    call multipole_kick_mat (knl, tilt, param%particle, ele, orbit, 1.0_rp, mat1)
-    mat6(2,:) = mat6(2,:) + mat1(2,1) * mat6(1,:) + mat1(2,3) * mat6(3,:)
-    mat6(4,:) = mat6(4,:) + mat1(4,1) * mat6(1,:) + mat1(4,3) * mat6(3,:)
-  endif
-
-  ! Check for orbit too large to prevent infinities.
-
+  call ab_multipole_kicks (a2_pole, b2_pole, ix_pole_max, ele, orbit, magnetic$, r_scale, mat6, make_matrix)
   if (orbit_too_large (orbit)) return
 enddo
 
-
-
 ! Exit edge kicks
 
-call soft_bend_edge_kick (ele, param, second_track_edge$, orbit, mat6, make_matrix, k0, tilt(0))
-call sad_mult_hard_bend_edge_kick (ele, param, second_track_edge$, orbit, mat6, make_matrix, k0, tilt(0))
-if (orbit%state /= alive$) return
-call soft_quadrupole_edge_kick (ele, param, second_track_edge$, orbit, mat6, make_matrix, k1)
-call hard_multipole_edge_kick (ele, param, second_track_edge$, orbit, mat6, make_matrix, a_pole, b_pole)
-if (orbit_too_large (orbit, param)) return
+fringe_info%particle_at = second_track_edge$
+call apply_element_edge_kick(orbit, fringe_info, ele, param, .false., mat6, make_matrix, apply_sol_fringe = .false.)
 
 ! End stuff
 
-call offset_particle (ele2, unset$, orbit, set_hvkicks = .false., mat6 = mat6, make_matrix = make_matrix)
+orbit%vec(2) = orbit%vec(2) - 0.5_rp * sol_center(2) * ks
+orbit%vec(4) = orbit%vec(4) + 0.5_rp * sol_center(1) * ks
 
-orbit%vec(2) = orbit%vec(2) - ele%value(y_offset_mult$) * ks / 2
-orbit%vec(4) = orbit%vec(4) + ele%value(x_offset_mult$) * ks / 2
+call offset_particle (ele, unset$, orbit, set_hvkicks = .false., mat6 = mat6, make_matrix = make_matrix)
 
 orbit%t = t_start + length * ele%value(E_tot$) / (c_light * ele%value(p0c$)) - (orbit%vec(5) - z_start) / (orbit%beta * c_light)
 
 !
 
-if (orbit%direction == 1) then
+if (orbit%direction*orbit%time_dir == 1) then
   orbit%s = ele%s
 else
   orbit%s = ele%s_start

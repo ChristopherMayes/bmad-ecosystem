@@ -11,7 +11,7 @@ module S_fitting
   real(dp) :: fuzzy_split=1.0_dp
   real(dp) :: max_ds=0.0_dp
   integer :: resplit_cutting = 0    ! 0 just magnets , 1 magnets as before / drifts separately
-
+  integer :: metf8=4
   logical :: sagan_even=my_true
   ! 2  space charge algorithm
   logical(lp) :: radiation_bend_split=my_false
@@ -1558,144 +1558,6 @@ eta2=0.0_dp
   end subroutine c_lattice_fit_CHROM_gmap1
 
 
-  subroutine lattice_fit_tune_CHROM_gmap(R,my_state,EPSF,POLY,NPOLY,TARG,NP)
-    IMPLICIT NONE
-    TYPE(layout),target, intent(inout):: R
-    TYPE(POL_BLOCK), intent(inout),dimension(:)::POLY
-    INTEGER, intent(in):: NPOLY,NP
-    real(dp) , intent(IN),dimension(:)::TARG
-    real(dp) CLOSED(6)
-    TYPE(INTERNAL_STATE), intent(IN):: my_STATE
-    TYPE(INTERNAL_STATE) STATE
-    INTEGER I,SCRATCHFILE, MF
-    TYPE(TAYLOR), allocatable:: EQ(:)
-    TYPE(REAL_8) Y(6)
-    TYPE(NORMALFORM) NORM
-    integer :: neq=4, no=3,nt,j,it
-    type(damap) id
-    type(gmap) g
-    TYPE(TAYLOR)t
-    real(dp) epsf,epsr,epsnow,tune(2),CHROM(2),gam(2)
-    !    EPSF=.0001
-    epsr=abs(epsf)
-
-    allocate(eq(neq))
-
-    nt=neq+np
-    STATE=((((my_state+nocavity0)+delta0)+only_4d0)-RADIATION0)
-
-    CALL INIT(STATE,no,NP,BERZ)
-
-    SET_TPSAFIT=.FALSE.
-
-    DO I=1,NPOLY
-       R=POLY(i)
-    ENDDO
-    CLOSED(:)=0.0_dp
-    it=0
-100 continue
-    it=it+1
-
-    CALL FIND_ORBIT(R,CLOSED,1,STATE,1e-5_dp)
-    write(6,*) "closed orbit ", CHECK_STABLE
-    write(6,*) CLOSED
-
-
-    CALL INIT(STATE,no,NP,BERZ)
-    CALL ALLOC(NORM)
-    CALL ALLOC(Y)
-    CALL ALLOC(EQ)
-    call alloc(id)
-
-    id=1
-    Y=CLOSED+id
-
-    CALL TRACK(R,Y,1,+STATE)
-    NORM=Y
-    gam(1)=(norm%a_t%v(2).sub.'1')**2+(norm%a_t%v(2).sub.'01')**2
-    gam(2)=(norm%a_t%v(4).sub.'001')**2+(norm%a_t%v(4).sub.'0001')**2
-    write(6,*) "  Gamma= ",GAM
-    !      CALL KANALNUMMER(MF)
-  !  OPEN(UNIT=1111,FILE='GAMMA.TXT')
-  !  WRITE(1111,*) "  Gamma= ",GAM
-
-    write(6,*) " tunes ",NORM%TUNE(1), NORM%TUNE(2), CHECK_STABLE
-    tune(1)=(NORM%dhdj%v(1)).SUB.'0000'
-    tune(2)=(NORM%dhdj%v(2)).SUB.'0000'
-    CHROM(1)=(NORM%dhdj%v(1)).SUB.'00001'
-    CHROM(2)=(NORM%dhdj%v(2)).SUB.'00001'
-    write(6,*) " CHROM ",CHROM
-
-    eq(1)=       ((NORM%dhdj%v(1)).par.'00000')-targ(1)
-    eq(2)=       ((NORM%dhdj%v(2)).par.'00000')-targ(2)
-    eq(3)=       ((NORM%dhdj%v(1)).par.'00001')-targ(3)
-    eq(4)=       ((NORM%dhdj%v(2)).par.'00001')-targ(4)
-    epsnow=abs(eq(1))+abs(eq(2))+abs(eq(3))+abs(eq(4))
-    call kanalnummer(SCRATCHFILE)
-    OPEN(UNIT=SCRATCHFILE,FILE='EQUATION.TXT')
-    rewind scratchfile
-
-    do i=1,neq
-       eq(i)=eq(i)<=c_%npara
-    enddo
-    do i=1,neq
-       call daprint(eq(i),scratchfile)
-    enddo
-    close(SCRATCHFILE)
-    CALL KILL(NORM)
-    CALL KILL(Y)
-    CALL KILL(id)
-    CALL KILL(EQ)
-
-
-
-    CALL INIT(1,nt)
-    call alloc(g,nt)
-    call kanalnummer(SCRATCHFILE)
-    OPEN(UNIT=SCRATCHFILE,FILE='EQUATION.TXT')
-    rewind scratchfile
-    do i=np+1,nt
-       call read(g%v(i),scratchfile)
-    enddo
-    close(SCRATCHFILE)
-
-    call alloc(t)
-    do i=1,np
-       g%v(i)=1.0_dp.mono.i
-       do j=np+1,nt
-          t=g%v(j).d.i
-          g%v(i)=g%v(i)+(1.0_dp.mono.j)*t
-       enddo
-    enddo
-    CALL KILL(t)
-
-    g=g.oo.(-1)
-    tpsafit(1:nt)=g
-
-    SET_TPSAFIT=.true.
-
-    DO I=1,NPOLY
-       R=POLY(i)
-    ENDDO
-    SET_TPSAFIT=.false.
-
-    CALL ELP_TO_EL(R)
-
-    !    write(6,*) " more "
-    !    read(5,*) more
-    if(it>=max_fit_iter) goto 101
-    if(epsnow<=epsr) goto 102
-    GOTO 100
-
-101 continue
-    write(6,*) " warning did not converge "
-
-102 continue
-    CALL KILL_PARA(R)
-    deallocate(eq)
-
-  end subroutine lattice_fit_tune_CHROM_gmap
-
 
   subroutine lattice_PRINT_RES_FROM_A(R,my_state,NO,EMIT0,MRES,FILENAME)
     IMPLICIT NONE
@@ -2667,7 +2529,7 @@ eta2=0.0_dp
     logical(lp), OPTIONAL :: useknob,universe
     integer, optional :: limit_wiggler(2),lim(2)
     real(dp) gg,RHOI,XL,QUAD,THI,lm,dl,ggbt,xbend1,gf(7),sexr0,quad0,dq
-    INTEGER M1,M2,M3, MK1,MK2,MK3,limit(2),parity,inc,nst_tot,ntec,ii,metb,sexk
+    INTEGER M1,M2,M3, MK1,MK2,MK3,M4,MK4,limit(2),parity,inc,nst_tot,ntec,ii,metb,sexk
     integer incold ,parityold, nt,nsag,lim0(2),lims(2),kkk
 
     logical(lp) MANUAL,eject,doit,DOBEND
@@ -2738,6 +2600,7 @@ endif
     xbend1=-1.0_dp
 
     if(present(xbend)) xbend1=xbend
+       if(xbend1>0) radiation_bend_split=.true.
     if(present(lmax0)) lm=abs(lmax0)
     if(present(even)) then
        inc=1
@@ -2767,6 +2630,7 @@ endif
     IF(MANUAL) THEN
        write(6,*) "thi: thin lens factor (THI<0 TO STOP), sextupole factor and Bend factor "
        read(5,*) thi,sexr0,xbend1
+       if(xbend1>0) radiation_bend_split=.true.
        IF(THI<0) eject=.true.
     ENDIF
 
@@ -2787,9 +2651,12 @@ endif
     M1=0
     M2=0
     M3=0
+    M4=0
+
     MK1=0
     MK2=0
     MK3=0
+    MK4=0
     r%NTHIN=0
     nst_tot=0
     sexk=0
@@ -2819,6 +2686,9 @@ endif
           CASE(6)
              M3=M3+1
              MK3=MK3+7*C%MAG%P%NST
+          CASE(8)
+             M4=M4+1
+             MK4=MK4+30*C%MAG%P%NST
           END SELECT
           r%NTHIN=r%NTHIN+1   !C%MAG%NST
        endif
@@ -2835,6 +2705,7 @@ if(lielib_print(14)==1) then
     write(6,*) "METHOD 2 ",M1,MK1
     write(6,*) "METHOD 4 ",M2,MK2
     write(6,*) "METHOD 6 ",M3,MK3
+    write(6,*) "METHOD 8 ",M4,MK4
     write(6,*)   "number of Slices ", MK1+MK2+MK3
     write(6,*)   "Total NST ", NST_tot
 endif
@@ -2846,9 +2717,11 @@ endif
     M1=0
     M2=0
     M3=0
+    m4=0
     MK1=0
     MK2=0
     MK3=0
+    mk4=0
     ! CAVITY FOCUSING
     ! TEAPOT SPLITTING....
     ggbt=0.0_dp
@@ -2995,7 +2868,7 @@ endif
                 C%MAG%P%NST=NTE
                 C%MAG%P%METHOD=4
                 MK2=MK2+NTE*3
-             ELSEIF(NTE.GE.limit(2).or.metb==6) THEN
+             ELSEIF((NTE.GE.limit(2).AND.NTE.LT.metf8*limit(2)).or.metb==6) THEN
                 M3=M3+1
                 NTE=NTE/7
                 IF(NTE.EQ.0) NTE=1
@@ -3003,6 +2876,14 @@ endif
                 C%MAG%P%NST=NTE
                 C%MAG%P%METHOD=6
                 MK3=MK3+NTE*7
+             ELSEIF(NTE.GE.metf8*limit(2).or.metb==8) THEN
+                M4=M4+1
+                NTE=NTE/30
+                IF(NTE.EQ.0) NTE=1
+                if(mod(nte,2)/=parity) nte=nte+inc
+                C%MAG%P%NST=NTE
+                C%MAG%P%METHOD=8
+                MK4=MK4+NTE*30
              ENDIF
 
              r%NTHIN=r%NTHIN+1  !C%MAG%NST
@@ -3106,7 +2987,7 @@ endif
                 C%MAG%P%NST=NTE
                 C%MAG%P%METHOD=4
                 MK2=MK2+NTE*3
-             ELSEIF(NTE.GE.limit(2).or.metb==6) THEN
+             ELSEIF((NTE.GE.limit(2).AND.NTE.LT.metf8*limit(2)).or.metb==6) THEN
                 M3=M3+1
                 NTE=NTE/7
                 IF(NTE.EQ.0) NTE=1
@@ -3114,6 +2995,14 @@ endif
                 C%MAG%P%NST=NTE
                 C%MAG%P%METHOD=6
                 MK3=MK3+NTE*7
+             ELSEIF(NTE.GE.metf8*limit(2).or.metb==8) THEN
+                M4=M4+1
+                NTE=NTE/30
+                IF(NTE.EQ.0) NTE=1
+                if(mod(nte,2)/=parity) nte=nte+inc
+                C%MAG%P%NST=NTE
+                C%MAG%P%METHOD=8
+                MK4=MK4+NTE*30
              ENDIF
 
 
@@ -3231,7 +3120,7 @@ endif
                 C%MAG%P%NST=NTE
                 C%MAG%P%METHOD=4
                 MK2=MK2+NTE*3
-             ELSEIF(NTE.GE.limit(2).or.metb==6) THEN
+             ELSEIF((NTE.GE.limit(2).AND.NTE.LT.metf8*limit(2)).or.metb==6) THEN
                 M3=M3+1
                 NTE=NTE/7
                 IF(NTE.EQ.0) NTE=1
@@ -3239,6 +3128,14 @@ endif
                 C%MAG%P%NST=NTE
                 C%MAG%P%METHOD=6
                 MK3=MK3+NTE*7
+             ELSEIF(NTE.GE.metf8*limit(2).or.metb==8) THEN
+                M4=M4+1
+                NTE=NTE/30
+                IF(NTE.EQ.0) NTE=1
+                if(mod(nte,2)/=parity) nte=nte+inc
+                C%MAG%P%NST=NTE
+                C%MAG%P%METHOD=8
+                MK4=MK4+NTE*30
              ENDIF
 
   
@@ -3306,13 +3203,14 @@ if(lielib_print(14)==1) then
     write(6,*) "METHOD 2 ",M1,MK1
     write(6,*) "METHOD 4 ",M2,MK2
     write(6,*) "METHOD 6 ",M3,MK3
-    write(6,*)   "number of Slices ", MK1+MK2+MK3
+    write(6,*) "METHOD 8 ",M4,MK4
+    write(6,*)   "number of Slices ", MK1+MK2+MK3+mk4
     write(6,*)   "Total NST ", NST_tot
 endif
     if(radiation_bend_split) then
 if(lielib_print(14)==1) then
        write(6,*)   "Total NST due to Bend Closed Orbit ", int(ggbt)
-       write(6,*)   "Restricted to method=2 for radiation or spin "
+       write(6,*)   "Restrict to method=2 for radiation or spin if old integrator used"
 endif
     else
 if(lielib_print(14)==1) then
@@ -3328,6 +3226,7 @@ endif
     IF(MANUAL) THEN
        write(6,*) "thi: thin lens factor (THI<0 TO STOP), sextupole factor and Bend factor "
        read(5,*) thi,sexr0, xbend1
+       if(xbend1>0) radiation_bend_split=.true.
        IF(THI<0) THEN
           THI=R%THIN
           !          limit(1)=limit0(1)
@@ -3367,7 +3266,7 @@ call survey(r)
     !    limit(2)=limit0(2)
 
     !    CALL RING_L(R,doneit)
-
+   radiation_bend_split=.false.
   END SUBROUTINE  THIN_LENS_resplit
 
 
@@ -3630,7 +3529,7 @@ end subroutine SKICKt
 
     if(gf(4)<gf(2)) met=4
     if(gf(6)<gf(4).and.gf(6)<gf(2)) met=6
-    if(radiation_bend_split) met=2
+ !   if(radiation_bend_split) met=2
     if(sixtrack_compatible) met=2
     
 
@@ -3725,7 +3624,7 @@ end subroutine SKICKt
     IMPLICIT NONE
     INTEGER NTE
     TYPE(layout),target, intent(inout) :: R
-    INTEGER M1,M2,M3, MK1,MK2,MK3,nst_tot,ii,nt  !,limit0(2)
+    INTEGER M1,M2,M3,m4, MK1,MK2,MK3,mk4,nst_tot,ii,nt  !,limit0(2)
     type(fibre), OPTIONAL, target :: fib
     logical(lp), OPTIONAL :: useknob,universe,ignore_recut
     logical(lp) doit,uni,m_t_pres
@@ -3797,9 +3696,11 @@ endif
     M1=0
     M2=0
     M3=0
+    M4=0
     MK1=0
     MK2=0
     MK3=0
+    MK4=0
 
 
     r%NTHIN=0
@@ -3874,7 +3775,8 @@ if(lielib_print(14)==1) then
     write(6,*) "METHOD 2 ",M1,MK1
     write(6,*) "METHOD 4 ",M2,MK2
     write(6,*) "METHOD 6 ",M3,MK3
-    write(6,*)   "number of Slices ", MK1+MK2+MK3
+    write(6,*) "METHOD 8 ",M3,MK3
+    write(6,*)   "number of Slices ", MK1+MK2+MK3+MK4
     write(6,*)   "Total NST ", NST_tot
 endif
 

@@ -16,7 +16,7 @@
 
 subroutine track_a_crab_cavity (orbit, ele, param, mat6, make_matrix)
 
-use fringe_mod, except_dummy => track_a_crab_cavity
+use bmad_interface, except_dummy => track_a_crab_cavity
 
 implicit none
 
@@ -34,6 +34,9 @@ integer i, n_slice, orientation
 integer ix_mag_max, ix_elec_max
 
 logical, optional :: make_matrix
+logical err
+
+character(*), parameter :: r_name = 'track_a_crab_cavity'
 
 !
 
@@ -44,15 +47,15 @@ call multipole_ele_to_ab (ele, .false., ix_elec_max, an_elec, bn_elec, electric$
 
 call offset_particle (ele, set$, orbit, mat6 = mat6, make_matrix = make_matrix)
 
-if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  param%particle, ele, orbit, magnetic$, 1.0_rp/2,   mat6, make_matrix)
-if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, param%particle, ele, orbit, electric$, ele%value(l$)/2, mat6, make_matrix)
+if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  ele, orbit, magnetic$, 1.0_rp/2,   mat6, make_matrix)
+if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, ele, orbit, electric$, ele%value(l$)/2, mat6, make_matrix)
 
-length = ele%value(l$)
+length = ele%value(l$) * orbit%time_dir
 !n_slice = max(1, nint(length / ele%value(ds_step$))) 
 n_slice = 1
 dl = length / n_slice
 charge_dir = rel_tracking_charge_to_mass(orbit, param%particle) * ele%orientation
-voltage = e_accel_field(ele, voltage$, .true.) * charge_dir / (ele%value(p0c$) * n_slice)
+voltage = orbit%time_dir * e_accel_field(ele, voltage$, .true.) * charge_dir / (ele%value(p0c$) * n_slice)
 beta_ref = ele%value(p0c$) / ele%value(e_tot$)
 dt_ref = length / (c_light * beta_ref)
 k_rf = twopi * ele%value(rf_frequency$) / c_light
@@ -77,7 +80,12 @@ do i = 1, n_slice
 
   E_old = orbit%p0c * (1.0_rp + orbit%vec(6)) / beta_old
   E_new = E_old + voltage * cos(phase) * k_rf * orbit%vec(1) * orbit%p0c
-  call convert_total_energy_to (E_new, orbit%species, beta = orbit%beta, pc = pc)
+  call convert_total_energy_to (E_new, orbit%species, beta = orbit%beta, pc = pc, err_flag = err, print_err = .false.)
+  if (err) then
+    orbit%state = lost_pz_aperture$
+    return
+  endif
+
   orbit%vec(6) = (pc - orbit%p0c) / orbit%p0c
 
   if (logic_option(.false., make_matrix)) then
@@ -107,8 +115,8 @@ call track_this_drift(orbit, dl/2, ele, phase, mat6, make_matrix)
 
 ! coupler kick, multipoles, back to lab coords.
 
-if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  param%particle, ele, orbit, magnetic$, 1.0_rp/2,   mat6, make_matrix)
-if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, param%particle, ele, orbit, electric$, ele%value(l$)/2, mat6, make_matrix)
+if (ix_mag_max > -1)  call ab_multipole_kicks (an,      bn,      ix_mag_max,  ele, orbit, magnetic$, 1.0_rp/2,   mat6, make_matrix)
+if (ix_elec_max > -1) call ab_multipole_kicks (an_elec, bn_elec, ix_elec_max, ele, orbit, electric$, ele%value(l$)/2, mat6, make_matrix)
 
 call offset_particle (ele, unset$, orbit, mat6 = mat6, make_matrix = make_matrix)
 

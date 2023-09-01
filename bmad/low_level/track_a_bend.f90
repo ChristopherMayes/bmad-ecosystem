@@ -17,7 +17,7 @@
 
 subroutine track_a_bend (orbit, ele, param, mat6, make_matrix)
 
-use fringe_mod, except_dummy => track_a_bend
+use bmad_interface, except_dummy => track_a_bend
 
 implicit none
 
@@ -30,7 +30,7 @@ real(rp), optional :: mat6(6,6)
 real(rp) mat6_i(6,6), rel_charge_dir, c_dir, g, g_tot, dg, b1, r_step, step_len, angle
 real(rp) pz, rel_p, rel_p2, x, px, y, py, z, pt, phi_1, sin_plus, cos_plus, alpha, L_p, L_c, g_p
 real(rp) sinc_a, r, rad, denom, L_v, L_u, dalpha, dx2, dL_c, dL_p, dphi_1, dpt, dg_p, angle_p
-real(rp) cos_a, sin_a, cosc_a, dL_u, dL_v, dangle_p, beta_ref, ll, m56, gam2, xi, dxi
+real(rp) cos_a, sin_a, cosc_a, dL_u, dL_v, dangle_p, beta_ref, ll, m56, gam2, xi, dxi, length
 real(rp) an(0:n_pole_maxx), bn(0:n_pole_maxx), an_elec(0:n_pole_maxx), bn_elec(0:n_pole_maxx)
 
 integer n, n_step, ix_mag_max, ix_elec_max
@@ -49,10 +49,8 @@ rel_charge_dir = ele%orientation * orbit%direction * rel_tracking_charge_to_mass
 c_dir = ele%orientation * orbit%direction * charge_of(orbit%species)
 
 call init_fringe_info (fringe_info, ele)
-if (fringe_info%has_fringe) then
-  fringe_info%particle_at = first_track_edge$
-  call apply_element_edge_kick(orbit, fringe_info, ele, param, .false., mat6, make_matrix)
-endif
+call apply_element_edge_kick(orbit, fringe_info, ele, param, .false., mat6, make_matrix)
+if (orbit_too_large(orbit, param)) return
 
 ! Set some parameters
 
@@ -77,8 +75,9 @@ endif
 
 call multipole_ele_to_ab(ele, .false., ix_elec_max, an_elec, bn_elec, electric$)
 
+length = orbit%time_dir * ele%value(l$)
 g = ele%value(g$)
-if (ele%value(l$) == 0) then
+if (length == 0) then
   dg = 0
 else
   dg = bn(0) / ele%value(l$)
@@ -96,12 +95,12 @@ endif
 ! multipole kick at the beginning.
 
 n_step = 1
-if (ix_mag_max > -1 .or. ix_elec_max > -1) n_step = max(nint(ele%value(l$) / ele%value(ds_step$)), 1)
-r_step = 1.0_rp / n_step
-step_len = ele%value(l$) * r_step
+if (ix_mag_max > -1 .or. ix_elec_max > -1) n_step = max(nint(abs(length) / ele%value(ds_step$)), 1)
+r_step = rp8(orbit%time_dir) / n_step
+step_len = length / n_step
 angle = g * step_len
 
-if (ix_mag_max > -1 .or. ix_elec_max > -1) call apply_multipole_kicks (0.5_rp, step_len, &
+if (ix_mag_max > -1 .or. ix_elec_max > -1) call apply_multipole_kicks (0.5_rp, step_len, r_step, &
                                                       ix_mag_max, an, bn, ix_elec_max, an_elec, bn_elec)
 
 ! And track with n_step steps
@@ -200,10 +199,10 @@ do n = 1, n_step
       endif
 
       L_u = xi
-      L_v = -step_len * sinc_a - x * sin_a
+      L_v = -orbit%time_dir * (step_len * sinc_a + x * sin_a)
       L_c = sqrt(L_v**2 + L_u**2)
-      angle_p = 2 * (angle + phi_1 - atan2(L_u, -L_v))
-      L_p = L_c / sinc(angle_p/2)
+      angle_p = 2 * (angle + phi_1 - orbit%time_dir * atan2(L_u, -L_v))
+      L_p = orbit%time_dir * L_c / sinc(angle_p/2)
       orbit%vec(2) = pt * sin(phi_1 + angle - angle_p)
       orbit%vec(3) = y + py * L_p / pt
       orbit%vec(5) = z + orbit%beta * step_len / beta_ref - rel_p * L_p / pt 
@@ -215,10 +214,10 @@ do n = 1, n_step
         dxi = dalpha / (2 * rad)  ! cos_a < 0 form
         dx2 = cos_a + dxi
         dL_u = dxi
-        dL_v = -sin_a
+        dL_v = -orbit%time_dir * sin_a
         dL_c = (L_u * dL_u + L_v * dL_v)/ L_c
-        dangle_p = 2 * (dL_u * L_v - dL_v * L_u) / L_c**2
-        dL_p = dL_c / sinc(angle_p/2) - dangle_p * L_c * sinc(angle_p/2, 1) / (2 * sinc(angle_p/2)**2)
+        dangle_p = 2 * orbit%time_dir * (dL_u * L_v - dL_v * L_u) / L_c**2
+        dL_p = orbit%time_dir * (dL_c / sinc(angle_p/2) - dangle_p * L_c * sinc(angle_p/2, 1) / (2 * sinc(angle_p/2)**2))
 
         mat6_i(1,1) = dx2
         mat6_i(2,1) = -dangle_p * pt * cos(phi_1 + angle - angle_p)
@@ -306,9 +305,9 @@ do n = 1, n_step
 
   if (ix_mag_max > -1 .or. ix_elec_max > -1) then
     if (n == n_step) then
-      call apply_multipole_kicks (0.5_rp, step_len, ix_mag_max, an, bn, ix_elec_max, an_elec, bn_elec)
+      call apply_multipole_kicks (0.5_rp, step_len, r_step, ix_mag_max, an, bn, ix_elec_max, an_elec, bn_elec)
     else
-      call apply_multipole_kicks (1.0_rp, step_len, ix_mag_max, an, bn, ix_elec_max, an_elec, bn_elec)
+      call apply_multipole_kicks (1.0_rp, step_len, r_step, ix_mag_max, an, bn, ix_elec_max, an_elec, bn_elec)
     endif
   endif
 enddo
@@ -318,18 +317,14 @@ enddo
 
 if (orbit_too_large(orbit, param)) return
 
-if (fringe_info%has_fringe) then
-  fringe_info%particle_at = second_track_edge$
-  call apply_element_edge_kick(orbit, fringe_info, ele, param, .false., mat6, make_matrix)
-endif
+fringe_info%particle_at = second_track_edge$
+call apply_element_edge_kick(orbit, fringe_info, ele, param, .false., mat6, make_matrix)
 
 call offset_particle (ele, unset$, orbit, set_hvkicks = .false., mat6 = mat6, make_matrix = make_matrix)
 
-orbit%t = start_orb%t + ele%value(delta_ref_time$) + (start_orb%vec(5) - orbit%vec(5)) / (orbit%beta * c_light)
-if (orbit%direction == -1) orbit%vec(5) = orbit%vec(5) - 2.0_rp * c_light * orbit%beta * ele%value(delta_ref_time$) 
+orbit%t = start_orb%t + orbit%direction*orbit%time_dir*ele%value(delta_ref_time$) + (start_orb%vec(5) - orbit%vec(5)) / (orbit%beta * c_light)
 
-
-if (orbit%direction == 1) then
+if (orbit%direction*orbit%time_dir == 1) then
   orbit%s = ele%s
 else
   orbit%s = ele%s_start
@@ -338,14 +333,14 @@ endif
 !-------------------------------------------------------------------------------------------------------
 contains
 
-subroutine apply_multipole_kicks (coef, step_len, ix_mag_max, an, bn, ix_elec_max, an_elec, bn_elec)
+subroutine apply_multipole_kicks (coef, step_len, r_step, ix_mag_max, an, bn, ix_elec_max, an_elec, bn_elec)
 
 
 type (em_field_struct) field
 type (coord_struct) orb0
 
 real(rp) coef, step_len
-real(rp) ps, ps2, kx, ky, alpha, f_coef, df_coef_dx, kmat(6,6), rel_p0, r_len
+real(rp) ps, ps2, kx, ky, alpha, f_coef, df_coef_dx, kmat(6,6), rel_p0, r_step
 real(rp) mc2, dk_dp, pc0, E0, E1, f, df_dps_coef, dkm(2,2), f_p0c, Ex, Ey
 real(rp) an(0:n_pole_maxx), bn(0:n_pole_maxx), an_elec(0:n_pole_maxx), bn_elec(0:n_pole_maxx)
 
@@ -390,19 +385,16 @@ else
   enddo
 endif
 
-r_len = 1
-if (ele%value(l$) /= 0) r_len = step_len / ele%value(l$)
-
 ! Magnetic kick.
 
 if (ix_mag_max > -1) then
   orb0 = orbit
-  f_coef = r_len * coef * c_dir * (1 + ele%value(g$) * orbit%vec(1)) * c_light / orb0%p0c
+  f_coef = r_step * coef * c_dir * (1 + ele%value(g$) * orbit%vec(1)) * c_light / orb0%p0c
   orbit%vec(2) = orbit%vec(2) - f_coef * field%B(2)
   orbit%vec(4) = orbit%vec(4) + f_coef * field%B(1)
 
   if (logic_option(.false., make_matrix)) then
-    df_coef_dx = r_len * coef * c_dir * ele%value(g$) * c_light / orb0%p0c
+    df_coef_dx = r_step * coef * c_dir * ele%value(g$) * c_light / orb0%p0c
 
     mat6(2,:) = mat6(2,:) - (f_coef * field%dB(2,1) + df_coef_dx * field%B(2)) * mat6(1,:) - & 
                             (f_coef * field%dB(2,2)) * mat6(3,:)
@@ -525,7 +517,7 @@ logical, optional :: make_matrix
 rel_charge_dir = rel_tracking_charge_to_mass(orbit, param%particle) * ele%orientation * orbit%direction
 
 g = ele%value(g$)
-length = ele%value(l$) / n_step
+length = orbit%time_dir * ele%value(l$) / n_step
 k1 = b1 / ele%value(l$)
 
 !
@@ -653,8 +645,8 @@ orbit%vec(1) = c_x * r(1) + s_x * r(2) / rel_p + x_c
 orbit%vec(2) = tau_x * om_x**2 * rel_p * s_x * r(1) + c_x * r(2)
 orbit%vec(3) = c_y * r(3) + s_y * r(4) / rel_p
 orbit%vec(4) = tau_y * om_y**2 * rel_p * s_y * r(3) + c_y * r(4)
-orbit%vec(5) = r(5) + z0 + z1 * r(1) + z2 * r(2) + &
-               z11 * r(1)**2 + z12 * r(1) * r(2) + z22 * r(2)**2 + &
-               z33 * r(3)**2 + z34 * r(3) * r(4) + z44 * r(4)**2 
+orbit%vec(5) = r(5) + orbit%direction * ele%orientation * z0 + &
+               z1 * r(1) + z2 * r(2) + z11 * r(1)**2 + z12 * r(1) * r(2) + z22 * r(2)**2 + &
+                                       z33 * r(3)**2 + z34 * r(3) * r(4) + z44 * r(4)**2 
 
 end subroutine sbend_body_with_k1_map

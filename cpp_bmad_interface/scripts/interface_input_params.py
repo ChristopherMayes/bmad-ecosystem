@@ -51,9 +51,6 @@ struct_list = [
     'grid_field_pt1_struct',
     'grid_field_pt_struct',
     'grid_field_struct',
-    'taylor_field_plane1_struct',
-    'taylor_field_plane_struct',
-    'taylor_field_struct',
     'floor_position_struct',
     'high_energy_space_charge_struct',
     'xy_disp_struct',
@@ -61,7 +58,9 @@ struct_list = [
     'mode3_struct',
     'bookkeeping_state_struct',
     'rad_map_struct',
-    'rad_int_ele_cache_struct',
+    'rad_map_ele_struct',
+    'gen_grad1_struct',
+    'gen_grad_map_struct',
     'surface_grid_pt_struct',
     'surface_grid_struct',
     'target_point_struct',
@@ -91,7 +90,6 @@ struct_list = [
     'strong_beam_struct',
     'track_point_struct',
     'track_struct',
-    'synch_rad_common_struct',
     'space_charge_common_struct',
     'bmad_common_struct',
     'rad_int1_struct',
@@ -206,6 +204,7 @@ c_custom_constructors = {
     'floor_position%w' : 'w(Real_ARRAY(0.0, 3), 3)',
     'aperture_param%max_angle' : 'max_angle(Bmad::PI)',
     'bmad_common%space_charge_mesh_size' : 'space_charge_mesh_size(32, 3)',
+    'rad_map%xfer_damp_mat' : 'xfer_damp_mat(Real_ARRAY(0.0, 6), 6)',
 }
 
 #-----------------------------------------------

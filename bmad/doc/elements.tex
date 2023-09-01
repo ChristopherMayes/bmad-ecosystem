@@ -22,17 +22,18 @@ available in \bmad.
   E_Gun             & \ref{s:e.gun}       &  Quadrupole        & \ref{s:quad}     \\
   Ecollimator       & \ref{s:col}         &  Rbend             & \ref{s:bend}     \\
   ElSeparator       & \ref{s:elsep}       &  Rcollimator       & \ref{s:col}      \\
-  EM_Field          & \ref{s:em.field}    &  RFcavity          & \ref{s:rfcav}    \\
-  Fiducial          & \ref{s:fiducial}    &  Sad_Mult          & \ref{s:sad.mult} \\
-  Floor_Shift       & \ref{s:floor.ele}   &  Sbend             & \ref{s:bend}     \\
-  Fork              & \ref{s:fork}        &  Sextupole         & \ref{s:sex}      \\
-  HKicker           & \ref{s:hvkicker}    &  Sol_Quad          & \ref{s:sq}       \\
-  Hybrid            & \ref{s:hybrid}      &  Solenoid          & \ref{s:sol}      \\
-  Instrument        & \ref{s:monitor}     &  Taylor            & \ref{s:taylor}   \\
-  Kicker            & \ref{s:kicker}      &  Undulator         & \ref{s:wiggler}  \\
-  Lcavity           & \ref{s:lcav}        &  VKicker           & \ref{s:hvkicker} \\  
-  Marker            & \ref{s:mark}        &  Wiggler           & \ref{s:wiggler}  \\
-  Mask              & \ref{s:mask}        &                    &                  \\ \bottomrule
+  EM_Field          & \ref{s:em.field}    &  RF_bend           & \ref{s:rf.bend}  \\
+  Fiducial          & \ref{s:fiducial}    &  RFcavity          & \ref{s:rfcav}    \\
+  Floor_Shift       & \ref{s:floor.ele}   &  Sad_Mult          & \ref{s:sad.mult} \\
+  Fork              & \ref{s:fork}        &  Sbend             & \ref{s:bend}     \\
+  HKicker           & \ref{s:hvkicker}    &  Sextupole         & \ref{s:sex}      \\
+  Hybrid            & \ref{s:hybrid}      &  Sol_Quad          & \ref{s:sq}       \\
+  Instrument        & \ref{s:monitor}     &  Solenoid          & \ref{s:sol}      \\
+  Kicker            & \ref{s:kicker}      &  Taylor            & \ref{s:taylor}   \\
+  Lcavity           & \ref{s:lcav}        &  Undulator         & \ref{s:wiggler}  \\
+  Marker            & \ref{s:mark}        &  VKicker           & \ref{s:hvkicker} \\  
+  Mask              & \ref{s:mask}        &  Wiggler           & \ref{s:wiggler}  \\
+  \bottomrule
 \end{tabular}
 }
 \caption{Table of element types suitable for use with charged particles.}
@@ -68,7 +69,8 @@ use.
   Floor_Shift        & \ref{s:floor.ele}     &  Pipe               & \ref{s:monitor}    \\
   Fork               & \ref{s:fork}          &  Rcollimator        & \ref{s:col}        \\
   Instrument         & \ref{s:monitor}       &  Sample             & \ref{s:sample}     \\
-  Lens               & \ref{s:lens}          &                     &                    \\ \bottomrule
+  Lens               & \ref{s:lens}          &                     &                    \\ 
+  \bottomrule
 \end{tabular}
 }
 \caption{Table of element types suitable for use with photons.}
@@ -162,7 +164,7 @@ See \sref{s:list.ac.kicker} for a full list of element attributes along with a t
 Attributes specific to a \vn{ac_kicker} element are:
 \begin{example}
   t_offset        = <Real>              ! Time offset of field waveform.
-  interpolation   = <switch>            ! spline (default) or linear.
+  interpolation   = <switch>            ! cubic (default) or linear.
   amp_vs_time = \{(<time1>, <Amp1>), (<time2>, <Amp2>), ...\}  ! Field amp vs Time.
   frequencies = \{(<freq1>, <Amp1>, <phi1>), 
                               (<freq2>, <Amp2>, <phi2>), ...\} ! Freq components.
@@ -196,7 +198,7 @@ order and no two times may be the same. The method used to interpolate between t
 determined by the setting of the \vn{interpolate} parameter which may be one of
 \begin{example}
   linear      ! Linear interpolation.
-  spline      ! Cubic spline interpolation (default).
+  cubic       ! Cubic spline interpolation (default).
 \end{example}
 For times outside of the range specified by \vn{amp_vs_time}, the amplitude will be extrapolated.
 For the cubic spline, extrapolation is only permitted over a distance outside the time range equal
@@ -235,7 +237,7 @@ Example:
   mk[amp_vs_time(2)%amp] = 0.03  ! Change 2nd point amplitude.
 \end{example}
 
-When specifying the time dependent using a set of frequencies, it is generally advisible to use
+When specifying the time dependent using a set of frequencies, it is generally advisable to use
 absolute time tracking (\sref{s:rf.time}). This can be done in the lattice file by setting
 \begin{example}
   bmad_com[absolute_time_tracking] = T
@@ -475,7 +477,7 @@ General \vn{rbend} and \vn{sbend} attributes are:
 See \sref{s:list.bend} for a full list of element attributes along with a their units.
 
 \index{g}\index{b_field}\index{dg}\index{db_field}\index{angle}
-\index{l_chord}\index{angle}\index{h1}\index{h2}
+\index{l_chord}\index{angle}\index{h1}\index{h2}\index{g_tot}\index{b_field_tot}
 \index{e1}\index{e2}\index{fint}\index{fintx}\index{l_arc}\index{l_sagitta}
 \index{hgap}\index{hgapx}\index{roll}\index{k1}\index{exact_multipoles}
 Attributes specific to \vn{rbend} and \vn{sbend} elements are:
@@ -483,6 +485,7 @@ Attributes specific to \vn{rbend} and \vn{sbend} elements are:
   angle              = <Real>   ! Design bend angle. Settable dependent var (\sref{s:depend}).
   b_field            = <Real>   ! Design field strength (= P_0 g / q) (\sref{s:depend}).
   db_field           = <Real>   ! Actual - Design bending field difference (\sref{s:depend}).
+  b_field_tot                   ! Net field = b_field + db_field. Dependent param (\sref{s:depend}).
   b1_gradient        = <Real>   ! Quadrupole field strength (\sref{s:depend}).
   b2_gradient        = <Real>   ! Sextupole field strength (\sref{s:depend}).
   e1, e2             = <Real>   ! Face angles.
@@ -490,6 +493,7 @@ Attributes specific to \vn{rbend} and \vn{sbend} elements are:
   fint, fintx        = <Real>   ! Face field integrals.
   g                  = <Real>   ! Design bend strength (= 1/rho).
   dg                 = <Real>   ! Actual - Design bend strength difference (\sref{s:depend}).
+  g_tot                         ! Net design strength = g + dg Dependent param (\sref{s:depend}).
   h1, h2             = <Real>   ! Face curvature.
   hgap, hgapx        = <Real>   ! Pole half gap.
   k1                 = <Real>   ! Quadrupole strength.
@@ -498,7 +502,8 @@ Attributes specific to \vn{rbend} and \vn{sbend} elements are:
   l_arc              = <Real>   ! Arc length. For \vn{rbend}s only. 
   l_chord            = <Real>   ! Chord length. See \sref{s:l}.
   l_sagitta                     ! Sagittal length. Dependent param (\sref{s:depend}).
-  ptc_field_geometry = <Switch> ! See below.
+  ptc_field_geometry  = <Switch> ! See below.
+  ptc_fringe_geometry = <Switch> ! \Sref{s:fringe.type}
   rho                = <Real>   ! Design bend radius. Settable dependent param (\sref{s:depend}).
   roll               = <Real>   ! See \ref{s:offset}.
   field_master       = <T/F>    ! See \ref{s:field.master}.
@@ -608,27 +613,30 @@ doing exact modeling.
 The field integrals for the entrance pole face is given by the product of the \vn{fint} and
 \vn{hgap} parameters with \vn{hgap} being the half gap between poles at the entrance face
 \begin{equation}
-  F_{int} \, H_{gap} = \int_{pole} \! \! ds \, \frac{B_y(s) \, (B_{y0} - B_y(s))}
+  F_{H1} \equiv F_{int} \, H_{gap} = \int_{pole} \! \! ds \, \frac{B_y(s) \, (B_{y0} - B_y(s))}
   {2 \, B_{y0}^2}
   \label{fsbbb}
 \end{equation}
-For the exit pole face there is a similar equation using \vn{fintx} and \vn{hgapx}. In the above
-equation $B_{y0}$ is the field in the interior of the dipole. If \vn{fint} or \vn{fintx} is given
-without a value then a value of 0.5 is used. If \vn{fint} or \vn{fintx} is not present, the default
-value of 0 is used. Note: \mad does not have the \vn{fintx} and \vn{hgapx} attributes. \mad just
-assumes that the values are the same for the entrance and exit faces. For compatibility with \mad,
-if \vn{fint} is given but \vn{fintx} is not, then \vn{fintx} is set equal to \vn{fint}. Similarly,
-\vn{hgapx} will be set to \vn{hgap} if \vn{hgapx} is not given. Note that this setting of \vn{fintx}
-or \vn{hgapx} using the value of \vn{fint} or \vn{hgap} will only be done before lattice expansion
-(\sref{s:expand}).
+For the exit pole face there is a similar equation using \vn{fintx} and \vn{hgapx} which defines
+$F_{H2}$. In the above equation $B_{y0}$ is the field in the interior of the dipole. The values of
+\vn{fint}, \vn{fintx}, \vn{hgap}, and \vn{hgapx} are never used in isolation when tracking. Only
+the values for $F_{H1}$ and $F_{H2}$ matter.
+
+If \vn{fint} or \vn{fintx} is given without a value then a value of 0.5 is used. If \vn{fint} or
+\vn{fintx} is not present, the default value of 0 is used. Note: \mad does not have the \vn{fintx}
+and \vn{hgapx} attributes. \mad just assumes that the values are the same for the entrance and exit
+faces. For compatibility with \mad, if \vn{fint} is given but \vn{fintx} is not, then \vn{fintx} is
+set equal to \vn{fint}. Similarly, \vn{hgapx} will be set to \vn{hgap} if \vn{hgapx} is not
+given. Note that this setting of \vn{fintx} or \vn{hgapx} using the value of \vn{fint} or \vn{hgap}
+will only be done before lattice expansion (\sref{s:expand}).
 
 Note: To have an effect, both \vn{fint} and \vn{hgap} (or \vn{fintx} and \vn{hgapx}) must be non-zero.
 
 Note: The SAD program uses \vn{fb1+f1} for the entrance fringe and \vn{fb2+f1} for the exit
 fringe. The correspondence between the two is
 \begin{example2}
-  fint  * hgap  = (fb1 + f1) / 12
-  fintx * hgapx = (fb2 + f1) / 12
+  \(F_{H1}\) = fint  * hgap  = (fb1 + f1) / 12
+  \(F_{H2}\) = fintx * hgapx = (fb2 + f1) / 12
 \end{example2}
 
 \index{Enge function}
@@ -760,9 +768,10 @@ Example bend specification:
   b03w: sbend, l = 0.6, k1 = 0.003, fint  ! gives fint = fintx = 0.5
 \end{example}
 
-\vn{ptc_field_geometry} determines what coordinates PTC uses within a bend for calculating fields.
-This only affects tracking if PTC is being used and if \vn{ptc_com[exact_model]} is set to
-True (\sref{s:bmad.ptc.com}). Possible values for \vn{ptc_field_geometry} are:
+\vn{ptc_field_geometry} determines what reference coordinates PTC uses within a bend for calculating
+higher order fields. This only affects tracking if PTC is being used and if
+\vn{ptc_com[exact_model]} is set to True (\sref{s:bmad.ptc.com}). Possible values for
+\vn{ptc_field_geometry} are:
 \begin{example}
   sector      ! Default
   straight
@@ -1100,16 +1109,16 @@ The attributes specific to an \vn{crab_cavity} are
   gradient        = <Real>    ! Accelerating gradient (V/m).
   phi0            = <Real>    ! Phase (rad/2\(\pi\)) of the reference particle with 
                               !   respect to the RF. phi0 = 0 is on crest.
-  phi0_multipass  = <Real>    ! Phase with respect to a multipass lord (rad/2\(\pi\)).
+  phi0_multipass  = <Real>    ! Phase (rad/2\(\pi\)) with respect to a multipass lord (\sref{s:multipass}).
   rf_frequency    = <Real>    ! RF frequency (Hz).
   voltage                     ! Cavity voltage. Dependent attribute (\sref{s:depend}).
 \end{example}
 
 The Hamiltonian  $H_{\text{crab}}$ for a thin crab cavity is\cite{b:crab1}:
 \begin{equation}
-  H_{\text{crab}} = -q_{rel} \, V\, x \, \sin(k \, t + 2 \, \pi \, \phi_0)
+  H_{\text{crab}} = -r_q \, V\, x \, \sin(k \, t + 2 \, \pi \, \phi_0)
 \end{equation}
-where $x$ and $z$ are particle coordinates, $q_{rel}$ is the charge relative to the reference
+where $x$ and $z$ are particle coordinates, $r_q$ is the charge relative to the reference
 particle, $V$ is the ``effective'' cavity voltage, $\phi_0$ is a user settable
 phase, and $k$ is the wave number
 \begin{equation}
@@ -1118,13 +1127,18 @@ phase, and $k$ is the wave number
 Which give kicks of
 \begin{align} 
   \Delta p_x &= -\frac{1}{c \, P_0} \, \frac{\partial H_{\text{crab}}}{\partial x} = 
-    \frac{q_{rel} \, V}{c \, P_0} \, \sin(k \, t + 2 \, \pi \, \phi_0) \CRNO 
+    \frac{r_q \, V}{c \, P_0} \, \sin(k \, t + 2 \, \pi \, \phi_0) \CRNO 
   \Delta E &= -\frac{\partial H_{\text{crab}}}{\partial t} = 
-    q_{rel} \, V \, \, k \, x \, \cos(k \, t + 2 \, \pi \, \phi_0) 
+    r_q \, V \, \, k \, x \, \cos(k \, t + 2 \, \pi \, \phi_0) 
 \end{align} 
 Note: The sign of $H_{\text{crab}}$ used by Authors in the literature is not standardized. \bmad
 uses the convention such that a particle with the charge of the reference particle and with $z$ and
 $V$ positive will have a positive $\Delta p_x$.
+
+In the above equations $r_q$ is the relative charge between the reference particle (set by the
+\vn{parameter[particle]} parameter in a lattice file) and the particle being tracked through the
+cavity. For example, if the reference particle and and the tracked particle are the same, $r_q$ is
+unity independent of the type of particle tracked.
 
 The equations of motion can also be derived from analysis of a TM110 cavity mode for particles near
 the centerline\cite{b:kim}. With this mode, the transverse kick is due to the magnetic field and the
@@ -1162,10 +1176,11 @@ General \vn{crystal} attributes are:
 \tt
 \begin{tabular}{llll} \toprule
   {\sl Attribute Class}      & Section          & {\sl Attribute Class}      & Section         \\ \midrule
-  Aperture limits            & \ref{s:limit}    & Surface Properties         & \ref{s:s.curve} \\ 
+  Aperture limits            & \ref{s:limit}    & Surface Properties         & \ref{s:surface} \\ 
   Custom Attributes          & \ref{s:cust.att} & Symplectify                & \ref{s:symp}    \\
   Description strings        & \ref{s:alias}    & Offsets, Pitches \& Tilt   & \ref{s:offset}  \\
   Reference energy           & \ref{s:energy}   & Tracking \& transfer map   & \ref{c:methods} \\
+  Reflection tables          & \ref{s:reflect}  &                            &                 \\
   \bottomrule
 \end{tabular}
 \end{center}
@@ -1299,7 +1314,7 @@ same direction as a positive \vn{g} for a bend element. The
 A \vn{crystal} may be offset and pitched (\ref{s:offset}). The incoming local reference coordinates
 are used for these misalignments.
 
-When a crystal is bent (\sref{s:s.curve}), the $\bfH$ vector is assumed follow the surface
+When a crystal is bent (\sref{s:surface}), the $\bfH$ vector is assumed follow the surface
 curvature. That is, it is assumed that the lattice planes are curved by the bending.
 
 Example:
@@ -1477,7 +1492,7 @@ will set the aperture limits to define a rectangular aperture that just cover th
 grid.
 
 A curved detector can be constructed by setting the appropriate surface curvature parameters
-(\sref{s:s.curve}). It is assumed that any curvature is only in one dimension ($x$ or $y$). This
+(\sref{s:surface}). It is assumed that any curvature is only in one dimension ($x$ or $y$). This
 allows a straight forward mapping of the rectangular pixel grid onto the curved surface.
 
 %-----------------------------------------------------------------
@@ -1633,12 +1648,14 @@ The attributes specific to an \vn{e_gun} are
 \begin{example}
   gradient       = <Real>    ! Gradient.
   gradient_err   = <Real>    ! Gradient error.
+  gradient_tot               ! Net gradient = gradient + gradient_err. Dependent param (\sref{s:depend}).
   phi0           = <Real>    ! Phase (rad/2\(\pi\)) of the reference particle with 
                              !   respect to the RF. phi0 = 0 is on crest.
   phi0_err       = <Real>    ! Phase error (rad/2\(\pi\))
   rf_frequency   = <Real>    ! Frequency of the RF field.
   voltage        = <Real>    ! Voltage. Dependent attribute (\sref{s:depend}). 
   voltage_err    = <Real>    ! Voltage error. Dependent attribute (\sref{s:depend}). 
+  voltage_tot                ! Net voltage = voltage + voltage_err. Dependent param (\sref{s:depend}).
 \end{example}
 
 The \vn{voltage} is simply related to the \vn{gradient} via the element length \vn{l}:
@@ -2456,7 +2473,7 @@ manner as the present values.
 Example of a \vn{knot} based \vn{group} element:
 \begin{example}
   gr2: group = \{beginning[E_tot]]:\{4e6,...\}\}, 
-      var = \{time\}, x_knot = \{...\}, interpolate = spline
+      var = \{time\}, x_knot = \{...\}, interpolate = cubic
 \end{example}
 Here the function used to translate from the \vn{group}'s variables to the slave attribute values is
 a cubic spline interpolation based upon the knot points specified (\sref{s:go.syntax}).
@@ -2483,16 +2500,16 @@ the value of \vn{q[k1]} has been updated, the value of \vn{old_a} is automatical
 present value of \vn{a} so that the value of \vn{q[k1]} will not be further modified.
 
 In general, deltas used to modify slave attributes are computed as the difference between the
-arithmetic expression evaluated with the present variable values and
-the arithmetic expression evaluated with the old variable values.
+arithmetic expression evaluated with the present variable values and the arithmetic expression
+evaluated with the old variable values.
 
 Notice that in a lattice file the value of a slave attribute after the lattice is read in is
 independent of whether the group is defined before or after elements whose attributes are controlled
 by the group. This is true since the effect of a \vn{group} element happens when the lattice is
 expanded, not when parser reads the \vn{group} definition. On the other hand, after the lattice has
-been read in, if a program varies both a group variable and a slave attribute,
-the value of the slave attribute will be dependent upon the
-order of which is modified first. For example, consider a lattice containing:
+been read in, if a program varies both a group variable and a slave attribute, the value of the
+slave attribute will be dependent upon the order of which is modified first. For example, consider a
+lattice containing:
 \begin{example}
   gr: group = \{q[k1]:a^2\}, var = \{a\} 
   q, quad
@@ -2508,27 +2525,23 @@ varied contains both group variables and slave attributes, the actual changes to
 may be different from what the user expects when the program varies its list of parameters.
 
 \index{overlay}\index{girder}
-Different \vn{group} elements may control the same slave attribute and
-a \vn{group} element may control other \vn{group}, \vn{overlay} or
-\vn{girder} element attributes. However, It does not make sense, and
-it is not permitted, for a \vn{group} element to control the same
-attribute as an \vn{overlay} element or for a \vn{group} element to
-control a \vn{dependent} attribute (\sref{s:depend}). To setup a group
-element to control the same slave attribute as an \vn{overlay}, define
-an intermediate \vn{overlay}. For example:
+Different \vn{group} elements may control the same slave attribute and a \vn{group} element may
+control other \vn{group}, \vn{overlay} or \vn{girder} element attributes. However, It does not make
+sense, and it is not permitted, for a \vn{group} element to control the same attribute as an
+\vn{overlay} element or for a \vn{group} element to control a \vn{dependent} attribute
+(\sref{s:depend}). To setup a group element to control the same slave attribute as an \vn{overlay},
+define an intermediate \vn{overlay}. For example:
 \begin{example}
   ov: overlay = \{q{k1}\, q2[k1], ...\}, var = \{a\}
   q, quad                                          
   gr: group = \{ov_q[k1]:a^2\}, var = \{a\}  ! New
   ov_q: overlay = \{q\}, var = \{k1\}        ! New
 \end{example}
-In this example, the overlay \vn{ov} controls the attribute \vn{q[k1]}
-so it is not permitted for \vn{q[k1]} to be a slave of a group
-element.  To have group control of \vn{q[k1]}, two elements are
-introduced: the group \vn{gr} is setup controlling \vn{ov_q[k1]} and
-overlay \vn{ov_q} is an overlay that controls \vn{q[k1]}. Notice that
-trying to control \vn{ov} directly by a group element will not work
-since \vn{ov} controls multiple elements.
+In this example, the overlay \vn{ov} controls the attribute \vn{q[k1]} so it is not permitted for
+\vn{q[k1]} to be a slave of a group element.  To have group control of \vn{q[k1]}, two elements are
+introduced: the group \vn{gr} is setup controlling \vn{ov_q[k1]} and overlay \vn{ov_q} is an overlay
+that controls \vn{q[k1]}. Notice that trying to control \vn{ov} directly by a group element will not
+work since \vn{ov} controls multiple elements.
 
 \index{accordion_edge}\index{start_edge}
 \index{end_edge}\index{symmetric_edge}
@@ -2549,20 +2562,19 @@ is kept invariant.
 As an example, consider \vn{accordion_edge} which varies the edges of an element so that the center
 of the element is fixed but the length varies:
 \begin{example}
-  gr: group = \{Z[accordion_edge]\}, var = \{offset\}
+  gr: group = \{Z[accordion_edge]:1\}, var = \{offset\}
 \end{example}
-A change of, say, 0.1 \vn{gr}'s \vn{offset} variable moves both edges
-of element \vn{Z} by 0.1 meters so that the length of \vn{Z} changes
-by 0.2 meters but the center of \vn{Z} is constant. To keep the total
-lattice length invariant, the lengths of the elements to either side
-are decreased by 0.1 meters to keep the total lattice length constant.
+A change of, say, 0.1 \vn{gr}'s \vn{offset} variable moves both edges of element \vn{Z} by 0.1
+meters so that the length of \vn{Z} changes by 0.2 meters but the center of \vn{Z} is constant. To
+keep the total lattice length invariant, the lengths of the elements to either side are decreased by
+0.1 meters to keep the total lattice length constant.
 \begin{example}
   q10: quad, l = ...
   q11: quad, l = ...
   d1: drift, l = ...
   d2: drift, l = ...
   this_line: line = (... d1, q10, d2, q11, ...)
-  gr2: group = \{q10[start_edge]\}, var = \{a\}, a = 0.1
+  gr2: group = \{q10[start_edge]:1\}, var = \{a\}, a = 0.1
 \end{example}
 The effect of  \vn{gr2[a]} will be to lengthen the length of
 \vn{q10} and shorten the length of \vn{d1}.
@@ -2750,29 +2762,35 @@ The attributes specific to an \vn{lcavity} are
   cavity_type     = <Switch>  ! Type of cavity.
   gradient        = <Real>    ! Accelerating gradient (V/m).
   gradient_err    = <Real>    ! Accelerating gradient error (V/m).
+  gradient_tot                ! Net gradient = gradient + gradient_err. Dependent param (\sref{s:depend}).
   phi0            = <Real>    ! Phase (rad/2\(\pi\)) of the reference particle with 
                               !   respect to the RF. phi0 = 0 is on crest.
-  phi0_multipass  = <Real>    ! Phase with respect to a multipass lord (rad/2\(\pi\)).
+  phi0_autoscale              ! Set by Bmad when autoscaling is turned on \sref{s:autoscale}.
+  phi0_multipass  = <Real>    ! Phase (rad/2\(\pi\)) with respect to a multipass lord (\sref{s:multipass}).
   phi0_err        = <Real>    ! Phase error (rad/2\(\pi\))
   e_loss          = <Real>    ! Loss parameter for short range wakefields (V/Coul).
   rf_frequency    = <Real>    ! RF frequency (Hz).
+  field_autoscale             ! Set by Bmad when autoscaling is turned on \sref{s:autoscale}.
   voltage                     ! Cavity voltage. Dependent attribute (\sref{s:depend}).
+  voltage_err                 ! Error voltage
+  voltage_tot                 ! Net voltage = voltage + voltage_err. Dependent param (\sref{s:depend}).
   l_active        = <Real>    ! Active region length. Dependent attribute (\sref{s:depend}).
   n_cell          = <Int>     ! Number of cavity cells. Default is 1.
   longitudinal_mode = <Int>   ! Longitudinal mode. Default is 1. May be 0 or 1.
 \end{example}
 
-The dependent variable \vn{voltage} attribute can be used in place of \vn{gradient} as discussed in
-\sref{s:depend}.  \vn{voltage} is a dependent attribute and is defined to be
+The \vn{voltage} and \vn{voltage_err} attributes can be used in place of \vn{gradient} and \vn{gradient_err}.
+The relationship between gradient and voltage is
 \begin{example}
-  voltage = gradient * L
+  voltage     = L * gradient
+  voltage_err = L * gradient_err
 \end{example}
 
 The energy kick felt by a particle, assuming no phase slippage, is 
 \begin{example}
-  dE = q_{rel} * gradient_tot * L * cos(\(2\,\pi\) * (\(\phi_t\) + \(\phi_\REF\)))
+  dE = \(r_q\) * gradient_tot * L * cos(\(2\,\pi\) * (\(\phi_t\) + \(\phi_\REF\)))
 \end{example}
-where \vn{q_rel} is the charge of the particle relative to the charge of the reference particle.
+where $r_q$ is the charge of the particle relative to the charge of the reference particle.
 \index{multipass}
 where the total gradient is
 \begin{example}
@@ -2785,6 +2803,11 @@ whether \vn{absolute time tracking} or \vn{relative time tracking} is being used
   \(\phi_\REF\) = phi0 + phi0_multipass + phi0_err + phi0_autoscale
   \label{lcav.phi}
 \end{example}
+
+In the above equation $r_q$ is the relative charge between the reference particle (set by the
+\vn{parameter[particle]} parameter in a lattice file) and the particle being tracked through the
+cavity. For example, if the reference particle and and the tracked particle are the same, $r_q$ is
+unity independent of the type of particle tracked.
 
 \vn{phi0_multipass} is only to be used with multipass to shift the phase of the cavity from pass to
 pass. See \sref{s:multipass}.
@@ -2816,8 +2839,9 @@ constant.  The energy kick is then
   dE(with wake) = dE + e_loss * n_part * e_charge 
 \end{example}
 \vn{n_part} is set using the \vn{parameter} statement (\sref{s:param}) and represents the number of
-particles in a bunch. \vn{e_charge} is the charge on an electron (Table~\ref{t:constants}). Notice
-that the \vn{e_loss} term is independent of the sign of the charge of the particle.
+particles in a bunch. \vn{e_charge} is the magnitude of the charge on an electron
+(Table~\ref{t:constants}). Notice that the \vn{e_loss} term is independent of the sign of the charge
+of the particle.
 
 The \vn{cavity_type} is the type of cavity being simulated. Possible
 settings are:
@@ -3154,9 +3178,9 @@ there will be a phase advance through the match element that is set by \vn{dphi_
 for the $a$ and $b$ modes respectively.
 
 If the \vn{phase_trombone} is set True, when running a program, the \bmad bookkeeping code will
-set the values of \vn{beta_a0}, \vn{beta_a1}, \vn{alpha_b0}, etc. appropriately the phase trombone 
-matrix will be calculated. The \bmad bookkeeping code will then set \vn{phase_trombone} to False to
-freeze the transfer matrix against change if the parameters in the lattice are varied.
+appropriately set the values of \vn{beta_a0}, \vn{beta_a1}, \vn{alpha_b0}, etc. to match the desired
+transfer matrix. The \bmad bookkeeping code will then set \vn{phase_trombone} to False to freeze the
+transfer matrix against change if the parameters in the lattice are varied.
 
 When a lattice is read in, the \vn{phase_trombone_input} attribute is set by \bmad to be equal to
 \vn{phase_trombone}. This attribute does not affect any computations and is not settable by the
@@ -3181,10 +3205,11 @@ General \vn{mirror} attributes are:
 \tt 
 \begin{tabular}{llll} \toprule
   {\sl Attribute Class}      & Section           & {\sl Attribute Class}      & Section         \\ \midrule
-  Aperture limits            & \ref{s:limit}     & Reference energy           & \ref{s:energy}  \\
+  Aperture limits            & \ref{s:limit}     & Reflection tables          & \ref{s:reflect} \\
   Custom Attributes          & \ref{s:cust.att}  & Superposition              & \ref{s:super}   \\
-  Description strings        & \ref{s:alias}     & Surface Properties         & \ref{s:s.curve} \\
+  Description strings        & \ref{s:alias}     & Surface Properties         & \ref{s:surface} \\
   Offsets, pitches \& tilt   & \ref{s:offset}    & Tracking \& transfer map   & \ref{c:methods} \\ 
+  Reference energy           & \ref{s:energy}    &                            &                 \\
   \bottomrule
 \end{tabular}
 \end{center}
@@ -3271,7 +3296,7 @@ General \vn{crystal} attributes are:
   Custom Attributes          & \ref{s:cust.att}  & Offsets, pitches \& tilt   & \ref{s:offset}  \\
   Description strings        & \ref{s:alias}     & Superposition              & \ref{s:super}   \\
   Reference energy           & \ref{s:energy}    & Tracking \& transfer map   & \ref{c:methods} \\
-  Surface Properties         & \ref{s:s.curve}   &                            &                 \\
+  Surface Properties         & \ref{s:surface}   &                            &                 \\
   \bottomrule
 \end{tabular}
 \end{center}
@@ -3416,8 +3441,8 @@ See \sref{s:list.overlay} for a full list of element attributes along with a the
 There are two types of \vn{overlay} elements: \vn{Expression} based and \vn{knot} based.
 The general syntax for a \vn{expression} based \vn{overlay} element is
 \begin{example}
-  name: OVERLAY = \{ele1[attrib1]:coef1, ele2[attrib2]:coef2, ...\}, 
-                                                       default_attrib = init_value
+  name: OVERLAY = \{ele1[attrib1]:exp1, ele2[attrib2]:exp2, ...\}, 
+              VAR = \{var1, var2, ...\}, var1 = init_val1, old_var1 = init_val_old1, ...
 \end{example}
 where \vn{ele1}[\vn{attrib1}], \vn{ele2}[\vn{attrib2}], etc. specify the slave attributes and
 \vn{exp1}, \vn{exp2}, etc. are the arithmetical expressions, that are functions of \vn{var1},
@@ -4029,18 +4054,17 @@ General \vn{ramper} attributes are:
 \toffset
 See \sref{s:list.ramper} for a full list of element attributes.
 
-The syntax for \vn{ramper} elements is exactly the same as for \vn{overlay} (\sref{s:overlay}) elements 
+The syntax for \vn{ramper} elements is exactly the same as for \vn{overlay} (\sref{s:go.syntax}) elements 
 except that \vn{ramper} elements do not have a \vn{gang} attribute.
 
 Like \vn{overlay}s, There are two types of \vn{ramper} elements: \vn{Expression} based and
 \vn{knot} based.  The general syntax for a \vn{expression} based \vn{ramper} element is
 \begin{example}
-  name: RAMPER = \{ele1[attrib1]:coef1, ele2[attrib2]:coef2, ...\}, 
-                                                       default_attrib = init_value
+  name: RAMPER = \{ele1[attrib1]:coef1, ele2[attrib2]:coef2, ...\}, VAR = \{var1\}
 \end{example}
-where \vn{ele1[attrib1]}, \vn{ele2[attrib2]}, etc. specify the slave attributes and
-\vn{exp1}, \vn{exp2}, etc. are the arithmetical expressions, that are functions of \vn{var1},
-\vn{var2}, etc., and are used to determine a value for the slave attributes.
+where \vn{ele1[attrib1]}, \vn{ele2[attrib2]}, etc. specify the slave attributes and \vn{exp1},
+\vn{exp2}, etc. are the arithmetical expressions, that are functions of \vn{var1}, \vn{var2}, etc.,
+and are used to determine a value for the slave attributes.
 
 The general syntax for a \vn{knot} based  \vn{ramper} element is
 \begin{example}
@@ -4054,7 +4078,7 @@ The general syntax for a \vn{knot} based  \vn{ramper} element is
 Examples:
 \begin{example}
   ramp_e: ramper = \{*[e_tot]:\{4e+08, 4.00532e+08, 4.01982e+08, ...\}\},
-                var = \{time\}, x_knot = \{0, 0.001, 0.002, ...\}, interpolation = spline
+                var = \{time\}, x_knot = \{0, 0.001, 0.002, ...\}, interpolation = cubic
 
   amp = 1e9;  omega = 0.167;  t0 = 0.053
   ramp_rf: ramper = \{rfcavity::*[voltage]:amp*sin(omega *(t + t0)),
@@ -4085,14 +4109,72 @@ be found at:
 \end{example}
 
 %-----------------------------------------------------------------
+\section{RF_bend}
+\label{s:rf.bend}
+\index{rf_bend|hyperbf}
+
+An \vn{rf_bend} is an RF cavity with the geometry of an \vn{sbend} (\sref{s:bend}). This element is
+currently considered to be experimental so please contact a \bmad maintainer if you want to use this
+type of element.
+
+General \vn{rfcavity} attributes are:
+\begin{center}
+\tt
+\begin{tabular}{llll} \toprule
+  {\sl Attribute Class}      & Section            & {\sl Attribute Class}      & Section            \\ \midrule
+  Aperture limits            & \ref{s:limit}      & Offsets, pitches \& tilt   & \ref{s:offset}     \\
+  Chamber wall               & \ref{s:wall}       & Overlapping Fields         & \ref{s:overlap}    \\
+  Custom Attributes          & \ref{s:cust.att}   & Reference energy           & \ref{s:energy}     \\ 
+  Description strings        & \ref{s:alias}      & Superposition              & \ref{s:super}      \\
+  Symplectify                & \ref{s:symp}       & Field Maps                 & \ref{s:fieldmap}   \\
+  Integration settings       & \ref{s:integ}      & Tracking \& transfer map   & \ref{c:methods}    \\
+  Is_on                      & \ref{s:is.on}      & Wakes                      & \ref{s:wakes}      \\
+  Length                     & \ref{s:l}          &                            &                    \\
+  \bottomrule
+\end{tabular}
+\end{center}
+\toffset
+See \sref{s:list.rf.bend} for a full list of element attributes along with a their units.
+
+\index{rf_frequency}\index{harmon}\index{voltage}\index{phi0}\index{phi0_multipass}
+Attributes specific to an \vn{rf_bend} are:
+\begin{example}
+  ! Bend-like attributes:
+  angle              = <Real>   ! Design bend angle. Settable dependent var (\sref{s:depend}).
+  b_field            = <Real>   ! Design field strength (= P_0 g / q) (\sref{s:depend}).
+  g                  = <Real>   ! Design bend strength (= 1/rho).
+  l                  = <Real>   ! "Length" of bend. See below.
+  l_arc              = <Real>   ! Arc length. For \vn{rbend}s only. 
+  l_chord            = <Real>   ! Chord length. See \sref{s:l}.
+  l_sagitta                     ! Sagittal length. Dependent param (\sref{s:depend}).
+  rho                = <Real>   ! Design bend radius. Settable dependent param (\sref{s:depend}).
+  roll               = <Real>   ! See \ref{s:offset}.
+  field_master       = <T/F>    ! See \ref{s:field.master}.
+
+  ! RF-like attributes:
+  rf_frequency    = <Real>    ! Frequency
+  harmon          = <Real>    ! Harmonic number
+  phi0            = <Real>    ! Cavity phase (rad/2pi).
+  phi0_multipass  = <Real>    ! Phase variation with multipass (rad/2pi).
+\end{example}
+
+Tracking through an \vn{rf_bend} is limited to Runge Kutta like tracking methods (\sref{s:tkm}). The
+default \vn{tracking_method} is \vn{runge_kutta}. Fields must be specified using a grid field map
+(\sref{s:fieldmap}). The default \vn{field_calc} is \vn{fieldmap} (\sref{s:field.calc}).
+
+The geometry of the \vn{rf_bend} is the same as an \vn{sbend}. An \vn{rf_bend} has a sector shape
+which is equivalent to \vn{e1} and \vn{e2} being zero for an \vn{sbend}. Since the fields are specified
+using a grid field map, there are no fringe attributes to set (for any elements where a grid field is
+used, it is always assumed that the fringe fields are included as part of the grid field).
+
+%-----------------------------------------------------------------
 \section{RFcavity}
 \label{s:rfcav}
 \index{rfcavity|hyperbf}
 
-An \vn{rfcavity} is an RF cavity without acceleration generally used
-in a storage ring. The main difference between an \vn{rfcavity} and an
-\vn{lcavity} is that, unlike an \vn{lcavity}, the reference energy
-(\sref{s:phase.space}) through an \vn{rfcavity} is constant.
+An \vn{rfcavity} is an RF cavity without acceleration generally used in a storage ring. The main
+difference between an \vn{rfcavity} and an \vn{lcavity} is that, unlike an \vn{lcavity}, the
+reference energy (\sref{s:phase.space}) through an \vn{rfcavity} is constant.
 
 General \vn{rfcavity} attributes are:
 \begin{center}
@@ -4130,7 +4212,7 @@ Attributes specific to an \vn{rfcavity} are:
 
 The integrated energy kick felt by a particle, assuming no phase slippage, is 
 \begin{example}
-  dE = -e_charge * voltage * sin(\(2\,\pi\) * (\(\phi_\text{t}\) - \(\phi_\REF\)))
+  dE = -e_charge * \(r_q\) * voltage * sin(\(2\,\pi\) * (\(\phi_\text{t}\) - \(\phi_\REF\)))
 \end{example}
 \index{multipass}
 where
@@ -4142,6 +4224,11 @@ and $\phi_t$ is the part of the phase due to when the particle arrives at the ca
 upon whether \vn{absolute time tracking} or \vn{relative time tracking} is being used as discussed
 in \sref{s:rf.time}.
 
+In the above equation $r_q$ is the relative charge between the reference particle (set by the
+\vn{parameter[particle]} parameter in a lattice file) and the particle being tracked through the
+cavity. For example, if the reference particle and and the tracked particle are the same, $r_q$ is
+unity independent of the type of particle tracked.
+
 The correspondence between the \bmad \vn{phi0} attribute and the \vn{lag} attribute of
 \mad is
 \begin{example}
@@ -4149,8 +4236,9 @@ The correspondence between the \bmad \vn{phi0} attribute and the \vn{lag} attrib
 \end{example}
 
 \vn{phi0_multipass} is only to be used to shift the phase with respect to a \vn{multipass} lord. See
-\sref{s:multipass}. \vn{e_charge} is the charge on an electron (Table~\ref{t:constants}). Notice
-that the energy kick is independent of the sign of the charge of the particle
+\sref{s:multipass}. \vn{e_charge} is the magnitude of the charge on an electron
+(Table~\ref{t:constants}). Notice that the energy kick is independent of the sign of the charge of
+the particle
 
 \vn{phi0_autoscale} and \vn{field_autoscale} are calculated by \bmad's auto-scale module. See
 Section~\sref{s:autoscale} for more details. Autoscaling can be toggled on/off by using the
@@ -4225,7 +4313,7 @@ See \sref{s:list.sad.mult} for a full list of element attributes along with a th
 \index{ks}\index{phi0}\index{rho}\index{voltage}\index{x_offset_mult}
 \index{y_offset_mult}\index{x_pitch_mult}\index{y_pitch_mult}
 \index{fringe_type}\index{kill_fringe}
-Attributes specific to an \vn{sextupole} element are:
+Attributes specific to an \vn{sad_mult} element are:
 \begin{example}
   bs_field        = <Real>    ! Solenoid field. SAD equivalent: BZ.
   ks              = <Real>    ! Solenoid strength. 
@@ -4234,8 +4322,6 @@ Attributes specific to an \vn{sextupole} element are:
   fq1, fq2        = <Real>    ! Quadrupole fringe integral. SAD equivalents: F1, F2.
   x_offset_mult   = <Real>    ! Mult component offset. SAD equivalent: DX.
   y_offset_mult   = <Real>    ! Mult component offset. SAD equivalent: DY.
-  x_pitch_mult    = <Real>    ! Mult component pitch. SAD equivalent: DPX or CHI1.
-  y_pitch_mult    = <Real>    ! Mult component pitch. SAD equivalent: DPY or CHI2.
   fringe_type     = <Switch>  ! Type of fringe. SAD equivalent: DISFRIN.
   fringe_at       = <Switch>  ! Where fringe is applied. SAD equivalent: FRINGE.
 \end{example}
@@ -4248,22 +4334,18 @@ Attributes specific to an \vn{sextupole} element are:
 %  rho             = <Real>    ! Bend radius. A settable dependent variable (\sref{s:depend})
 %  voltage         = <Real>    ! Cavity voltage. SAD equivalent: VOLT.
 
-One difference between SAD and \bmad is that SAD defines the solenoid
-field by what are essentially a set of marker elements so that the
-solenoid field at a SAD \vn{mult} element is not explicitly declared
-in the \vn{mult} element definition. \bmad, on the other hand,
-requires a \vn{sad_mult} element to explicitly declare the solenoid
-parameters.
+One difference between SAD and \bmad is that SAD defines the solenoid field by what are essentially
+a set of marker elements so that the solenoid field at a SAD \vn{mult} element is not explicitly
+declared in the \vn{mult} element definition. \bmad, on the other hand, requires a \vn{sad_mult}
+element to explicitly declare the solenoid parameters.
 
-Another difference between SAD and \bmad is that, within a solenoid,
-the reference trajectory is aligned with the solenoid axis (and not
-aligned with the axis of the elements within the solenoid region).
+Another difference between SAD and \bmad is that, within a solenoid, the reference trajectory is
+aligned with the solenoid axis (and not aligned with the axis of the elements within the solenoid
+region).
 
-The SAD \vn{mult} element uses normal \vn{Kn} and skew \vn{KSn}
-multipole components. The \bmad \vn{sad_mult} element used normal
-\vn{an} and skew \vn{bn} multipole components. As can be seen from the
-equations in \sref{s:mag.field}, there is a factor of $n!$ between the
-two representations.
+The SAD \vn{mult} element uses normal \vn{Kn} and skew \vn{KSn} multipole components. The \bmad
+\vn{sad_mult} element used normal \vn{an} and skew \vn{bn} multipole components. As can be seen from
+the equations in \sref{s:mag.field}, there is a factor of $n!$ between the two representations.
 
 The \vn{a0} or \vn{b0} multipole moments give a dipole kick (just like a \vn{kicker} element). The
 face angles \vn{e1} and \vn{e2} are used with the dipole kick in calculating fringe effects.
@@ -4272,16 +4354,19 @@ The \vn{fq1} and \vn{fq2} parameters are used to specify the quadrupolar ``soft'
 \sref{s:q.soft} for more details.
 
 The \vn{fringe_at} and \vn{fringe_type} settings determine if the fringe field is used in
-tracking. See Sec~\sref{s:fringe} for the translation between these two switches and the
-\vn{fringe} and \vn{disfrin} switches of SAD.
+tracking. See Sec~\sref{s:fringe} for the translation between these two switches and the \vn{fringe}
+and \vn{disfrin} switches of SAD.
 
-Unlike other elements, the \vn{ds_step} and \vn{num_steps} attributes (\sref{s:integ}) of a \vn{sad_mult}
-are dependent attributes (\sref{s:depend}) and are not directly settable. Rather these
-attributes are calculated using \vn{SAD}'s own algorithm for setting the step size. To
-vary the calculated step size for a single \vn{sad_mult} element, the attribute
-\vn{eps_step_scale} may be set.  To vary the step size for all \vn{sad_mult} elements, the
-global parameter \vn{bmad_com[sad_eps_scale]} (\sref{s:bmad.ptc.com}) may be set.
-The default values for these parameters are:
+The \vn{x_offset_mult} and \vn{y_offset_mult} orients the non-solenoid components of the field while
+leaving the solenoid component unshifted.
+
+Unlike other elements, the \vn{ds_step} and \vn{num_steps} attributes (\sref{s:integ}) of a
+\vn{sad_mult} are dependent attributes (\sref{s:depend}) and are not directly settable. Rather these
+attributes are calculated using \vn{SAD}'s own algorithm for setting the step size. To vary the
+calculated step size for a single \vn{sad_mult} element, the attribute \vn{eps_step_scale} may be
+set.  To vary the step size for all \vn{sad_mult} elements, the global parameter
+\vn{bmad_com[sad_eps_scale]} (\sref{s:bmad.ptc.com}) may be set.  The default values for these
+parameters are:
 \begin{example}
   eps_step_scale          = 1
   bmad_com[sad_eps_scale] = 5e-3
@@ -4292,16 +4377,18 @@ SAD conventions to be aware of when comparing SAD to Bmad:
 \item
 A SAD \vn{rotate} or \vn{chi3} rotation is opposite to a \bmad \vn{tilt}
 \item
-SAD element offsets (\vn{dx}, \vn{dy}, \vn{dz}) are with respect to the entrance end
-of the element as opposed to \bmad's convention of referencing to the element center.
+SAD element offsets (\vn{dx}, \vn{dy}, \vn{dz}) are with respect to the entrance end of the element
+as opposed to \bmad's convention of referencing to the element center.
 \item
   The \bmad \vn{sad_mult} element does not have any attributes corresponding to the following
 SAD \vn{mult} element attributes:
+\vspace{1.0ex}
 \begin{example}
   angle, harmon, freq, phi, dphi, volt, dvolt
 \end{example}
+\vspace{1.0ex}
 That is, \vn{sad_mult} elements cannot be used to simulate RF cavities or bends (but a \vn{sad_mult}
-can be used to simulate a kicker type element where the reference orbit is not bent).
+can be used to simulate a kicker type element).
 \end{itemize}
 
 Example:
@@ -4323,7 +4410,7 @@ General \vn{sample} attributes are:
   {\sl Attribute Class}      & Section           & {\sl Attribute Class}      & Section         \\
   Aperture limits            & \ref{s:limit}     & Offsets, pitches \& tilt   & \ref{s:offset}  \\ \midrule
   Chamber wall               & \ref{s:wall}      & Reference energy           & \ref{s:energy}  \\ 
-  Custom Attributes          & \ref{s:cust.att}  & Surface Properties         & \ref{s:s.curve} \\
+  Custom Attributes          & \ref{s:cust.att}  & Surface Properties         & \ref{s:surface} \\
   Description strings        & \ref{s:alias}     & Superposition              & \ref{s:super}   \\
   Integration settings       & \ref{s:integ}     & Tracking \& transfer map   & \ref{c:methods} \\
   Length                     & \ref{s:l}         &                            &                 \\
