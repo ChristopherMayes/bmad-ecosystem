@@ -16,7 +16,7 @@
 !-
  
 function rf_is_on (branch, ix_ele1, ix_ele2) result (is_on)
-
+ 
 use bmad_routine_interface, dummy => rf_is_on
 implicit none
 
