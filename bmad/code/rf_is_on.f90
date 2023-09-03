@@ -14,7 +14,7 @@
 ! Output:
 !   is_on   -- Logical: True if any rfcavity is powered. False otherwise.
 !-
-
+ 
 function rf_is_on (branch, ix_ele1, ix_ele2) result (is_on)
 
 use bmad_routine_interface, dummy => rf_is_on
