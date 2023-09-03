@@ -70,7 +70,11 @@ character(*), parameter :: r_name = 'twiss_and_track_intra_ele'
 
 if (present(err)) err = .true.
 dir = 1
-if (present(orbit_start)) dir = orbit_start%time_dir * orbit_start%direction  ! Direction particle is being propagated.
+
+if (present(orbit_start)) then
+  if (orbit_start%state /= alive$) return
+  dir = orbit_start%time_dir * orbit_start%direction  ! Direction particle is being propagated.
+endif
 
 ! If a super_lord then must track through the slaves.
 
@@ -128,7 +132,8 @@ if (.not. associated(ele_p)) then
   if (do_upstream .and. do_downstream) then
     ele_p => ele
   else
-    call create_element_slice (runt, ele, dlength, min(l_start, l_end), param, do_upstream, do_downstream, err_flag, ele_start)
+    call create_element_slice (runt, ele, dlength, min(l_start, l_end), param, &
+                              do_upstream, do_downstream, err_flag, ele_start, orb_in = orbit_start)
     if (err_flag) then
       if (present(orbit_end)) orbit_end%state = lost$
       return

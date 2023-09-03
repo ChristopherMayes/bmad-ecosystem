@@ -535,6 +535,12 @@ subroutine tao_init_single_mode (single_mode_file)
   character(*) single_mode_file
 end subroutine
 
+function tao_is_valid_name (name, why_invalid) result (is_valid)
+  implicit none
+  character(*) name, why_invalid
+  logical is_valid
+end function
+
 subroutine tao_json_cmd (input_str)
   import
   implicit none
@@ -679,7 +685,7 @@ subroutine tao_pointer_to_universes (name_in, unis, err, name_out, explicit_uni,
   logical, optional :: explicit_uni
 end subroutine
 
-function tao_param_value_at_s (dat_name, ele, orbit, err_flag, why_invalid, print_err) result (value)
+function tao_param_value_at_s (dat_name, ele, orbit, err_flag, why_invalid, print_err, bad_datum) result (value)
   import
   implicit none
   type (ele_struct) ele
@@ -688,7 +694,7 @@ function tao_param_value_at_s (dat_name, ele, orbit, err_flag, why_invalid, prin
   character(*) dat_name
   character(*), optional :: why_invalid
   logical err_flag
-  logical, optional :: print_err
+  logical, optional :: print_err, bad_datum
 end function
 
 subroutine tao_parse_command_args (error, cmd_line)

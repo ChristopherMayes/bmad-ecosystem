@@ -183,7 +183,7 @@ end subroutine sc_field_calc
 !
 ! Input:
 !   bunch         -- bunch_struct: Starting bunch position in t-based coordinates
-!   ele           -- ele_struct: Element being tracked through.
+!   ele           -- ele_struct: Nominal element being tracked through.
 !   include_image -- logical: Include image charge forces?
 !   t_end         -- real(rp): Time at which the tracking ends.
 !   sc_field      -- em_field_struct(:): Array to hold space charge fields. 
@@ -276,7 +276,7 @@ real(rp) :: t_now, dt_step, dt_next, sqrt_N
 real(rp) :: r_err(6), r_scale(6), rel_tol, abs_tol, err_max
 real(rp), parameter :: tiny = 1.0e-30_rp
 
-integer i, N, n_emit
+integer i, N, n_emit(2)
 logical include_image
 
 !
@@ -290,18 +290,21 @@ bunch_half = bunch
 dt_next = dt_step
 
 do
-  n_emit = 0
+  n_emit = [0,0]
   ! Full step
   call sc_step(bunch_full, ele, include_image, t_now+dt_step, sc_field)
   ! Two half steps
-  call sc_step(bunch_half, ele, include_image, t_now+dt_step/2, sc_field, n_emit=n_emit)
-  call sc_step(bunch_half, ele, include_image, t_now+dt_step, sc_field, n_emit = n_emit)
+  call sc_step(bunch_half, ele, include_image, t_now+dt_step/2, sc_field, n_emit=n_emit(1))
+  call sc_step(bunch_half, ele, include_image, t_now+dt_step, sc_field, n_emit = n_emit(2))
 
   r_scale = abs(bunch_rms_vec(bunch))+abs(bunch_rms_vec(bunch_half)) + tiny
   r_err = [0,0,0,0,0,0]
   N = 0
   ! Calculate error from the difference
   do i = 1, size(bunch%particle)
+    ! If going backwards then particle is considered dead.
+    if (bunch_half%particle(i)%direction == -1 .or. &
+                      bunch_full%particle(i)%direction == -1) bunch_half%particle(i)%state = lost_z_aperture$
     if (bunch_half%particle(i)%state /= alive$) cycle ! Only count living particles
     r_err(:) = r_err(:) + abs(bunch_full%particle(i)%vec(:)-bunch_half%particle(i)%vec(:))
     N = N +1
@@ -340,39 +343,43 @@ contains
 
 function bunch_rms_vec(bunch) result (rms_vec)
 
-  type (bunch_struct) bunch
-  real(rp) rms_vec(6)
-  integer i, N
+type (bunch_struct) bunch
+real(rp) rms_vec(6)
+integer i, N
 
-  !
+!
 
-  N = 0
-  rms_vec = [0,0,0,0,0,0]
-  do i = 1,size(bunch%particle)
-    if (bunch%particle(i)%state /= alive$) cycle
-    rms_vec(:) = rms_vec(:) + bunch%particle(i)%vec(:)**2
-    N = N +1
-  enddo
-  if (N==0) return
-  rms_vec = sqrt(rms_vec/N)
+N = 0
+rms_vec = [0,0,0,0,0,0]
+do i = 1,size(bunch%particle)
+  if (bunch%particle(i)%state /= alive$) cycle
+  rms_vec(:) = rms_vec(:) + bunch%particle(i)%vec(:)**2
+  N = N +1
+enddo
+if (N==0) return
+rms_vec = sqrt(rms_vec/N)
 
 end function bunch_rms_vec
 
 ! Determines next time step size
 function next_step_size(dt_step, err_max) result (dt_next)
 
-  real(rp) :: dt_step, err_max, dt_next
-  real(rp), parameter :: safety = 0.9_rp, p_grow = -0.5_rp
-  real(rp), parameter :: p_shrink = -0.5_rp, err_con = 1.89d-4
+real(rp) :: dt_step, err_max, dt_next, t_end
+real(rp), parameter :: safety = 0.9_rp, p_grow = -0.5_rp
+real(rp), parameter :: p_shrink = -0.5_rp, err_con = 1.89d-4
+integer ix_next
 
-  ! shrink or grow step size based on err_max
-  if (err_max > 1) then
-    dt_next = safety * dt_step * (err_max**p_grow)
-  else if (err_max > err_con) then
-    dt_next = safety * dt_step * (err_max**p_grow)
-  else
-    dt_next = 5.0_rp * dt_step
-  endif
+! If early during emission, emit single particle
+
+
+! shrink or grow step size based on err_max
+if (err_max > 1) then
+  dt_next = safety * dt_step * (err_max**p_shrink)
+else if (err_max > err_con) then
+  dt_next = safety * dt_step * (err_max**p_grow)
+else
+  dt_next = 5.0_rp * dt_step
+endif
 
 end function next_step_size
 
@@ -382,20 +389,20 @@ end subroutine sc_adaptive_step
 !------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------
 !+
-! Subroutine track_to_s (bunch, s, branch)
+! Subroutine track_bunch_to_s (bunch, s, branch)
 !
 ! Drift a bunch of particles to the same s coordinate
 !
 ! Input:
 !   bunch     -- bunch_struct: Input bunch position in s-based coordinate.
-!   s         -- real(rp): Target s coordinate.
+!   s         -- real(rp): Target coordinate.
 !   branch    -- branch_struct: Branch being tracked through.
 !
 ! Output:
 !   bunch     -- bunch_struct: Output bunch position in s-based coordinate. Particles will be at the same s coordinate
 !-
 
-subroutine track_to_s (bunch, s, branch)
+subroutine track_bunch_to_s (bunch, s, branch)
 
 implicit none
 
@@ -404,28 +411,42 @@ type (coord_struct), pointer :: p
 type (branch_struct) :: branch
 type (coord_struct) :: position
 
-integer i
-real(rp) s, ds, s0
+integer i, track_state
+real(rp) s, ds, s0, s_end, s_begin
+
+!
+
+s_end = branch%ele(branch%n_ele_track)%s
+s_begin = branch%ele(0)%s
 
 do i = 1, size(bunch%particle)
   p => bunch%particle(i)
   if (p%state /= alive$) cycle
 
+  ! Can happen that particle has been "drifted" past the end of the branch.
+  ! Track_from_s_to_s cannot handle such a case so use drift_particle_to_s instead.
+  if (p%s > s_end) then
+    call drift_particle_to_s (p, s_end, branch)
+  elseif (p%s < s_begin) then
+    call drift_particle_to_s (p, s_begin, branch)
+  endif
+
   ds = s - p%s
   if (ds == 0) cycle
-  p%time_dir = sign_of(ds)
+  p%time_dir = sign_of(ds) * p%direction
   s0 = p%s
-  call track_from_s_to_s (branch%lat, s0, s, p, p, ix_branch = branch%ix_branch)
+  call track_from_s_to_s (branch%lat, s0, s, p, p, ix_branch = branch%ix_branch, track_state = track_state)
+  if (track_state /= moving_forward$) p%state = lost$
   p%time_dir = 1
 enddo
 
-end subroutine track_to_s
+end subroutine track_bunch_to_s
 
 !------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------
 !+
-! Subroutine track_to_t (bunch, t_target, branch)
+! Subroutine track_bunch_to_t (bunch, t_target, branch)
 !
 ! Drift a bunch of particles to the same t coordinate
 !
@@ -438,22 +459,26 @@ end subroutine track_to_s
 !   bunch     -- bunch_struct: Output bunch position in s-based coordinate. Particles will be at the same t coordinate
 !-
 
-subroutine track_to_t (bunch, t_target, branch)
+subroutine track_bunch_to_t (bunch, t_target, branch)
 
 use super_recipes_mod, only: super_zbrent
 
 implicit none
 
 type (bunch_struct), target :: bunch
-type (coord_struct), pointer :: p0
-type (coord_struct) p
+type (coord_struct), pointer :: p0, p_ptr
+type (coord_struct), target :: p
 type (branch_struct) :: branch
 type (coord_struct) :: position
 
 integer i, status
-real(rp) ds, t_target, dt, dt2, s1
+real(rp) ds, t_target, dt, dt2, s1, s_end, s_target, s_begin
 
 ! Convert bunch to s-based coordinates
+
+s_begin = branch%ele(0)%s
+s_end = branch%ele(branch%n_ele_track)%s
+p_ptr => p    ! To get around ifort debug info bug
 
 particle_loop: do i = 1, size(bunch%particle)
   p0 => bunch%particle(i)
@@ -463,11 +488,17 @@ particle_loop: do i = 1, size(bunch%particle)
   ! bracket solution
   do
     dt = t_target - p0%t
-    ds = min(1.01 * dt * c_light * p0%beta, branch%ele(branch%n_ele_track)%s-p0%s)
-    if (abs(ds) < 0.1_rp * bmad_com%significant_length) cycle particle_loop
-    p0%time_dir = sign_of(ds);  p%time_dir = sign_of(ds)
-    call track_from_s_to_s (branch%lat, p0%s, p0%s+ds, p0, p, ix_branch = p0%ix_branch)
-    dt2 = t_target - p%t
+    ds = 1.01 * dt * c_light * p0%beta * p0%direction
+    s_target = ds + p0%s
+    if (abs(ds) < 0.1_rp * bmad_com%significant_length) then
+      bunch%particle(i)%time_dir = 1
+      cycle particle_loop
+    endif
+    dt2 = track_func(s_target, status)
+    if (status /= 0) then
+      p0%state = lost$
+      cycle particle_loop
+    endif
     if (dt*dt2 <= 0) exit
     p0 = p
   enddo
@@ -475,6 +506,10 @@ particle_loop: do i = 1, size(bunch%particle)
   ! Use zbrent to find bracketed solution
   s1 = p%s
   s1 = super_zbrent(track_func, p0%s, s1, 1e-10_rp, bmad_com%significant_length, status)
+  if (status /= 0) then
+    p0%state = lost$
+    cycle particle_loop
+  endif
   dt = track_func(s1, status)
   p%time_dir = 1
   bunch%particle(i) = p
@@ -483,117 +518,134 @@ enddo particle_loop
 !--------------------------------------------------------------------
 contains
 
-function track_func (s_pos, status) result (dt)
+function track_func (s_target, status) result (dt)
 
-real(rp), intent(in) :: s_pos
-integer status
+real(rp), intent(in) :: s_target
+integer status, track_state
 real(rp) :: dt
 
 !
 
-p0%time_dir = sign_of(s_pos - p0%s);  p%time_dir = sign_of(s_pos - p0%s)
-call track_from_s_to_s (branch%lat, p0%s, s_pos, p0, p, ix_branch = p%ix_branch)
-dt = p%t - t_target
+p0%time_dir = sign_of(s_target - p0%s)
+p%time_dir  = sign_of(s_target - p0%s)
+status = 0
+
+! Can happen that particle needs to "drift" past the end of the branch.
+! Track_from_s_to_s cannot handle such a case so use drift_particle_to_t instead.
+
+if (s_target < s_begin .and. p0%s >= s_begin) then
+  call track_from_s_to_s (branch%lat, p0%s, s_begin, p0, p, ix_branch = p%ix_branch, track_state = track_state)
+  call drift_particle_to_s(p, s_target, branch)
+elseif (s_target > s_end .and. p0%s <= s_end) then
+  call track_from_s_to_s (branch%lat, p0%s, s_end, p0, p, ix_branch = p%ix_branch, track_state = track_state)
+  call drift_particle_to_s(p, s_target, branch)
+else
+  call track_from_s_to_s (branch%lat, p0%s, s_target, p0, p, ix_branch = p%ix_branch, track_state = track_state)
+endif
+
+if (track_state /= moving_forward$) then
+  status = 1
+  return
+endif
+
+dt = t_target - p%t 
 
 end function track_func
 
-end subroutine track_to_t
+end subroutine track_bunch_to_t
   
 !------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------
 !+
-! Subroutine drack_to_s (bunch, s, branch)
+! Subroutine drift_particle_to_s (p, s, branch)
 !
-! Drift a bunch of particles to the same s coordinate
+! Drift a particle to a given s-coordinate
 !
 ! Input:
-!   bunch     -- bunch_struct: Input bunch position in s-based coordinate.
+!   p         -- coord_struct: Init particle position.
 !   s         -- real(rp): Target s coordinate.
 !   branch    -- branch_struct: Branch being tracked through.
 !
 ! Output:
-!   bunch     -- bunch_struct: Output bunch position in s-based coordinate. Particles will be at the same s coordinate
+!   p         -- coord_struct: Final particle position.
 !-
 
-subroutine drift_to_s (bunch, s, branch)
+subroutine drift_particle_to_s (p, s, branch)
 
 implicit none
 
-type (bunch_struct), target :: bunch
-type (coord_struct), pointer :: p
+type (coord_struct) :: p
 type (branch_struct) :: branch
 type (coord_struct) :: position
 
-integer i
 real(rp) s, ds
 
+!
 
-do i = 1, size(bunch%particle)
-  p => bunch%particle(i)
-  if (p%state /= alive$) cycle
-  ds = s - p%s
-  call track_a_drift(p, ds)
-  if (p%s > branch%ele(branch%n_ele_track)%s) then
-	    p%ix_ele = branch%n_ele_track
-	    p%location = downstream_end$
-  else
-    p%ix_ele = element_at_s(branch, p%s, (ds < 0), position=position)
-    p%location = position%location
-	  endif
-enddo
-	
-end subroutine drift_to_s
-	
+if (p%state /= alive$) return
+ds = s - p%s
+
+call track_a_drift(p, ds)
+
+if (p%s > branch%ele(branch%n_ele_track)%s) then
+  p%ix_ele = branch%n_ele_track
+  p%location = downstream_end$
+elseif (p%s < branch%ele(0)%s) then
+  p%ix_ele = 1
+  p%location = upstream_end$
+else
+  p%ix_ele = element_at_s(branch, p%s, (ds < 0), position=position)
+  p%location = position%location
+endif
+
+end subroutine drift_particle_to_s
+
 !------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------
 !+
-! Subroutine drack_to_t (bunch, t, branch)
+! Subroutine drift_particle_to_t (p, t, branch)
 !
-! Drift a bunch of particles to the same t coordinate
+! Drift a particle to a given t-coordinate
 !
 ! Input:
-!   bunch     -- bunch_struct: Input bunch position in s-based coordinate.
+!   p         -- coord_struct: Init particle position.
 !   t         -- real(rp): Target t coordinate.
 !   branch    -- branch_struct: Lattice branch being tracked through.
 !
 ! Output:
-!   bunch     -- bunch_struct: Output bunch position in s-based coordinate. Particles will be at the same t coordinate
+!   p         -- coord_struct: Final particle position.
 !-
 
-subroutine drift_to_t (bunch, t, branch)
+subroutine drift_particle_to_t (p, t, branch)
 
 implicit none
 
-type (bunch_struct), target :: bunch
-type (coord_struct), pointer :: p
+type (coord_struct) :: p
 type (branch_struct) :: branch
 type (coord_struct) :: position
-	
-integer i
+
 real(rp) t, pz0, E_tot, dt, ds
 
-! Convert bunch to s-based coordinates
+!
 
-do i = 1, size(bunch%particle)
-  p => bunch%particle(i)
-  if (p%state /= alive$) cycle
-	
-  pz0 = sqrt((1.0_rp + p%vec(6))**2 - p%vec(2)**2 - p%vec(4)**2 ) ! * p0 
-  E_tot = sqrt((1.0_rp + p%vec(6))**2 + (mass_of(p%species)/p%p0c)**2) ! * p0
-  dt = t - p%t
-  ds = dt*(c_light*pz0/E_tot)
-  call track_a_drift(p,ds)
-	
-  if (p%s > branch%ele(branch%n_ele_track)%s) then
-    p%ix_ele = branch%n_ele_track
-    p%location = downstream_end$
-  else
-    p%ix_ele = element_at_s(branch, p%s, (ds < 0), position=position)
-    p%location = position%location
-  endif
-enddo
+if (p%state /= alive$) return
 
-end subroutine drift_to_t
+pz0 = sqrt((1.0_rp + p%vec(6))**2 - p%vec(2)**2 - p%vec(4)**2 ) ! * p0 
+E_tot = sqrt((1.0_rp + p%vec(6))**2 + (mass_of(p%species)/p%p0c)**2) ! * p0
+dt = t - p%t
+ds = dt*(c_light*pz0/E_tot)
+call track_a_drift(p,ds)
+
+if (p%s > branch%ele(branch%n_ele_track)%s) then
+  p%ix_ele = branch%n_ele_track
+  p%location = downstream_end$
+else
+  p%ix_ele = element_at_s(branch, p%s, (ds < 0), position=position)
+  p%location = position%location
+endif
+
+end subroutine drift_particle_to_t
+
 end module

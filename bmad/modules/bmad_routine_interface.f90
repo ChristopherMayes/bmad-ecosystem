@@ -467,12 +467,13 @@ subroutine choose_quads_for_set_tune (branch, dk1, eles, mask, err_flag)
 end subroutine
 
 subroutine chrom_calc (lat, delta_e, chrom_x, chrom_y, err_flag, &
-                       pz, low_E_lat, high_E_lat, low_E_orb, high_E_orb, ix_branch)
+                       pz, low_E_lat, high_E_lat, low_E_orb, high_E_orb, ix_branch, orb0)
   import
   implicit none
   type (lat_struct), target :: lat
   type (lat_struct), optional, target :: low_E_lat, high_E_lat
   type (coord_struct), allocatable, optional, target :: low_E_orb(:), high_E_orb(:)
+  type (coord_struct), optional :: orb0
   real(rp) delta_e
   real(rp) chrom_x
   real(rp) chrom_y
@@ -583,11 +584,12 @@ subroutine convert_bend_exact_multipole (g, out_type, an, bn)
 end subroutine
 
 recursive subroutine create_element_slice (sliced_ele, ele_in, l_slice, offset, &
-                             param, include_upstream_end, include_downstream_end, err_flag, old_slice)
+                       param, include_upstream_end, include_downstream_end, err_flag, old_slice, orb_in)
   import
   implicit none
   type (ele_struct), target :: sliced_ele, ele_in
   type (ele_struct), optional :: old_slice
+  type (coord_struct), optional :: orb_in
   type (lat_param_struct) param
   real(rp) l_slice, offset
   logical include_upstream_end, include_downstream_end, err_flag
@@ -1005,12 +1007,13 @@ function gradient_shift_sr_wake (ele, param) result (grad_shift)
   real(rp) grad_shift
 end function
 
-subroutine hdf5_read_beam (file_name, beam, error, ele, pmd_header)
+subroutine hdf5_read_beam (file_name, beam, error, ele, pmd_header, print_p0c_shift_warning, conserve_momentum)
   import
   implicit none
   type (beam_struct), target :: beam
   type (ele_struct), optional :: ele
   type (pmd_header_struct), optional :: pmd_header
+  logical, optional :: print_p0c_shift_warning, conserve_momentum
   logical error
   character(*) file_name
 end subroutine
@@ -1053,7 +1056,7 @@ end subroutine
 subroutine init_a_photon_from_a_photon_init_ele (ele, param, orbit)
   import
   implicit none
-  type (ele_struct) ele
+  type (ele_struct), target :: ele
   type (lat_param_struct) param
   type (coord_struct) orbit
 end subroutine
@@ -2202,7 +2205,7 @@ subroutine spin_concat_linear_maps (err_flag, mat1, branch, n1, n2, mat1_ele, or
   import
   implicit none
   type (spin_orbit_map1_struct) mat1
-  type (spin_orbit_map1_struct), optional :: mat1_ele(:)
+  type (spin_orbit_map1_struct), optional :: mat1_ele(0:)
   type (branch_struct), target :: branch
   type (coord_struct), optional :: orbit(0:)
   logical err_flag
@@ -2441,6 +2444,16 @@ subroutine track_a_drift_photon (orb, length, phase_relative_to_ref)
   type (coord_struct) orb
   real(rp) length
   logical phase_relative_to_ref
+end subroutine
+
+subroutine track_a_gkicker (orbit, ele, param, mat6, make_matrix)
+  import
+  implicit none
+  type (coord_struct) orbit
+  type (ele_struct), target :: ele
+  type (lat_param_struct) param
+  real(rp), optional :: mat6(6,6)
+  logical, optional :: make_matrix
 end subroutine
 
 subroutine track_a_lcavity (orbit, ele, param, mat6, make_matrix)

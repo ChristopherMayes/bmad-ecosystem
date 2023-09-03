@@ -1,9 +1,6 @@
-!--------------------------------------------------------------------------
-!--------------------------------------------------------------------------
-!--------------------------------------------------------------------------
 !+
 ! Subroutine create_element_slice (sliced_ele, ele_in, l_slice, offset,
-!                          param, include_upstream_end, include_downstream_end, err_flag, old_slice)
+!                          param, include_upstream_end, include_downstream_end, err_flag, old_slice, orb_in)
 !
 ! Routine to create an element that represents a longitudinal slice of the original element.
 !
@@ -22,6 +19,9 @@
 !                          time of the reference energy and time at the start of the present slice.
 !                          Also makes the ref energy continuous (there can be some small differences when
 !                          using, say, runge_kutta tracking due to tracking tolerances).
+!   orb_in            -- coord_struct, optional: Incoming orbit if calling routine is doing tracking through the slice.
+!                         This is used when old_slice is not present and there may be an adjustment needed to
+!                         the orbit ref energy (EG space charge tracking does not keep track of ref energy through an lcavity).
 !
 ! Output:
 !   sliced_ele -- Ele_struct: Sliced_ele element with appropriate values set.
@@ -29,7 +29,7 @@
 !-
 
 recursive subroutine create_element_slice (sliced_ele, ele_in, l_slice, offset, &
-                             param, include_upstream_end, include_downstream_end, err_flag, old_slice)
+                         param, include_upstream_end, include_downstream_end, err_flag, old_slice, orb_in)
 
 use bookkeeper_mod, dummy_except => create_element_slice
 
@@ -37,20 +37,32 @@ implicit none
 
 type (ele_struct), target :: sliced_ele, ele_in, ele0
 type (ele_struct), optional :: old_slice
+type (coord_struct), optional :: orb_in
 type (ele_struct) :: ele2
 type (lat_param_struct) param
 type (coord_struct) time_ref_orb_out
 
-real(rp) l_slice, offset, in_len, r
+real(rp) l_slice, offset, in_len, r, p0c_set
 integer i
 logical include_upstream_end, include_downstream_end, err_flag, err2_flag
 
-character(24) :: r_name = 'create_element_slice'
+character(*), parameter :: r_name = 'create_element_slice'
 
 ! Init
 
 err_flag = .true.
 in_len = ele_in%value(l$)
+
+! Save values from old_slice if present in case the old_slice actual arg is same as sliced_ele.
+
+if (present(old_slice)) then
+  ele0%value(p0c$)   = old_slice%value(p0c$)
+  ele0%value(e_tot$) = old_slice%value(e_tot$)
+  ele0%ref_time      = old_slice%ref_time
+  time_ref_orb_out   = old_slice%time_ref_orb_out
+endif
+
+!
 
 if (.not. associated(sliced_ele%lord, ele_in) .or. sliced_ele%ix_ele /= ix_slice_slave$) then
   call transfer_ele(ele_in, sliced_ele, .true.)
@@ -110,15 +122,6 @@ endif
 if (in_len == 0) then
   err_flag = .false.
   return
-endif
-
-! Save values from old_slice if present in case the old_slice actual arg is same as sliced_ele.
-
-if (present(old_slice)) then
-  ele0%value(p0c$)   = old_slice%value(p0c$)
-  ele0%value(e_tot$) = old_slice%value(e_tot$)
-  ele0%ref_time      = old_slice%ref_time
-  time_ref_orb_out   = old_slice%time_ref_orb_out
 endif
 
 !
@@ -213,6 +216,23 @@ if (.not. include_downstream_end) sliced_ele%time_ref_orb_out%location = inside$
 if (include_downstream_end) then
   sliced_ele%value(p0c$)      = ele_in%value(p0c$)
   sliced_ele%value(e_tot$)    = ele_in%value(e_tot$)
+endif
+
+! Round off can throw off the beginning ref energy. 
+! Adjust if necessary.
+
+if (present(orb_in)) then
+  if (orb_in%time_dir * orb_in%direction == 1) then
+    p0c_set = sliced_ele%value(p0c_start$)
+  else
+    p0c_set = sliced_ele%value(p0c$)
+  endif
+
+  r = orb_in%p0c / p0c_set
+  orb_in%vec(2) = orb_in%vec(2) * r
+  orb_in%vec(4) = orb_in%vec(4) * r
+  orb_in%vec(6) = orb_in%vec(6) * r + (r - 1.0_rp)
+  orb_in%p0c = p0c_set
 endif
 
 err_flag = .false.

@@ -3436,13 +3436,27 @@ void set_CPP_photon_element_test_pattern (CPP_photon_element& C, int ix_patt) {
   // c_side.test_pat[type, 0, NOT]
   set_CPP_pixel_detec_test_pattern(C.pixel, ix_patt);
 
+  // c_side.test_pat[type, 0, NOT]
+  set_CPP_photon_reflect_table_test_pattern(C.reflectivity_table_sigma, ix_patt);
+
+  // c_side.test_pat[type, 0, NOT]
+  set_CPP_photon_reflect_table_test_pattern(C.reflectivity_table_pi, ix_patt);
+
   // c_side.test_pat[type, 1, ALLOC]
   if (ix_patt < 3) 
-    C.reflectivity_table.resize(0);
+    C.init_energy_prob.resize(0);
   else {
-    C.reflectivity_table.resize(3);
-    for (unsigned int i = 0; i < C.reflectivity_table.size(); i++)  {set_CPP_photon_reflect_table_test_pattern(C.reflectivity_table[i], ix_patt+i+1);}
+    C.init_energy_prob.resize(3);
+    for (unsigned int i = 0; i < C.init_energy_prob.size(); i++)  {set_CPP_spline_test_pattern(C.init_energy_prob[i], ix_patt+i+1);}
   }
+
+  // c_side.test_pat[real, 1, ALLOC]
+  if (ix_patt < 3) 
+    C.integrated_init_energy_prob.resize(0);
+  else {
+    C.integrated_init_energy_prob.resize(3);
+    for (unsigned int i = 0; i < C.integrated_init_energy_prob.size(); i++)
+      {int rhs = 101 + i + 10 + offset; C.integrated_init_energy_prob[i] = rhs;}  }
 
 
 }
@@ -6509,28 +6523,37 @@ void set_CPP_bunch_params_test_pattern (CPP_bunch_params& C, int ix_patt) {
   rhs = 12 + offset; C.t = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 13 + offset; C.charge_live = rhs;
+  rhs = 13 + offset; C.sigma_t = rhs;
 
   // c_side.test_pat[real, 0, NOT]
-  rhs = 14 + offset; C.charge_tot = rhs;
+  rhs = 14 + offset; C.charge_live = rhs;
+
+  // c_side.test_pat[real, 0, NOT]
+  rhs = 15 + offset; C.charge_tot = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 15 + offset; C.n_particle_tot = rhs;
+  rhs = 16 + offset; C.n_particle_tot = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 16 + offset; C.n_particle_live = rhs;
+  rhs = 17 + offset; C.n_particle_live = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 17 + offset; C.n_particle_lost_in_ele = rhs;
+  rhs = 18 + offset; C.n_particle_lost_in_ele = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 18 + offset; C.ix_ele = rhs;
+  rhs = 19 + offset; C.n_good_steps = rhs;
 
   // c_side.test_pat[integer, 0, NOT]
-  rhs = 19 + offset; C.location = rhs;
+  rhs = 20 + offset; C.n_bad_steps = rhs;
+
+  // c_side.test_pat[integer, 0, NOT]
+  rhs = 21 + offset; C.ix_ele = rhs;
+
+  // c_side.test_pat[integer, 0, NOT]
+  rhs = 22 + offset; C.location = rhs;
 
   // c_side.test_pat[logical, 0, NOT]
-  rhs = 20 + offset; C.twiss_valid = (rhs % 2 == 0);
+  rhs = 23 + offset; C.twiss_valid = (rhs % 2 == 0);
 
 
 }

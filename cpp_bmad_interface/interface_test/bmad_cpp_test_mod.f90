@@ -5197,14 +5197,29 @@ call set_photon_material_test_pattern (F%material, ix_patt)
 call set_surface_grid_test_pattern (F%grid, ix_patt)
 !! f_side.test_pat[type, 0, NOT]
 call set_pixel_detec_test_pattern (F%pixel, ix_patt)
+!! f_side.test_pat[type, 0, NOT]
+call set_photon_reflect_table_test_pattern (F%reflectivity_table_sigma, ix_patt)
+!! f_side.test_pat[type, 0, NOT]
+call set_photon_reflect_table_test_pattern (F%reflectivity_table_pi, ix_patt)
 !! f_side.test_pat[type, 1, ALLOC]
 
 if (ix_patt < 3) then
-  if (allocated(F%reflectivity_table)) deallocate (F%reflectivity_table)
+  if (allocated(F%init_energy_prob)) deallocate (F%init_energy_prob)
 else
-  if (.not. allocated(F%reflectivity_table)) allocate (F%reflectivity_table(-1:1))
-  do jd1 = 1, size(F%reflectivity_table,1); lb1 = lbound(F%reflectivity_table,1) - 1
-    call set_photon_reflect_table_test_pattern (F%reflectivity_table(jd1+lb1), ix_patt+jd1)
+  if (.not. allocated(F%init_energy_prob)) allocate (F%init_energy_prob(-1:1))
+  do jd1 = 1, size(F%init_energy_prob,1); lb1 = lbound(F%init_energy_prob,1) - 1
+    call set_spline_test_pattern (F%init_energy_prob(jd1+lb1), ix_patt+jd1)
+  enddo
+endif
+!! f_side.test_pat[real, 1, ALLOC]
+
+if (ix_patt < 3) then
+  if (allocated(F%integrated_init_energy_prob)) deallocate (F%integrated_init_energy_prob)
+else
+  if (.not. allocated(F%integrated_init_energy_prob)) allocate (F%integrated_init_energy_prob(-1:1))
+  do jd1 = 1, size(F%integrated_init_energy_prob,1); lb1 = lbound(F%integrated_init_energy_prob,1) - 1
+    rhs = 100 + jd1 + 10 + offset
+    F%integrated_init_energy_prob(jd1+lb1) = rhs
   enddo
 endif
 
@@ -9271,21 +9286,27 @@ rhs = 11 + offset; F%s = rhs
 !! f_side.test_pat[real, 0, NOT]
 rhs = 12 + offset; F%t = rhs
 !! f_side.test_pat[real, 0, NOT]
-rhs = 13 + offset; F%charge_live = rhs
+rhs = 13 + offset; F%sigma_t = rhs
 !! f_side.test_pat[real, 0, NOT]
-rhs = 14 + offset; F%charge_tot = rhs
+rhs = 14 + offset; F%charge_live = rhs
+!! f_side.test_pat[real, 0, NOT]
+rhs = 15 + offset; F%charge_tot = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 15 + offset; F%n_particle_tot = rhs
+rhs = 16 + offset; F%n_particle_tot = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 16 + offset; F%n_particle_live = rhs
+rhs = 17 + offset; F%n_particle_live = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 17 + offset; F%n_particle_lost_in_ele = rhs
+rhs = 18 + offset; F%n_particle_lost_in_ele = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 18 + offset; F%ix_ele = rhs
+rhs = 19 + offset; F%n_good_steps = rhs
 !! f_side.test_pat[integer, 0, NOT]
-rhs = 19 + offset; F%location = rhs
+rhs = 20 + offset; F%n_bad_steps = rhs
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 21 + offset; F%ix_ele = rhs
+!! f_side.test_pat[integer, 0, NOT]
+rhs = 22 + offset; F%location = rhs
 !! f_side.test_pat[logical, 0, NOT]
-rhs = 20 + offset; F%twiss_valid = (modulo(rhs, 2) == 0)
+rhs = 23 + offset; F%twiss_valid = (modulo(rhs, 2) == 0)
 
 end subroutine set_bunch_params_test_pattern
 

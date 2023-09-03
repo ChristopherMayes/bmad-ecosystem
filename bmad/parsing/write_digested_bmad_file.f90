@@ -207,6 +207,7 @@ type (ele_struct), target :: ele
 type (ele_struct), pointer :: ele2
 type (wake_struct), pointer :: wake
 type (photon_element_struct), pointer :: ph
+type (photon_reflect_table_struct), pointer :: prt
 type (surface_grid_pt_struct), pointer :: s_pt
 type (cylindrical_map_struct), pointer :: cl_map
 type (cartesian_map_struct), pointer :: ct_map
@@ -221,7 +222,7 @@ type (converter_direction_out_struct), pointer :: c_dir
 integer ix_wall3d, ix_r, ix_d, ix_m, ix_e, ix_t(6), ix_st(0:3), ie, ib, ix_wall3d_branch
 integer ix_sr_long, ix_sr_trans, ix_lr_mode, ie_max, ix_s, n_var, ix_ptr, im, n1, n2
 integer i, j, k, n, nr, n_gen, n_grid, n_cart, n_cyl, ix_ele, ix_c, ix_branch
-integer n_cus, ix_convert
+integer n_cus, ix_convert, n_energy, n_angle
 
 logical write_wake, mode3
 
@@ -235,7 +236,7 @@ n_cart = 0; n_gen = 0; n_grid = 0; n_cyl = 0; n_cus = 0
 if (associated(ele%mode3))             mode3 = .true.
 if (associated(ele%cartesian_map))     n_cart = size(ele%cartesian_map)
 if (associated(ele%cylindrical_map))   n_cyl = size(ele%cylindrical_map)
-if (associated(ele%gen_grad_map))    n_gen = size(ele%gen_grad_map)
+if (associated(ele%gen_grad_map))      n_gen = size(ele%gen_grad_map)
 if (associated(ele%grid_field))        n_grid = size(ele%grid_field)
 if (associated(ele%custom))            n_cus = size(ele%custom)
 if (associated(ele%converter))         ix_convert = 1
@@ -304,7 +305,7 @@ endif
 ! Now write the element info. 
 ! The last zero is for future use.
 
-write (d_unit) mode3, ix_r, ix_s, ix_wall3d_branch, associated(ele%ac_kick), &
+write (d_unit) mode3, ix_r, ix_s, ix_wall3d_branch, associated(ele%ac_kick), associated(ele%rad_map), &
           ix_convert, ix_d, ix_m, ix_t, ix_st, ix_e, ix_sr_long, ix_sr_trans, &
           ix_lr_mode, ix_wall3d, ix_c, n_cart, n_cyl, n_gen, n_grid, -999, n_cus, ix_convert
 
@@ -517,11 +518,10 @@ if (associated(ele%custom)) then
 endif
 
 if (associated (ele%photon)) then
-
   ph => ele%photon
-  write (d_unit) ph%target, ph%material, ph%curvature, &
-          ph%grid%active, ph%grid%type, ph%grid%dr, ph%grid%r0, allocated(ph%grid%pt), &
-          ph%pixel%dr, ph%pixel%r0, allocated(ph%pixel%pt)
+  write (d_unit) ph%target, ph%material, ph%curvature, ph%grid%active, ph%grid%type, &
+    ph%grid%dr, ph%grid%r0, allocated(ph%grid%pt), ph%pixel%dr, ph%pixel%r0, allocated(ph%pixel%pt), &
+    allocated(ph%reflectivity_table_sigma%angle), allocated(ph%reflectivity_table_pi%angle), allocated(ph%init_energy_prob)
 
   if (allocated(ph%grid%pt)) then
     write (d_unit) lbound(ph%grid%pt), ubound(ph%grid%pt)
@@ -535,6 +535,38 @@ if (associated (ele%photon)) then
   if (allocated(ph%pixel%pt)) then
     write (d_unit) lbound(ph%pixel%pt), ubound(ph%pixel%pt)
     ! Detectors do not have any pixel data that needs saving
+  endif
+
+  if (allocated(ph%reflectivity_table_sigma%angle)) then
+    prt => ph%reflectivity_table_sigma
+    n_energy = size(prt%energy)
+    n_angle  = size(prt%angle)
+    write (d_unit) n_energy, n_angle
+    write (d_unit) prt%angle
+    write (d_unit) prt%energy
+    write (d_unit) prt%bragg_angle
+    do j = 1, n_energy
+      write (d_unit) prt%p_reflect(:,j)
+    enddo
+  endif
+
+  if (allocated(ph%reflectivity_table_pi%angle)) then
+    prt => ph%reflectivity_table_pi
+    n_energy = size(prt%energy)
+    n_angle  = size(prt%angle)
+    write (d_unit) n_energy, n_angle
+    write (d_unit) prt%angle
+    write (d_unit) prt%energy
+    write (d_unit) prt%bragg_angle
+    do j = 1, n_energy
+      write (d_unit) prt%p_reflect(:,j)
+    enddo
+  endif
+
+  if (allocated(ph%init_energy_prob)) then
+    write (d_unit) size(ph%init_energy_prob)
+    write (d_unit) ph%init_energy_prob
+    write (d_unit) ph%integrated_init_energy_prob
   endif
 endif
 
@@ -573,6 +605,11 @@ if (associated(wake) .and. write_wake) then
 endif
 
 call write_this_wall3d (ele%wall3d, (ix_wall3d > 0))
+
+if (associated(ele%rad_map)) then
+  write (d_unit) ele%rad_map%rm0
+  write (d_unit) ele%rad_map%rm1, ele%rad_map%stale
+endif
 
 end subroutine
 

@@ -44,7 +44,7 @@
 !                           Note: MADX translations for non-drift elements can handle non-collimator elements 
 !                           with an aperture so in this case this argument is ignored.
 !   dr12_drift_max    -- real(rp), optional: Max deviation for drifts allowed before a correction matrix element
-!                           is added. Default value is 1d-5.
+!                           is added. Default value is 1d-5. A negative number means use default.
 !   ix_start          -- integer, optional: Starting index of lat%ele(i)
 !                           used for output.
 !   ix_end            -- integer, optional: Ending index of lat%ele(i)
@@ -83,7 +83,7 @@ type (taylor_struct), pointer :: taylor_ptr(:)
 type (all_pointer_struct) a_ptr
 
 real(rp), optional :: dr12_drift_max
-real(rp) field, hk, vk, limit(2), length, a, b, f, e2, beta, r_max, r0
+real(rp) field, hk, vk, limit(2), length, a, b, f, e2, beta, r_max, r0, dr12_max
 real(rp), pointer :: val(:)
 real(rp) knl(0:n_pole_maxx), tilts(0:n_pole_maxx), a_pole(0:n_pole_maxx), b_pole(0:n_pole_maxx)
 real(rp) tilt, x_pitch, y_pitch, etilt, epitch, eyaw, offset(3), w_mat(3,3)
@@ -118,6 +118,8 @@ endif
 
 ptc_exact_model = ptc_com%exact_model
 ptc_com%exact_model = .true.
+dr12_max = real_option(1d-5, dr12_drift_max)
+if (dr12_max < 0) dr12_max = 1d-5
 
 ! Init
 
@@ -449,8 +451,7 @@ do
   ! A drift where the ref orbit is too large needs an added 1st order matrix element 
 
   f = ele%value(l$) / (1 + orbit_out(ele%ix_ele)%vec(6))
-  if (mad_out .and. ele%key == drift$ .and. ele%name(1:7) /= 'DRIFT_Z' .and. &
-                                               abs(ele%mat6(1,2) - f) > real_option(1d-5, dr12_drift_max)) then
+  if (mad_out .and. ele%key == drift$ .and. ele%name(1:7) /= 'DRIFT_Z' .and. abs(ele%mat6(1,2) - f) > dr12_max) then
     if (ptc_private%taylor_order_ptc /= 1) call set_ptc (taylor_order = 1) 
 
     drift_ele = ele
@@ -861,6 +862,10 @@ do   ! ix_ele = 1e1, ie2
         call value_to_line (line_out, 360.0_rp*(ele%value(phi0$)+ele%value(phi0_multipass$))+90.0_rp, 'phase', 'R')
       endif
 
+      if (nint(ele%value(cavity_type$)) == standing_wave$) then
+        line_out = trim(line_out) // ', body_focus_model="SRS", standing_wave = 1'
+      endif
+
       bmad_params(:3) = [character(40):: 'l', 'voltage', 'rf_frequency']
       elegant_params(:3) = [character(40):: 'l', 'volt', 'freq']
 
@@ -1070,7 +1075,7 @@ do   ! ix_ele = 1e1, ie2
 
     write (line_out, '(2a)') trim(ele%name) // ': hkicker, l = ', re_str(val(l$))
 
-    call value_to_line (line_out, val(hkick$), 'kick', 'R')
+    call value_to_line (line_out, val(kick$), 'kick', 'R')
     call value_to_line (line_out, val(tilt$), 'tilt', 'R')
 
   ! kicker MAD
@@ -1089,7 +1094,7 @@ do   ! ix_ele = 1e1, ie2
 
     write (line_out, '(2a)') trim(ele%name) // ': vkicker, l = ', re_str(val(l$))
 
-    call value_to_line (line_out, val(vkick$), 'kick', 'R')
+    call value_to_line (line_out, val(kick$), 'kick', 'R')
     call value_to_line (line_out, val(tilt$), 'tilt', 'R')
 
   ! marker MAD
@@ -1356,7 +1361,7 @@ do   ! ix_ele = 1e1, ie2
       else
         line_out = trim(line_out) // ', apertype = ellipse'
       endif
-      write (line_out, '(6a)') trim(line_out), ', aperture = (', re_str(limit(1)), ', ', re_str(limit(2)), ')'
+      write (line_out, '(6a)') trim(line_out), ', aperture = {', re_str(limit(1)), ', ', re_str(limit(2)), '}'
     endif
   endif
 

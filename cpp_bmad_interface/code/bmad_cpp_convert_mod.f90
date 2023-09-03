@@ -6005,13 +6005,16 @@ implicit none
 interface
   !! f_side.to_c2_f2_sub_arg
   subroutine photon_element_to_c2 (C, z_curvature, z_target, z_material, z_grid, z_pixel, &
-      z_reflectivity_table, n1_reflectivity_table) bind(c)
+      z_reflectivity_table_sigma, z_reflectivity_table_pi, z_init_energy_prob, &
+      n1_init_energy_prob, z_integrated_init_energy_prob, n1_integrated_init_energy_prob) &
+      bind(c)
     import c_bool, c_double, c_ptr, c_char, c_int, c_long, c_double_complex
     !! f_side.to_c2_type :: f_side.to_c2_name
     type(c_ptr), value :: C
-    type(c_ptr), value :: z_curvature, z_target, z_material, z_grid, z_pixel
-    type(c_ptr) :: z_reflectivity_table(*)
-    integer(c_int), value :: n1_reflectivity_table
+    type(c_ptr), value :: z_curvature, z_target, z_material, z_grid, z_pixel, z_reflectivity_table_sigma, z_reflectivity_table_pi
+    type(c_ptr) :: z_init_energy_prob(*)
+    integer(c_int), value :: n1_init_energy_prob, n1_integrated_init_energy_prob
+    real(c_double) :: z_integrated_init_energy_prob(*)
   end subroutine
 end interface
 
@@ -6020,26 +6023,35 @@ type(c_ptr), value :: C
 type(photon_element_struct), pointer :: F
 integer jd, jd1, jd2, jd3, lb1, lb2, lb3
 !! f_side.to_c_var
-type(c_ptr), allocatable :: z_reflectivity_table(:)
-integer(c_int) :: n1_reflectivity_table
+type(c_ptr), allocatable :: z_init_energy_prob(:)
+integer(c_int) :: n1_init_energy_prob
+integer(c_int) :: n1_integrated_init_energy_prob
 
 !
 
 call c_f_pointer (Fp, F)
 
 !! f_side.to_c_trans[type, 1, ALLOC]
- n1_reflectivity_table = 0
-if (allocated(F%reflectivity_table)) then
-  n1_reflectivity_table = size(F%reflectivity_table); lb1 = lbound(F%reflectivity_table, 1) - 1
-  allocate (z_reflectivity_table(n1_reflectivity_table))
-  do jd1 = 1, n1_reflectivity_table
-    z_reflectivity_table(jd1) = c_loc(F%reflectivity_table(jd1+lb1))
+ n1_init_energy_prob = 0
+if (allocated(F%init_energy_prob)) then
+  n1_init_energy_prob = size(F%init_energy_prob); lb1 = lbound(F%init_energy_prob, 1) - 1
+  allocate (z_init_energy_prob(n1_init_energy_prob))
+  do jd1 = 1, n1_init_energy_prob
+    z_init_energy_prob(jd1) = c_loc(F%init_energy_prob(jd1+lb1))
   enddo
+endif
+!! f_side.to_c_trans[real, 1, ALLOC]
+n1_integrated_init_energy_prob = 0
+if (allocated(F%integrated_init_energy_prob)) then
+  n1_integrated_init_energy_prob = size(F%integrated_init_energy_prob, 1)
 endif
 
 !! f_side.to_c2_call
 call photon_element_to_c2 (C, c_loc(F%curvature), c_loc(F%target), c_loc(F%material), &
-    c_loc(F%grid), c_loc(F%pixel), z_reflectivity_table, n1_reflectivity_table)
+    c_loc(F%grid), c_loc(F%pixel), c_loc(F%reflectivity_table_sigma), &
+    c_loc(F%reflectivity_table_pi), z_init_energy_prob, n1_init_energy_prob, &
+    fvec2vec(F%integrated_init_energy_prob, n1_integrated_init_energy_prob), &
+    n1_integrated_init_energy_prob)
 
 end subroutine photon_element_to_c
 
@@ -6060,7 +6072,8 @@ end subroutine photon_element_to_c
 
 !! f_side.to_c2_f2_sub_arg
 subroutine photon_element_to_f2 (Fp, z_curvature, z_target, z_material, z_grid, z_pixel, &
-    z_reflectivity_table, n1_reflectivity_table) bind(c)
+    z_reflectivity_table_sigma, z_reflectivity_table_pi, z_init_energy_prob, &
+    n1_init_energy_prob, z_integrated_init_energy_prob, n1_integrated_init_energy_prob) bind(c)
 
 
 implicit none
@@ -6069,9 +6082,11 @@ type(c_ptr), value :: Fp
 type(photon_element_struct), pointer :: F
 integer jd, jd1, jd2, jd3, lb1, lb2, lb3
 !! f_side.to_f2_var && f_side.to_f2_type :: f_side.to_f2_name
-type(c_ptr), value :: z_curvature, z_target, z_material, z_grid, z_pixel
-type(c_ptr) :: z_reflectivity_table(*)
-integer(c_int), value :: n1_reflectivity_table
+type(c_ptr), value :: z_curvature, z_target, z_material, z_grid, z_pixel, z_reflectivity_table_sigma, z_reflectivity_table_pi
+type(c_ptr), value :: z_integrated_init_energy_prob
+type(c_ptr) :: z_init_energy_prob(*)
+integer(c_int), value :: n1_init_energy_prob, n1_integrated_init_energy_prob
+real(c_double), pointer :: f_integrated_init_energy_prob(:)
 
 call c_f_pointer (Fp, F)
 
@@ -6085,18 +6100,35 @@ call photon_material_to_f(z_material, c_loc(F%material))
 call surface_grid_to_f(z_grid, c_loc(F%grid))
 !! f_side.to_f2_trans[type, 0, NOT]
 call pixel_detec_to_f(z_pixel, c_loc(F%pixel))
+!! f_side.to_f2_trans[type, 0, NOT]
+call photon_reflect_table_to_f(z_reflectivity_table_sigma, c_loc(F%reflectivity_table_sigma))
+!! f_side.to_f2_trans[type, 0, NOT]
+call photon_reflect_table_to_f(z_reflectivity_table_pi, c_loc(F%reflectivity_table_pi))
 !! f_side.to_f2_trans[type, 1, ALLOC]
-if (n1_reflectivity_table == 0) then
-  if (allocated(F%reflectivity_table)) deallocate(F%reflectivity_table)
+if (n1_init_energy_prob == 0) then
+  if (allocated(F%init_energy_prob)) deallocate(F%init_energy_prob)
 else
-  if (allocated(F%reflectivity_table)) then
-    if (n1_reflectivity_table == 0 .or. any(shape(F%reflectivity_table) /= [n1_reflectivity_table])) deallocate(F%reflectivity_table)
-    if (any(lbound(F%reflectivity_table) /= 1)) deallocate(F%reflectivity_table)
+  if (allocated(F%init_energy_prob)) then
+    if (n1_init_energy_prob == 0 .or. any(shape(F%init_energy_prob) /= [n1_init_energy_prob])) deallocate(F%init_energy_prob)
+    if (any(lbound(F%init_energy_prob) /= 1)) deallocate(F%init_energy_prob)
   endif
-  if (.not. allocated(F%reflectivity_table)) allocate(F%reflectivity_table(1:n1_reflectivity_table+1-1))
-  do jd1 = 1, n1_reflectivity_table
-    call photon_reflect_table_to_f (z_reflectivity_table(jd1), c_loc(F%reflectivity_table(jd1+1-1)))
+  if (.not. allocated(F%init_energy_prob)) allocate(F%init_energy_prob(1:n1_init_energy_prob+1-1))
+  do jd1 = 1, n1_init_energy_prob
+    call spline_to_f (z_init_energy_prob(jd1), c_loc(F%init_energy_prob(jd1+1-1)))
   enddo
+endif
+
+!! f_side.to_f2_trans[real, 1, ALLOC]
+if (allocated(F%integrated_init_energy_prob)) then
+  if (n1_integrated_init_energy_prob == 0 .or. any(shape(F%integrated_init_energy_prob) /= [n1_integrated_init_energy_prob])) deallocate(F%integrated_init_energy_prob)
+  if (any(lbound(F%integrated_init_energy_prob) /= 1)) deallocate(F%integrated_init_energy_prob)
+endif
+if (n1_integrated_init_energy_prob /= 0) then
+  call c_f_pointer (z_integrated_init_energy_prob, f_integrated_init_energy_prob, [n1_integrated_init_energy_prob])
+  if (.not. allocated(F%integrated_init_energy_prob)) allocate(F%integrated_init_energy_prob(n1_integrated_init_energy_prob))
+  F%integrated_init_energy_prob = f_integrated_init_energy_prob(1:n1_integrated_init_energy_prob)
+else
+  if (allocated(F%integrated_init_energy_prob)) deallocate(F%integrated_init_energy_prob)
 endif
 
 
@@ -10637,14 +10669,16 @@ implicit none
 interface
   !! f_side.to_c2_f2_sub_arg
   subroutine bunch_params_to_c2 (C, z_centroid, z_x, z_y, z_z, z_a, z_b, z_c, z_sigma, &
-      z_rel_max, z_rel_min, z_s, z_t, z_charge_live, z_charge_tot, z_n_particle_tot, &
-      z_n_particle_live, z_n_particle_lost_in_ele, z_ix_ele, z_location, z_twiss_valid) bind(c)
+      z_rel_max, z_rel_min, z_s, z_t, z_sigma_t, z_charge_live, z_charge_tot, z_n_particle_tot, &
+      z_n_particle_live, z_n_particle_lost_in_ele, z_n_good_steps, z_n_bad_steps, z_ix_ele, &
+      z_location, z_twiss_valid) bind(c)
     import c_bool, c_double, c_ptr, c_char, c_int, c_long, c_double_complex
     !! f_side.to_c2_type :: f_side.to_c2_name
     type(c_ptr), value :: C
     type(c_ptr), value :: z_centroid, z_x, z_y, z_z, z_a, z_b, z_c
-    real(c_double) :: z_sigma(*), z_rel_max(*), z_rel_min(*), z_s, z_t, z_charge_live, z_charge_tot
-    integer(c_int) :: z_n_particle_tot, z_n_particle_live, z_n_particle_lost_in_ele, z_ix_ele, z_location
+    real(c_double) :: z_sigma(*), z_rel_max(*), z_rel_min(*), z_s, z_t, z_sigma_t, z_charge_live
+    real(c_double) :: z_charge_tot
+    integer(c_int) :: z_n_particle_tot, z_n_particle_live, z_n_particle_lost_in_ele, z_n_good_steps, z_n_bad_steps, z_ix_ele, z_location
     logical(c_bool) :: z_twiss_valid
   end subroutine
 end interface
@@ -10662,9 +10696,10 @@ call c_f_pointer (Fp, F)
 
 !! f_side.to_c2_call
 call bunch_params_to_c2 (C, c_loc(F%centroid), c_loc(F%x), c_loc(F%y), c_loc(F%z), c_loc(F%a), &
-    c_loc(F%b), c_loc(F%c), mat2vec(F%sigma, 6*6), fvec2vec(F%rel_max, 6), fvec2vec(F%rel_min, &
-    6), F%s, F%t, F%charge_live, F%charge_tot, F%n_particle_tot, F%n_particle_live, &
-    F%n_particle_lost_in_ele, F%ix_ele, F%location, c_logic(F%twiss_valid))
+    c_loc(F%b), c_loc(F%c), mat2vec(F%sigma, 6*6), fvec2vec(F%rel_max, 7), fvec2vec(F%rel_min, &
+    7), F%s, F%t, F%sigma_t, F%charge_live, F%charge_tot, F%n_particle_tot, F%n_particle_live, &
+    F%n_particle_lost_in_ele, F%n_good_steps, F%n_bad_steps, F%ix_ele, F%location, &
+    c_logic(F%twiss_valid))
 
 end subroutine bunch_params_to_c
 
@@ -10685,8 +10720,9 @@ end subroutine bunch_params_to_c
 
 !! f_side.to_c2_f2_sub_arg
 subroutine bunch_params_to_f2 (Fp, z_centroid, z_x, z_y, z_z, z_a, z_b, z_c, z_sigma, &
-    z_rel_max, z_rel_min, z_s, z_t, z_charge_live, z_charge_tot, z_n_particle_tot, &
-    z_n_particle_live, z_n_particle_lost_in_ele, z_ix_ele, z_location, z_twiss_valid) bind(c)
+    z_rel_max, z_rel_min, z_s, z_t, z_sigma_t, z_charge_live, z_charge_tot, z_n_particle_tot, &
+    z_n_particle_live, z_n_particle_lost_in_ele, z_n_good_steps, z_n_bad_steps, z_ix_ele, &
+    z_location, z_twiss_valid) bind(c)
 
 
 implicit none
@@ -10696,8 +10732,9 @@ type(bunch_params_struct), pointer :: F
 integer jd, jd1, jd2, jd3, lb1, lb2, lb3
 !! f_side.to_f2_var && f_side.to_f2_type :: f_side.to_f2_name
 type(c_ptr), value :: z_centroid, z_x, z_y, z_z, z_a, z_b, z_c
-real(c_double) :: z_sigma(*), z_rel_max(*), z_rel_min(*), z_s, z_t, z_charge_live, z_charge_tot
-integer(c_int) :: z_n_particle_tot, z_n_particle_live, z_n_particle_lost_in_ele, z_ix_ele, z_location
+real(c_double) :: z_sigma(*), z_rel_max(*), z_rel_min(*), z_s, z_t, z_sigma_t, z_charge_live
+real(c_double) :: z_charge_tot
+integer(c_int) :: z_n_particle_tot, z_n_particle_live, z_n_particle_lost_in_ele, z_n_good_steps, z_n_bad_steps, z_ix_ele, z_location
 logical(c_bool) :: z_twiss_valid
 
 call c_f_pointer (Fp, F)
@@ -10719,13 +10756,15 @@ call twiss_to_f(z_c, c_loc(F%c))
 !! f_side.to_f2_trans[real, 2, NOT]
 call vec2mat(z_sigma, F%sigma)
 !! f_side.to_f2_trans[real, 1, NOT]
-F%rel_max = z_rel_max(1:6)
+F%rel_max = z_rel_max(1:7)
 !! f_side.to_f2_trans[real, 1, NOT]
-F%rel_min = z_rel_min(1:6)
+F%rel_min = z_rel_min(1:7)
 !! f_side.to_f2_trans[real, 0, NOT]
 F%s = z_s
 !! f_side.to_f2_trans[real, 0, NOT]
 F%t = z_t
+!! f_side.to_f2_trans[real, 0, NOT]
+F%sigma_t = z_sigma_t
 !! f_side.to_f2_trans[real, 0, NOT]
 F%charge_live = z_charge_live
 !! f_side.to_f2_trans[real, 0, NOT]
@@ -10736,6 +10775,10 @@ F%n_particle_tot = z_n_particle_tot
 F%n_particle_live = z_n_particle_live
 !! f_side.to_f2_trans[integer, 0, NOT]
 F%n_particle_lost_in_ele = z_n_particle_lost_in_ele
+!! f_side.to_f2_trans[integer, 0, NOT]
+F%n_good_steps = z_n_good_steps
+!! f_side.to_f2_trans[integer, 0, NOT]
+F%n_bad_steps = z_n_bad_steps
 !! f_side.to_f2_trans[integer, 0, NOT]
 F%ix_ele = z_ix_ele
 !! f_side.to_f2_trans[integer, 0, NOT]

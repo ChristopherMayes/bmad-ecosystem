@@ -24,7 +24,7 @@ type ele_attribute_struct
   integer :: kind = unknown$          ! Is_switch$, is_real$, etc. See attribute_type routine.
   character(16) :: units = ''         ! EG: 'T*m'.
   integer :: ix_attrib = -1           ! Attribute index. Frequently will be where in the ele%value(:) array the attribute is.
-  real(rp) :: value = real_garbage$   ! Attribute value.
+  real(rp) :: value = real_garbage$   ! Used by type_ele.
 end type
 
 type (ele_attribute_struct), private, save :: attrib_array(n_key$, num_ele_attrib_extended$)
@@ -148,30 +148,30 @@ end interface
 !+
 ! Function attribute_name (...) result (attrib_name)
 !
-! Function attribute_name1 (key, ix_att) result (attrib_name)
-!
 ! Function to return the name of an attribute for a particular type of 
 ! Bmad element. 
 !
 ! This routine is an overloaded name for:
-!   attribute_name1 (ele, ix_att) result (attrib_name)
-!   attribute_name2 (key, ix_att) result (attrib_name)
+!   attribute_name1 (ele, ix_att, show_private) result (attrib_name)
+!   attribute_name2 (key, ix_att, show_private) result (attrib_name)
 !
 !
 ! Note: attribute_name (key, ix_att) is not able to handle overlay/group control variables.
 ! Use attributge_name (ele, ix_att) is this is needed.
 !
 ! Input:
-!   ele    -- Ele_struct: 
-!     %key    -- Integer: Key name of element type (e.g. SBEND$, etc.)
-!   key    -- Integer: Key name of element type (e.g. sbend$, etc.)
-!   ix_att -- Integer: Index of attribute (e.g. k1$)
+!   ele             -- ele_struct: 
+!     %key             -- Integer: Key name of element type (e.g. SBEND$, etc.)
+!   key             -- integer: Key name of element type (e.g. sbend$, etc.)
+!   ix_att          -- integer: Index of attribute (e.g. k1$)
+!   show_private    -- logical, optional: If False (default) return null_name$ for private attributes.
 !
 ! Output:
-!   attrib_name -- Character(40): Name of attribute. First character is a "!" if there is a problem.
-!      = "!BAD ELE KEY"                 %key is invalid
-!      = "!BAD INDEX"                   ix_att is invalid (out of range).
-!      = "!NULL" (null_name$)           ix_att does not correspond to an attribute or is private.
+!   attrib_name     -- Character(40): Name of attribute. First character is a "!" if there is a problem.
+!                       Will always be upper case (even with private attributes).
+!                         = "!BAD ELE KEY"           %key is invalid
+!                         = "!BAD INDEX"             ix_att is invalid (out of range).
+!                         = "!NULL" (null_name$)     ix_att does not correspond to an attribute or is private.
 !
 ! Example:
 !   ele%key = sbend$
@@ -357,21 +357,22 @@ end function attribute_index2
 !--------------------------------------------------------------------------
 !--------------------------------------------------------------------------
 !+
-! Function attribute_name1 (key, ix_att) result (attrib_name)
+! Function attribute_name1 (key, ix_att, show_private) result (attrib_name)
 !
 ! Overloaded by attribute_name. See attribute_name for more details.
 !-
 
-function attribute_name1 (key, ix_att) result (attrib_name)
+function attribute_name1 (key, ix_att, show_private) result (attrib_name)
 
 type (ele_struct) ele
 integer i, key, ix_att, ix
 character(40) attrib_name
+logical, optional :: show_private
 
 !
 
 ele%key = key
-attrib_name = attribute_name2(ele, ix_att)
+attrib_name = attribute_name2(ele, ix_att, show_private)
 
 end function attribute_name1
 
@@ -379,17 +380,18 @@ end function attribute_name1
 !--------------------------------------------------------------------------
 !--------------------------------------------------------------------------
 !+
-! Function attribute_name2 (ele, ix_att) result (attrib_name)
+! Function attribute_name2 (ele, ix_att, show_private) result (attrib_name)
 !
 ! Overloaded by attribute_name. See attribute_name for more details.
 !-
 
-function attribute_name2 (ele, ix_att) result (attrib_name)
+function attribute_name2 (ele, ix_att, show_private) result (attrib_name)
 
 type (ele_struct) ele
 integer i, key, ix_att, ix
 character(40) attrib_name
 character(10) str
+logical, optional :: show_private
 
 !
 
@@ -429,10 +431,10 @@ elseif (ix_att <= 0 .or. ix_att > num_ele_attrib_extended$) then
   attrib_name = '!BAD INDEX'
 
 else
-  if (attrib_array(key, ix_att)%state == private$) then
+  if (attrib_array(key, ix_att)%state == private$ .and. .not. logic_option(.false., show_private)) then
     attrib_name = null_name$
   else
-    attrib_name = attrib_array(key, ix_att)%name
+    attrib_name = upcase(attrib_array(key, ix_att)%name)
   endif
 endif
 
@@ -621,10 +623,11 @@ do i = 1, n_key$
   call init_attribute_name1 (i, aperture_type$,          'APERTURE_TYPE')
   call init_attribute_name1 (i, offset_moves_aperture$,  'OFFSET_MOVES_APERTURE')
 
-  if (i == hybrid$)   cycle
-  if (i == match$) cycle
+  if (i == hybrid$)        cycle
+  if (i == match$)         cycle
   if (i == photon_fork$)   cycle
   if (i == fork$)          cycle
+  if (i == gkicker$)       cycle
 
   call init_attribute_name1 (i, x_offset$,      'X_OFFSET')
   call init_attribute_name1 (i, y_offset$,      'Y_OFFSET')
@@ -744,6 +747,7 @@ do i = 1, n_key$
     call init_attribute_name1 (i, y_dispersion_err$,    'Y_DISPERSION_ERR')
     call init_attribute_name1 (i, x_dispersion_calib$,  'X_DISPERSION_CALIB')
     call init_attribute_name1 (i, y_dispersion_calib$,  'Y_DISPERSION_CALIB')
+    call init_attribute_name1 (i, split_id$,            'split_id', private$)
   end select
 enddo
 
@@ -884,6 +888,9 @@ call init_attribute_name1 (beginning_ele$, cmat_12$,                     'CMAT_1
 call init_attribute_name1 (beginning_ele$, cmat_21$,                     'CMAT_21')
 call init_attribute_name1 (beginning_ele$, cmat_22$,                     'CMAT_22')
 call init_attribute_name1 (beginning_ele$, mode_flip$,                   'MODE_FLIP')
+call init_attribute_name1 (beginning_ele$, spin_dn_dpz_x$,               'SPIN_DN_DPZ_X')
+call init_attribute_name1 (beginning_ele$, spin_dn_dpz_y$,               'SPIN_DN_DPZ_Y')
+call init_attribute_name1 (beginning_ele$, spin_dn_dpz_z$,               'SPIN_DN_DPZ_Z')
 call init_attribute_name1 (beginning_ele$, s_long$,                      'S')
 call init_attribute_name1 (beginning_ele$, ref_time$,                    'REF_TIME')
 call init_attribute_name1 (beginning_ele$, inherit_from_fork$,           'INHERIT_FROM_FORK')
@@ -1018,7 +1025,7 @@ call init_attribute_name1 (mask$, ref_wavelength$,                      'REF_WAV
 call init_attribute_name1 (drift$, spin_fringe_on$,                 'spin_fringe_on', private$)
 call init_attribute_name1 (drift$, fringe_type$,                    'fringe_type', private$)
 call init_attribute_name1 (drift$, fringe_at$,                      'fringe_at', private$)
-call init_attribute_name1 (drift$, drift_id$,                       'drift_id', private$)
+call init_attribute_name1 (drift$, split_id$,                       'split_id', private$)
 
 call init_attribute_name1 (e_gun$, dt_max$,                         'DT_MAX')
 call init_attribute_name1 (e_gun$, emit_fraction$,                  'EMIT_FRACTION')
@@ -1238,6 +1245,13 @@ call init_attribute_name1 (match$, mode_flip1$,                     'MODE_FLIP1'
 
 attrib_array(instrument$, :)                         = attrib_array(monitor$, :)
 attrib_array(pipe$, :)                               = attrib_array(monitor$, :)
+
+call init_attribute_name1 (gkicker$, x_kick$,                       'X_KICK')
+call init_attribute_name1 (gkicker$, px_kick$,                      'PX_KICK')
+call init_attribute_name1 (gkicker$, y_kick$,                       'Y_KICK')
+call init_attribute_name1 (gkicker$, py_kick$,                      'PY_KICK')
+call init_attribute_name1 (gkicker$, z_kick$,                       'Z_KICK')
+call init_attribute_name1 (gkicker$, pz_kick$,                      'PZ_KICK')
 
 call init_attribute_name1 (hkicker$, kick$,                         'KICK', quasi_free$)
 call init_attribute_name1 (hkicker$, field_master$,                 'FIELD_MASTER')
@@ -1629,6 +1643,7 @@ call init_attribute_name1 (photon_init$, transverse_sigma_cut$,      'TRANSVERSE
 call init_attribute_name1 (photon_init$, ds_slice$,                  'DS_SLICE')
 call init_attribute_name1 (photon_init$, physical_source$,           'PHYSICAL_SOURCE')
 call init_attribute_name1 (photon_init$, ref_wavelength$,            'REF_WAVELENGTH', dependent$)
+call init_attribute_name1 (photon_init$, energy_probability_curve$,  'ENERGY_PROBABILITY_CURVE')
 
 do i = 1, n_key$
   if (attrib_array(i, l$)%name /= 'L') cycle
@@ -1870,7 +1885,7 @@ case ('TYPE', 'ALIAS', 'DESCRIP', 'SR_WAKE_FILE', 'LR_WAKE_FILE', 'LATTICE', 'PH
   attrib_type = is_string$
 
 case ('CARTESIAN_MAP', 'CYLINDRICAL_MAP', 'FIELD_OVERLAPS', 'GEN_GRAD_MAP', 'GRID_FIELD', 'REF_ORBIT', &
-      'SUPERIMPOSE', 'H_MISALIGN', 'DISPLACEMENT', 'SEGMENTED', 'PIXEL', 'TERM', &
+      'SUPERIMPOSE', 'H_MISALIGN', 'DISPLACEMENT', 'SEGMENTED', 'PIXEL', 'TERM', 'ENERGY_PROBABILITY_CURVE', &
       'VAR', 'WALL', 'AMP_VS_TIME', 'FREQUENCIES', 'X_KNOT', 'SR_WAKE', 'LR_WAKE', 'CURVATURE')
   attrib_type = is_struct$
 
@@ -1926,7 +1941,7 @@ case ('ALPHA_A', 'ALPHA_A0', 'ALPHA_A1', 'ALPHA_ANGLE', 'ALPHA_B', 'ALPHA_B0', '
       'POLARITY', 'PX', 'PX0', 'PX1', 'PX_REF', 'PY', 'PY0', 'PY1', 'PY_REF', 'PZ', 'PZ0', 'PZ1', 'PZ_REF', &
       'RAN_SEED', 'REF_CAP_GAMMA', 'REL_TOL_ADAPTIVE_TRACKING', 'REL_TOL_TRACKING', 'SIG_PZ', &
       'SPIN_X', 'SPIN_Y', 'SPIN_Z', 'TRANSVERSE_SIGMA_CUT', 'VKICK', 'LONGITUDINAL_MODE', 'MOSAIC_DIFFRACTION_NUM', &
-      'AUTOSCALE_AMP_REL_TOL', &
+      'AUTOSCALE_AMP_REL_TOL', 'PX_KICK', 'PY_KICK', 'PZ_KICK', 'SPIN_DN_DPZ_X', 'SPIN_DN_DPZ_Y', 'SPIN_DN_DPZ_Z', &
       'VAL1', 'VAL2', 'VAL3', 'VAL4', 'VAL5', 'VAL6', 'VAL7', 'VAL8', 'VAL9', 'VAL10', 'VAL11', 'VAL12', &
       'C11_MAT0', 'C11_MAT1', 'C22_MAT0', 'C22_MAT1', 'E2_PROBABILITY', 'CRAB_X1', 'PZ_APERTURE_CENTER', &
       'PX_APERTURE_WIDTH2', 'PX_APERTURE_CENTER', 'PY_APERTURE_WIDTH2', 'PY_APERTURE_CENTER', 'PZ_APERTURE_WIDTH2')
@@ -1939,7 +1954,7 @@ case ('ABS_TOL_ADAPTIVE_TRACKING', 'ABS_TOL_TRACKING', 'ACCORDION_EDGE', 'APERTU
       'BETA_A', 'BETA_A0', 'BETA_A1', 'BETA_B', 'BETA_B0', 'BETA_B1', 'BETA_A_STRONG', 'BETA_B_STRONG', &
       'D1_THICKNESS', 'D2_THICKNESS', 'DEFAULT_DS_STEP', 'OSC_AMPLITUDE', 'R_SOLENOID', &
       'DS_SLICE', 'DS_STEP', 'DX_ORIGIN', 'DY_ORIGIN', 'DZ_ORIGIN', 'D_SPACING', 'END_EDGE', 'EPS_STEP_SCALE', &
-      'ETA_X_OUT', 'ETA_Y_OUT', 'CSR_DS_STEP', &
+      'ETA_X_OUT', 'ETA_Y_OUT', 'CSR_DS_STEP', 'X_KICK', 'Y_KICK', 'Z_KICK', &
       'ETA_X', 'ETA_X0', 'ETA_X1', 'ETA_Y', 'ETA_Y0', 'ETA_Y1', 'ETA_Z', 'FATAL_DS_ADAPTIVE_TRACKING', &
       'FB1', 'FB2', 'FQ1', 'FQ2', 'HGAP', 'HGAPX', 'H_DISPLACE', 'INIT_DS_ADAPTIVE_TRACKING', 'L', &
       'LORD_PAD1', 'LORD_PAD2', 'L_CHORD', 'L_ACTIVE', 'L_SOFT_EDGE', 'L_PERIOD', 'L_SAGITTA', 'MAX_APERTURE_LIMIT', &

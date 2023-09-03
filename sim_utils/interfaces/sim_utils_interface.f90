@@ -332,6 +332,22 @@ function is_alphabetic (string, valid_chars) result (is_alpha)
   logical is_alpha
 end function
 
+function is_decreasing_sequence (array, strict) result (is_decreasing)
+  import
+  implicit none
+  real(rp) array(:)
+  logical, optional :: strict
+  logical is_decreasing
+end function
+
+function is_increasing_sequence (array, strict) result (is_increasing)
+  import
+  implicit none
+  real(rp) array(:)
+  logical, optional :: strict
+  logical is_increasing
+end function
+
 function is_integer (string, int) result (valid)
   implicit none
   character(*) string
@@ -382,14 +398,21 @@ subroutine linear_fit (x, y, n_data, a, b, sig_a, sig_b)
   real(rp) sig_b
 end subroutine
 
-subroutine location_decode(string, array, ix_min, num, names, exact_case, print_err)
+subroutine linear_fit_2d (x, y, z, coef)
+  import
+  implicit none
+  real(rp) x(:), y(:), z(:)
+  real(rp) coef(3)
+end subroutine
+
+subroutine location_decode(string, array, ix_min, num, names, exact_case, can_abbreviate, print_err)
   implicit none
   integer num
   integer ix_min
   character(*) string
   logical array(ix_min:)
   character(*), optional :: names(ix_min:)
-  logical, optional :: exact_case, print_err
+  logical, optional :: exact_case, can_abbreviate, print_err
 end subroutine
 
 function logic_str(logic) result (str)

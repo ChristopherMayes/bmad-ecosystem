@@ -18,10 +18,12 @@ private next_in_branch
 ! IF YOU CHANGE THE LAT_STRUCT OR ANY ASSOCIATED STRUCTURES YOU MUST INCREASE THE VERSION NUMBER !!!
 ! THIS IS USED BY BMAD_PARSER TO MAKE SURE DIGESTED FILES ARE OK.
 
-integer, parameter :: bmad_inc_version$ = 299
+integer, parameter :: bmad_inc_version$ = 302
 
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+integer, parameter :: none$ = 1
 
 !   hard_ele     -- ele_struct, pointer: Points to element with the hard edge.
 !                     Will be nullified if there is no hard edge.
@@ -112,11 +114,13 @@ character(16), parameter :: field_calc_name(0:8) = &
 
 ! Distribution
 
-integer, parameter :: uniform$ = 1, gaussian$ = 2, spherical$ = 3
-character(12), parameter :: distribution_name(0:3) = ['GARBAGE! ', 'Uniform  ', 'Gaussian ', 'Spherical']
+integer, parameter :: uniform$ = 1, gaussian$ = 2, spherical$ = 3, curve$ = 4
+character(12), parameter :: distribution_name(0:4) = [character(12):: 'GARBAGE!', &
+                                                       'Uniform', 'Gaussian', 'Spherical', 'Curve']
 
 ! Control element logicals.
-! Note: super_slave$ and multipass_slave$ are also used as possible settings of the why_not_free argument in attribute_free(...) 
+! Note: super_slave$ and multipass_slave$ are also used as possible settings of the 
+! why_not_free argument in attribute_free(...).
 
 integer, parameter :: ix_slice_slave$ = -2 ! Index to set slice_slave%ix_ele to.
 
@@ -184,18 +188,20 @@ character(12), parameter :: multipass_ref_energy_name(0:1) = [character(12):: 'U
 
 !-------------------------------------------------------------------------
 ! Structure for holding the photon reflection probability tables.
+! Used for both smooth surface reflections and custom crystal reflections.
 
 type interval1_coef_struct
   real(rp) c0, c1, n_exp
 end type
 
 type photon_reflect_table_struct
-  real(rp), allocatable :: angle(:)              ! Vector of angle values for %p_reflect
-  real(rp), allocatable :: energy(:)             ! Vector of energy values for %p_reflect
+  real(rp), allocatable :: angle(:)               ! Vector of angle values for %p_reflect
+  real(rp), allocatable :: energy(:)              ! Vector of energy values for %p_reflect
   type (interval1_coef_struct), allocatable :: int1(:)
-  real(rp), allocatable :: p_reflect(:,:)        ! (angle, ev) Logarithm of smooth surface reflection probability
-  real(rp) :: max_energy = -1                    ! maximum energy for this table
-  real(rp), allocatable :: p_reflect_scratch(:)  ! Scratch space
+  real(rp), allocatable :: p_reflect(:,:)         ! (angle, ev) probability. Log used for smooth surface reflection
+  real(rp) :: max_energy = -1                     ! maximum energy for this table
+  real(rp), allocatable :: p_reflect_scratch(:)   ! Scratch space
+  real(rp), allocatable :: bragg_angle(:)         ! Bragg angle at energy values.
 end type
 
 ! Each photon_reflect_reflect_table_array(:) represents a different surface type.
@@ -224,7 +230,6 @@ integer, parameter :: ascii$ = 1, binary$ = 2, hdf5$ = 3, one_file$ = 4
 integer, parameter :: num_ele_attrib$ = 75
 
 integer, parameter :: off$ = 1, on$ = 2
-integer, parameter :: none$ = 1
 
 integer, parameter :: save_state$ = 3, restore_state$ = 4, off_and_save$ = 5
 
@@ -1006,6 +1011,9 @@ type photon_material_struct
   real(rp) :: l_ref(3) = 0   ! Crystal reference orbit displacement vector in element coords.
 end type
 
+integer, parameter :: polarized$ = 1, unpolarized$ = 2
+character(8), parameter :: polarization_name(3) = [character(8):: 'SIGMA', 'PI', 'BOTH']
+
 ! photon_element_struct is an ele_struct component holding photon parameters
 
 type photon_element_struct
@@ -1014,7 +1022,11 @@ type photon_element_struct
   type (photon_material_struct) :: material = photon_material_struct()
   type (surface_grid_struct) :: grid = surface_grid_struct(.true., not_set$, 0, 0, null())
   type (pixel_detec_struct) :: pixel = pixel_detec_struct([0.0_rp, 0.0_rp], [0.0_rp, 0.0_rp], 0, 0, 0, null())
-  type (photon_reflect_table_struct), allocatable :: reflectivity_table(:)
+  integer :: reflectivity_table_type = not_set$
+  type (photon_reflect_table_struct) reflectivity_table_sigma  ! If polarization is ignored use sigma table.
+  type (photon_reflect_table_struct) reflectivity_table_pi
+  type (spline_struct), allocatable :: init_energy_prob(:)  ! Initial energy probability density
+  real(rp), allocatable :: integrated_init_energy_prob(:)
 end type
 
 !------------------------------------------------------------------------------
@@ -1064,7 +1076,6 @@ end type
 
 type beam_init_struct
   character(200) :: position_file = ''       ! File with particle positions.
-  character(200) :: file_name = ''           ! Old name for position file.
   character(16) :: distribution_type(3) = '' ! distribution type (in x-px, y-py, and z-pz planes)
                                              ! "ELLIPSE", "KV", "GRID", "FILE", "RAN_GAUSS" or "" = "RAN_GAUSS" 
   real(rp) :: spin(3) = 0                    ! Spin (x, y, z)
@@ -1093,6 +1104,7 @@ type beam_init_struct
   real(rp) :: sig_pz = 0                     ! pz sigma
   real(rp) :: bunch_charge = 0               ! charge (Coul) in a bunch.
   integer :: n_bunch = 0                     ! Number of bunches.
+  integer :: ix_turn = 0                     ! Turn index used to adjust particles time if needed.
   character(16) :: species = ""              ! "positron", etc. "" => use referece particle.
   logical :: init_spin     = .true.          ! Not used. Deprecated.
   logical :: full_6D_coupling_calc = .false. ! Use V from 6x6 1-turn mat to match distribution?  
@@ -1102,6 +1114,7 @@ type beam_init_struct
   logical :: use_z_as_t   = .false.          ! Only used if  use_t_coords = .true.
                                              !   If true,  z describes the t distribution 
                                              !   If false, z describes the s distribution
+  character(200) :: file_name = ''           ! OLD NAME FOR POSITION_FILE. DO NOT USE.
   real(rp) :: sig_e_jitter     = 0.0         ! DEPRECATED. DO NOT USE. Replaced by sig_pz_jitter.
   real(rp) :: sig_e = 0                      ! DEPRECATED. DO NOT USE. Replaced by sig_pz.
   logical :: use_particle_start_for_center = .false. ! DEPRECATED. DO NOT USE. Replaced by use_particle_start.
@@ -1121,15 +1134,18 @@ type bunch_params_struct
   type (twiss_struct) :: x = twiss_struct(), y = twiss_struct(), z = twiss_struct() ! Projected Twiss parameters
   type (twiss_struct) :: a = twiss_struct(), b = twiss_struct(), c = twiss_struct() ! Normal mode twiss parameters
   real(rp) :: sigma(6,6) = 0             ! beam size matrix
-  real(rp) :: rel_max(6) = 0             ! Max orbit relative to centroid
-  real(rp) :: rel_min(6) = 0             ! Min orbit relative to_centroid
+  real(rp) :: rel_max(7) = 0             ! Max orbit relative to centroid. 7 -> time.
+  real(rp) :: rel_min(7) = 0             ! Min orbit relative to_centroid. 7 -> time.
   real(rp) :: s = -1                     ! Longitudinal position.
   real(rp) :: t = -1                     ! Time.
+  real(rp) :: sigma_t = 0                ! RMS of time spread.
   real(rp) :: charge_live = 0            ! Charge of all non-lost particle
   real(rp) :: charge_tot = 0             ! Charge of all particles.
   integer :: n_particle_tot = 0          ! Total number of particles
   integer :: n_particle_live = 0         ! Number of non-lost particles
   integer :: n_particle_lost_in_ele = 0  ! Number lost in element (not calculated by Bmad)
+  integer :: n_good_steps = 0            ! Number of good steps (set when tracking with space charge)
+  integer :: n_bad_steps = 0             ! Number of bad steps (set when tracking with space charge)
   integer :: ix_ele = -1                 ! Lattice element where params evaluated at.
   integer :: location = not_set$         ! Location in element: upstream_end$, inside$, or downstream_end$
   logical :: twiss_valid = .false.       ! Is the data here valid? Note: IF there is no energy
@@ -1536,8 +1552,8 @@ integer, parameter :: pipe$ = 44, capillary$ = 45, multilayer_mirror$ = 46, e_gu
 integer, parameter :: floor_shift$ = 49, fiducial$ = 50, undulator$ = 51, diffraction_plate$ = 52
 integer, parameter :: photon_init$ = 53, sample$ = 54, detector$ = 55, sad_mult$ = 56, mask$ = 57
 integer, parameter :: ac_kicker$ = 58, lens$ = 59, def_space_charge_com$ = 60, crab_cavity$ = 61
-integer, parameter :: ramper$ = 62, def_ptc_com$ = 63, rf_bend$ = 64
-integer, parameter :: n_key$ = 64
+integer, parameter :: ramper$ = 62, def_ptc_com$ = 63, rf_bend$ = 64, gkicker$ = 65
+integer, parameter :: n_key$ = 65
 
 ! A "!" as the first character is to prevent name matching by the key_name_to_key_index routine.
 
@@ -1548,13 +1564,13 @@ character(20), parameter :: key_name(n_key$) = [ &
     'Hybrid            ', 'Octupole          ', 'Rbend             ', 'Multipole         ', '!Bmad_Com         ', &
     '!Mad_Beam         ', 'AB_multipole      ', 'Solenoid          ', 'Patch             ', 'Lcavity           ', &
     '!Parameter        ', 'Null_Ele          ', 'Beginning_Ele     ', '!Line             ', 'Match             ', &
-    'Monitor           ', 'Instrument        ', 'Hkicker           ', 'Vkicker           ', 'Rcollimator       ', &
+    'Monitor           ', 'Instrument        ', 'HKicker           ', 'VKicker           ', 'Rcollimator       ', &
     'Ecollimator       ', 'Girder            ', 'Converter         ', '!Particle_Start   ', 'Photon_Fork       ', &
     'Fork              ', 'Mirror            ', 'Crystal           ', 'Pipe              ', 'Capillary         ', &
     'Multilayer_Mirror ', 'E_Gun             ', 'EM_Field          ', 'Floor_Shift       ', 'Fiducial          ', &
     'Undulator         ', 'Diffraction_Plate ', 'Photon_Init       ', 'Sample            ', 'Detector          ', &
     'Sad_Mult          ', 'Mask              ', 'AC_Kicker         ', 'Lens              ', '!Space_Charge_Com ', &
-    'Crab_Cavity       ', 'Ramper            ', '!PTC_Com          ', 'RF_Bend           ']
+    'Crab_Cavity       ', 'Ramper            ', '!PTC_Com          ', 'RF_Bend           ', 'GKicker           ']
 
 ! These logical arrays get set in init_attribute_name_array and are used
 ! to sort elements that have kick or orientation attributes from elements that do not.
@@ -1609,15 +1625,15 @@ integer, parameter :: ref_tilt$ = 3, direction$ = 3, repetition_frequency$ = 3
 integer, parameter :: kick$ = 3, x_gain_err$ = 3, taylor_order$ = 3, r_solenoid$ = 3
 integer, parameter :: k1$ = 4, kx$ = 4, harmon$ = 4, h_displace$ = 4, y_gain_err$ = 4
 integer, parameter :: critical_angle_factor$ = 4, tilt_corr$ = 4, ref_coords$ = 4, dt_max$ = 4
-integer, parameter :: graze_angle$ = 5, k2$ = 5, b_max$ = 5, v_displace$ = 5, drift_id$ = 5, gradient_tot$ = 5
+integer, parameter :: graze_angle$ = 5, k2$ = 5, b_max$ = 5, v_displace$ = 5, gradient_tot$ = 5
 integer, parameter :: ks$ = 5, flexible$ = 5, crunch$ = 5, ref_orbit_follows$ = 5, pc_out_min$ = 5
 integer, parameter :: gradient$ = 6, k3$ = 6, noise$ = 6, new_branch$ = 6, ix_branch$ = 6, g_max$ = 6
 integer, parameter :: g$ = 6, symmetry$ = 6, field_scale_factor$ = 6, pc_out_max$ = 6
 integer, parameter :: dg$ = 7, bbi_const$ = 7, osc_amplitude$ = 7, ix_to_branch$ = 7, angle_out_max$ = 7
-integer, parameter :: gradient_err$ = 7, critical_angle$ = 7, bragg_angle_in$ = 7
-integer, parameter :: delta_e_ref$ = 8, interpolation$ = 8, bragg_angle_out$ = 8, k1x$ = 8
+integer, parameter :: gradient_err$ = 7, critical_angle$ = 7, bragg_angle_in$ = 7, spin_dn_dpz_x$ = 7
+integer, parameter :: delta_e_ref$ = 8, interpolation$ = 8, bragg_angle_out$ = 8, k1x$ = 8, spin_dn_dpz_y$ = 8
 integer, parameter :: charge$ = 8, x_gain_calib$ = 8, ix_to_element$ = 8, voltage$ = 8, g_tot$ = 8
-integer, parameter :: rho$ = 9, voltage_err$ = 9, bragg_angle$ = 9, k1y$ = 9, n_particle$ = 9
+integer, parameter :: rho$ = 9, voltage_err$ = 9, bragg_angle$ = 9, k1y$ = 9, n_particle$ = 9, spin_dn_dpz_z$ = 9
 integer, parameter :: fringe_type$ = 10, dbragg_angle_de$ = 10
 integer, parameter :: fringe_at$ = 11, gang$ = 11, darwin_width_sigma$ = 11
 integer, parameter :: darwin_width_pi$ = 12
@@ -1653,15 +1669,15 @@ integer, parameter :: upstream_coord_dir$ = 29, dz_origin$ = 29, mosaic_diffract
 integer, parameter :: cmat_11$ = 29, field_autoscale$ = 29, l_sagitta$ = 29, e_field_y$ = 29, x_dispersion_calib$ = 29
 integer, parameter :: cmat_12$ = 30, dtheta_origin$ = 30, b_param$ = 30, l_chord$ = 30, scale_field_to_one$ = 30
 integer, parameter :: downstream_coord_dir$ = 30, pz_aperture_width2$ = 30, y_dispersion_calib$ = 30, voltage_tot$ = 30
-integer, parameter :: cmat_21$ = 31, l_active$ = 31, dphi_origin$ = 31, ref_cap_gamma$ = 31
+integer, parameter :: cmat_21$ = 31, l_active$ = 31, dphi_origin$ = 31, split_id$ = 31, ref_cap_gamma$ = 31
 integer, parameter :: l_soft_edge$ = 31, transverse_sigma_cut$ = 31, pz_aperture_center$ = 31
 integer, parameter :: cmat_22$ = 32, dpsi_origin$ = 32, t_offset$ = 32, ds_slice$ = 32, use_reflectivity_table$ = 32
-integer, parameter :: angle$ = 33, n_cell$ = 33, mode_flip$ = 33, z_crossing$ = 33
-integer, parameter :: x_pitch$ = 34
-integer, parameter :: y_pitch$ = 35  
-integer, parameter :: x_offset$ = 36
-integer, parameter :: y_offset$ = 37 
-integer, parameter :: z_offset$ = 38
+integer, parameter :: angle$ = 33, n_cell$ = 33, mode_flip$ = 33, z_crossing$ = 33, x_kick$ = 33
+integer, parameter :: x_pitch$ = 34, px_kick$ = 34   ! Note: [x_kick$, px_kick$, ..., pz_kick$] must be in order.
+integer, parameter :: y_pitch$ = 35, y_kick$ = 35
+integer, parameter :: x_offset$ = 36, py_kick$ = 36
+integer, parameter :: y_offset$ = 37, z_kick$ = 37
+integer, parameter :: z_offset$ = 38, pz_kick$ = 38
 integer, parameter :: hkick$ = 39, d_spacing$ = 39, x_offset_mult$ = 39, emittance_a$ = 39, crab_x1$ = 39
 integer, parameter :: vkick$ = 40, y_offset_mult$ = 40, p0c_ref_init$ = 40, emittance_b$ = 40, crab_x2$ = 40
 integer, parameter :: BL_hkick$ = 41, e_tot_ref_init$ = 41, emittance_z$ = 41, crab_x3$ = 41
@@ -1724,7 +1740,7 @@ integer, parameter :: aperture$ = 95, etap_a$ = 95
 integer, parameter :: x_limit$ = 96, absolute_time_tracking$ = 96, eta_b$ = 96
 integer, parameter :: y_limit$ = 97, etap_b$ = 97
 integer, parameter :: offset_moves_aperture$ = 98
-integer, parameter :: aperture_limit_on$ = 99, alpha_a$ = 99, reflectivity_table$ = 99
+integer, parameter :: aperture_limit_on$ = 99, alpha_a$ = 99, reflectivity_table$ = 99, energy_probability_curve$ = 99
 
 integer, parameter :: exact_misalign$ = 100, physical_source$ = 100
 integer, parameter :: sr_wake_file$ = 100, alpha_b$ = 100
@@ -2265,23 +2281,23 @@ integer, parameter :: mass_of$ = 31, charge_of$ = 32, anomalous_moment_of$ = 33,
 integer, parameter :: sinc$ = 36, constant$ = 37, comma$ = 38, rms$ = 39, average$ = 40, sum$ = 41, l_func_parens$ = 42
 integer, parameter :: arg_count$ = 43, antiparticle$ = 44, cot$ = 45, sec$ = 46, csc$ = 47, sign$ = 48
 integer, parameter :: sinh$ = 49, cosh$ = 50, tanh$ = 51, coth$ = 52, asinh$ = 53, acosh$ = 54, atanh$ = 55, acoth$ = 56
-integer, parameter :: min$ = 57, max$ = 58
+integer, parameter :: min$ = 57, max$ = 58, modulo$ = 59
 
 ! Names beginning with "?!+" are place holders that will never match to anything in an expression string.
 ! Note: "min", "max", "rms" and "average" are not implemented in Bmad but is used by Tao.
 
-character(20), parameter :: expression_op_name(58) = [character(20) :: '+', '-', '*', '/', &
+character(20), parameter :: expression_op_name(59) = [character(20) :: '+', '-', '*', '/', &
                                     '(', ')', '^', '-', '+', '', 'sin', 'cos', 'tan', &
                                     'asin', 'acos', 'atan', 'abs', 'sqrt', 'log', 'exp', 'ran', &
                                     'ran_gauss', 'atan2', 'factorial', 'int', 'nint', 'floor', 'ceiling', &
                                     '?!+Numeric', '?!+Variable', 'mass_of', 'charge_of', 'anomalous_moment_of', &
                                     'species', '?!+Species', 'sinc', '?!+Constant', ',', 'rms', 'average', 'sum', &
                                     '(', '?!+Arg Count', 'antiparticle', 'cot', 'sec', 'csc', 'sign', &
-                                    'sinh', 'cosh', 'tanh', 'coth', 'asinh', 'acosh', 'atanh', 'acoth', 'min', 'max']
+                                    'sinh', 'cosh', 'tanh', 'coth', 'asinh', 'acosh', 'atanh', 'acoth', 'min', 'max', 'modulo']
 
-integer, parameter :: expression_eval_level(58) = [1, 1, 2, 2, 0, 0, 4, 3, 3, -1, &
+integer, parameter :: expression_eval_level(59) = [1, 1, 2, 2, 0, 0, 4, 3, 3, -1, &
               9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, &
-              9, 9, 9, 9, 0, 9, 9, 9, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
+              9, 9, 9, 9, 0, 9, 9, 9, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
 
 contains
 

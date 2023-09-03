@@ -471,6 +471,7 @@ subroutine read_this_ele (ele, ix_ele_in, error)
 
 type (ele_struct), target :: ele
 type (photon_element_struct), pointer :: ph
+type (photon_reflect_table_struct), pointer :: prt
 type (surface_grid_pt_struct), pointer :: s_pt
 type (cylindrical_map_struct), pointer :: cl_map
 type (cartesian_map_struct), pointer :: ct_map
@@ -484,19 +485,20 @@ type (converter_prob_pc_r_struct), pointer :: ppcr
 type (converter_direction_out_struct), pointer :: c_dir
 
 integer i, j, lb1, lb2, lb3, ub1, ub2, ub3, n_cyl, n_cart, n_gen, n_grid, ix_ele, ix_branch, ix_wall3d
-integer i_min(3), i_max(3), ix_ele_in, ix_t(6), ios, k_max, ix_e
+integer i_min(3), i_max(3), ix_ele_in, ix_t(6), ios, k_max, ix_e, n_angle, n_energy
 integer ix_r, ix_s, n_var, ix_d, ix_m, idum, n_cus, ix_convert, ix_c 
 integer ix_sr_long, ix_sr_trans, ix_lr_mode, ix_wall3d_branch, ix_st(0:3)
 integer i0, i1, j0, j1, j2, ix_ptr, lb(3), ub(3), nt, n0, n1, n2, nn(7), ne, nr, ns, nc
 
-logical error, is_alloc_grid, is_alloc_pix, ac_kicker_alloc
+logical error, is_alloc_grid, is_alloc_pix, is_alloc_ref_sigma, is_alloc_ref_pi, is_alloc_eprob
+logical ac_kicker_alloc, rad_map_alloc
 
 !
 
 error = .true.
 
 read (d_unit, err = 9100, end = 9100) &
-        mode3, ix_r, ix_s, ix_wall3d_branch, ac_kicker_alloc, &
+        mode3, ix_r, ix_s, ix_wall3d_branch, ac_kicker_alloc, rad_map_alloc, &
         ix_convert, ix_d, ix_m, ix_t, ix_st, ix_e, ix_sr_long, ix_sr_trans, &
         ix_lr_mode, ix_wall3d, ix_c, n_cart, n_cyl, n_gen, n_grid, idum, n_cus, ix_convert ! idum not used
 
@@ -729,9 +731,9 @@ endif
 if (ix_s /= 0) then
   allocate (ele%photon)
   ph => ele%photon
-  read (d_unit, err = 9360, end = 9360) ph%target, ph%material, ph%curvature, &
-         ph%grid%active, ph%grid%type, ph%grid%dr, ph%grid%r0, is_alloc_grid, &
-         ph%pixel%dr, ph%pixel%r0, is_alloc_pix
+  read (d_unit, err = 9360, end = 9360) ph%target, ph%material, ph%curvature, ph%grid%active, ph%grid%type, &
+         ph%grid%dr, ph%grid%r0, is_alloc_grid, ph%pixel%dr, ph%pixel%r0, is_alloc_pix, &
+         is_alloc_ref_sigma, is_alloc_ref_pi, is_alloc_eprob
 
   if (is_alloc_grid) then
     read (d_unit, err = 9361, end = 9361) i0, j0, i1, j1
@@ -748,6 +750,46 @@ if (ix_s /= 0) then
     allocate(ph%pixel%pt(i0:i1, j0:j1))
     ! Note: At startup detectors do not have any grid data that needs saving
   endif
+
+  if (is_alloc_ref_sigma) then
+    prt => ph%reflectivity_table_sigma
+    read (d_unit, err = 9370, end = 9370) n_energy, n_angle
+    allocate(prt%angle(n_angle), prt%energy(n_energy))
+    allocate(prt%p_reflect(n_angle,n_energy), prt%bragg_angle(n_energy))
+    read (d_unit, err = 9370, end = 9370) prt%angle
+    read (d_unit, err = 9370, end = 9370) prt%energy
+    read (d_unit, err = 9370, end = 9370) prt%bragg_angle
+    do j = 1, n_energy
+      read (d_unit, err = 9370, end = 9370) prt%p_reflect(:,j)
+    enddo
+  endif
+
+  if (is_alloc_ref_pi) then
+    prt => ph%reflectivity_table_pi
+    read (d_unit, err = 9380, end = 9380) n_energy, n_angle
+    allocate(prt%angle(n_angle), prt%energy(n_energy), prt%p_reflect_scratch(n_angle))
+    allocate(prt%p_reflect(n_angle,n_energy), prt%int1(n_energy))
+    read (d_unit, err = 9380, end = 9380) prt%angle
+    read (d_unit, err = 9380, end = 9380) prt%energy
+    read (d_unit, err = 9380, end = 9380) prt%bragg_angle
+    do j = 1, n_energy
+      read (d_unit, err = 9380, end = 9380) prt%p_reflect(:,j)
+    enddo
+  endif
+
+  if (is_alloc_ref_sigma .and. is_alloc_ref_pi) then
+    ph%reflectivity_table_type = polarized$
+  elseif (is_alloc_ref_sigma .or. is_alloc_ref_pi) then
+    ph%reflectivity_table_type = unpolarized$
+  endif
+
+  if (is_alloc_eprob) then
+    read (d_unit, err = 9390, end = 9390) n
+    allocate (ph%init_energy_prob(n), ph%integrated_init_energy_prob(n))
+    read (d_unit, err = 9390, end = 9390) ph%init_energy_prob
+    read (d_unit, err = 9390, end = 9390) ph%integrated_init_energy_prob
+  endif
+
 endif
 
 if (ix_d /= 0) then
@@ -825,6 +867,14 @@ endif
 
 !
 
+if (rad_map_alloc) then
+  allocate (ele%rad_map)
+  read (d_unit, err = 9900, end = 9900) ele%rad_map%rm0
+  read (d_unit, err = 9900, end = 9900) ele%rad_map%rm1, ele%rad_map%stale
+endif
+
+!
+
 ele%old_value = ele%value
 
 error = .false.
@@ -894,6 +944,24 @@ return
 9362  continue
 call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
           'ERROR READING %PHOTON%SURFACE%GRID FOR ELEMENT: ' // ele%name)
+close (d_unit)
+return
+
+9370  continue
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
+          'ERROR READING %PHOTON%REFLECTIVITY_TABLE_SIGMA FOR ELEMENT: ' // ele%name)
+close (d_unit)
+return
+
+9380  continue
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
+          'ERROR READING %PHOTON%REFLECTIVITY_TABLE_PI FOR ELEMENT: ' // ele%name)
+close (d_unit)
+return
+
+9390  continue
+call out_io(io_err_level, r_name, 'ERROR READING DIGESTED FILE.', &
+          'ERROR READING %PHOTON%INTEGRATED_INIT_ENERGY_PROB FOR ELEMENT: ' // ele%name)
 close (d_unit)
 return
 

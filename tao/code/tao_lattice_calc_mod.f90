@@ -176,8 +176,8 @@ endif
 
 ! Calc radiation integrals when track_type == "beam" since init_beam_distribution may need this.
 
-if (branch%param%particle /= photon$ .and. s%global%rad_int_calc_on .and. &
-            (u%calc%rad_int_for_data .or. u%calc%rad_int_for_plotting .or. s%global%track_type == 'beam')) then
+if (branch%param%particle /= photon$ .and. s%global%rad_int_calc_on .and. tao_branch%track_state == moving_forward$ .and. &
+            (s%com%force_rad_int_calc .or. u%calc%rad_int_for_data .or. u%calc%rad_int_for_plotting .or. s%global%track_type == 'beam')) then
   call radiation_integrals (tao_lat%lat, tao_branch%orbit, &
                       tao_branch%modes_ri, tao_branch%ix_rad_int_cache, ix_branch, tao_lat%rad_int)
   if (branch%param%geometry == closed$) then
@@ -222,7 +222,7 @@ type (beam_init_struct), pointer :: beam_init
 type (tao_model_branch_struct), pointer :: model_branch
 type (bunch_params_struct) :: bunch_params
 
-real(rp) covar, radix, tune3(3), N_mat(6,6), D_mat(6,6), G_inv(6,6)
+real(rp) covar, radix, tune3(3), N_mat(6,6), D_mat(6,6), G_inv(6,6), t1(6,6)
 
 integer ix_branch
 integer i, n, ie0, ibf, ief
@@ -271,8 +271,10 @@ else
   D_mat(5,5) = beam_init%sig_z * beam_init%sig_pz
   D_mat(6,6) = beam_init%sig_z * beam_init%sig_pz
 
-  if (branch%param%geometry == closed$ .and. branch%param%t1_with_rf(6,5) /= 0) then
-    call transfer_matrix_calc (lat, branch%param%t1_with_RF, ix_branch = ix_branch, one_turn=.true.)
+  call transfer_matrix_calc (lat, t1, ix_branch = ix_branch, one_turn=.true.)
+
+  if (branch%param%geometry == closed$ .and. t1(6,5) /= 0) then
+    branch%param%t1_with_RF = t1
     call make_N (branch%param%t1_with_RF, N_mat, err, tunes_out = tune3)
     if (err) then
       call mat_type (branch%param%t1_with_RF, &
@@ -392,7 +394,7 @@ real(rp) :: value1, value2, f, time, old_time, s_start, s_end, s_target, ds_save
 
 integer i, n, i_uni, ip, ig, ic, ie
 integer what_lat, n_lost_old, ie_start, ie_end, i_uni_to, ix_track
-integer n_bunch, n_part, n_lost, ix_branch, ix_slice, n_slice
+integer n_bunch, n_part, n_lost, ix_branch, ix_slice, n_slice, n_loop
 integer, allocatable :: ix_ele(:)
 
 character(*), parameter :: r_name = "tao_beam_track"
@@ -471,6 +473,7 @@ if (ie_end < ie_start .and. branch%param%geometry == open$) then
   return
 endif
 
+n_loop = 0    ! Used for debugging
 n_lost_old = 0
 ie = ie_start
 s_target = s_start
@@ -479,6 +482,7 @@ ix_slice = -1  ! ix_slice will equal -1 if not tracking internally in a sliced e
 n_slice = max(1, int(1.01_rp*ele%value(l$) / ds_save))
 
 do
+  n_loop = n_loop + 1
   ! track to the element and save for phase space plot
 
   if (s%com%use_saved_beam_in_tracking) then
@@ -616,6 +620,7 @@ do
       ie = 1
     endif
     ele => point_to_this_ele (branch%ele(ie), rad_map_save, ele)
+    n_slice = max(1, int(1.01_rp*ele%value(l$) / ds_save))
   endif
 enddo
 
@@ -823,6 +828,8 @@ endif
 if (s%com%use_saved_beam_in_tracking) then
   init_ok = .true.
   beam = model_branch%ele(ie_start)%beam
+  beam%bunch%n_good = 0
+  beam%bunch%n_bad = 0
   u%model_branch(ix_branch)%ele(ie_start)%beam = beam
   call allocate_this_comb(tao_branch%bunch_params_comb, size(beam%bunch))
   return
@@ -845,6 +852,8 @@ if (branch%ix_from_branch >= 0) then  ! Injecting from other branch
   ! species is not well defined. In this case, don't inject.
 
   beam = u%model_branch(ib0)%ele(ie0)%beam
+  beam%bunch%n_good = 0
+  beam%bunch%n_bad = 0
   u%model_branch(ix_branch)%ele(ie_start)%beam = beam
   call allocate_this_comb(tao_branch%bunch_params_comb, size(beam%bunch))
 
@@ -895,6 +904,8 @@ if (bb%init_starting_distribution .or. u%beam%always_reinit) then
 
 else
   beam = bb%beam_at_start
+  beam%bunch%n_good = 0
+  beam%bunch%n_bad = 0
 endif
 
 u%model_branch(ix_branch)%ele(ie_start)%beam = beam

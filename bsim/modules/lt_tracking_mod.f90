@@ -51,14 +51,18 @@ type ltt_params_struct
   character(200) :: averages_output_file = ''
   character(200) :: phase_space_output_file = ''
   character(200) :: action_angle_output_file = ''
+  character(200) :: per_particle_output_file = ''
   character(8) :: ran_engine = ''
   type (ltt_column_struct) column(100)
   integer :: ix_particle_record = -1    ! Experimental
   integer :: ix_turn_record = -1        ! Experimental
+  integer :: ix_turn_start = 0
+  integer :: ix_turn_stop = -1
   integer :: n_turns = -1
   integer :: map_order = -1
   integer :: particle_output_every_n_turns = -1
   integer :: averages_output_every_n_turns = -1
+  integer :: beam_output_every_n_turns = -1
   integer :: random_seed = 0
   real(rp) :: random_sigma_cut = -1  ! If positive, cutoff for Gaussian random num generator.
   real(rp) :: core_emit_cutoff(core_max$) = [0.5_rp, (-1.0_rp, i_loop = 2, core_max$)]
@@ -135,7 +139,8 @@ type ltt_com_struct
   logical :: using_mpi = .false.
   logical :: track_bypass = .false.            ! Used by DA program
   character(200) :: master_input_file = ''
-  character(40) :: ps_fmt = '(2i7, 8es16.8, 3x, 3f10.6, 4x, a)'
+  character(200) :: last_beam_binary_output_file = ''
+  character(40) :: ps_fmt = '(2i7, 9es16.8, 3x, 3f13.9, 4x, a)'
 end type
 
 integer, parameter :: new$ = 0,  valid$ = 1, written$ = 2
@@ -204,20 +209,21 @@ if (.not. ltt_com%using_mpi .or. ltt_com%mpi_rank == master_rank$) then
   print '(2a)', 'Initialization file: ', trim(ltt_com%master_input_file)
 endif
 
-open (1, file = ltt_com%master_input_file, status = 'old', action = 'read')
+open(1, file = ltt_com%master_input_file, status = 'old', action = 'read')
 read (1, nml = params)
-close (1)
+close(1)
 
 ltt_com%beam_init = beam_init
+ltt_com%beam_init%ix_turn = ltt%ix_turn_start
 
 call bmad_parser (ltt%lat_file, ltt_com%lat)
 
 ! Read the master input file again so that bmad_com parameters set in the file
 ! take precedence over bmad_com parameters set in the lattice file.
 
-open (1, file = ltt_com%master_input_file, status = 'old', action = 'read')
+open(1, file = ltt_com%master_input_file, status = 'old', action = 'read')
 read (1, nml = params)  
-close (1)
+close(1)
 
 !
 
@@ -312,7 +318,9 @@ if (.not. ltt%rfcavity_on) call set_on_off (rfcavity$, lat, off$)
 call upcase_string(ltt%simulation_mode)
 
 select case (ltt%simulation_mode)
-case ('CHECK', 'SINGLE', 'BEAM', 'STAT')
+case ('BEAM', 'STAT')
+case ('CHECK', 'SINGLE')
+  ltt%ramp_update_each_particle = .true.
 case ('BUNCH')
   print '(a)', '"BUNCH" SETTING FOR LTT%SIMULATION_MODE HAS BEEN CHANGED TO "BEAM"'
 case default
@@ -327,6 +335,17 @@ if (ltt%simulation_mode /= 'CHECK') then
     print '(a)', 'UNKNOWN LTT%TRACKING_METHOD: ' // ltt%tracking_method
     stop
   end select
+endif
+
+! Start/stop turn indexes
+
+if (ltt%n_turns > 0 .and. ltt%ix_turn_stop > 0) then
+  print *, 'Setting both ltt%n_turns and ltt%ix_turn_stop not allowed.'
+  stop
+elseif (ltt%ix_turn_stop > 0) then
+  ltt%n_turns = ltt%ix_turn_stop - ltt%ix_turn_start
+else
+  ltt%ix_turn_stop = ltt%ix_turn_start + ltt%n_turns
 endif
 
 ! There is a possible problem with splitting the bends in a lattice if the 
@@ -418,6 +437,7 @@ enddo
 
 !
 
+call fullfilename (ltt%per_particle_output_file, ltt%per_particle_output_file)
 call fullfilename (ltt%phase_space_output_file, ltt%phase_space_output_file)
 call fullfilename (ltt%action_angle_output_file, ltt%action_angle_output_file)
 call fullfilename (ltt%custom_output_file, ltt%custom_output_file)
@@ -578,6 +598,76 @@ end subroutine ltt_init_tracking
 !-------------------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------------------
 
+subroutine ltt_print_per_particle_file_header(lttp, ltt_com, beam)
+
+type (ltt_params_struct) lttp
+type (ltt_com_struct), target :: ltt_com
+type (beam_struct), target :: beam
+
+integer ib, ip, iu, np
+character(200) file
+character(*), parameter :: r_name = 'ltt_print_per_particle_file_header'
+!
+
+if (lttp%per_particle_output_file == '') return
+
+iu = lunget()
+
+do ib = 1, size(beam%bunch)
+  np = size(beam%bunch(ib)%particle)
+  if (np > 1000) then
+    call out_io (s_fatal$, r_name, 'IT DOES NOT MAKE SENSE TO HAVE PER_PARTICLE OUTPUT WITH THIS NUMBER OF PARTICLES: ' // int_str(np), &
+                                   'WILL STOP HERE')
+    stop
+  endif
+
+  do ip = 1, np
+    file = ltt_per_particle_file_name(lttp, ib, ip, size(beam%bunch), np)
+    open(iu, file = file, recl = 300)
+    write (iu, '(a)')  '##   Turn |           x              px               y              py               z              pz              pc             p0c            time   |        spin_x       spin_y       spin_z    State'
+    close(iu)
+  enddo
+enddo
+
+end subroutine ltt_print_per_particle_file_header
+
+!-------------------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------------------
+
+function ltt_per_particle_file_name (lttp, ix_bunch, ix_particle, n_bunch, n_particle) result (file_name)
+
+type (ltt_params_struct) lttp
+
+integer ix_bunch, ix_particle, n_bunch, n_particle, np, ih, ix
+character(200) file_name
+character(16) fmt, str
+
+!
+
+np = int(log10(1.001*n_particle)) + 1
+
+if (n_bunch == 1) then
+  fmt = '(i' // int_str(np) // '.' // int_str(np) // ')'
+  write (str, fmt) ix_particle
+else
+  fmt = '(2a, i' // int_str(np) // '.' // int_str(np) // ')'
+  write (str, fmt) int_str(ix_bunch), '-', ix_particle
+endif
+
+ih = index(lttp%per_particle_output_file, '#')
+if (ih == 0) then
+  file_name = trim(lttp%per_particle_output_file) // '.' // str
+else
+  file_name = lttp%per_particle_output_file(:ih-1) // trim(str) // lttp%per_particle_output_file(ih+1:)
+endif
+
+end function ltt_per_particle_file_name
+
+!-------------------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------------------
+
 subroutine ltt_print_inital_info (lttp, ltt_com)
 
 type (ltt_params_struct) lttp
@@ -596,7 +686,7 @@ if (lttp%averages_output_file == '') return
 do ib = 0, nb
   if (ib == 0 .and. nb == 1) cycle  ! ib = zero is for all bunch averages if there is more than one bunch
   call ltt_averages_file_name(lttp%averages_output_file, 'ave', ib, nb, file_name)
-  open (iu, file = file_name, recl = 400)
+  open(iu, file = file_name, recl = 400)
 
   call ltt_print_this_info(iu, .false.)
 
@@ -611,7 +701,7 @@ do ib = 0, nb
   !
 
   call ltt_averages_file_name(lttp%averages_output_file, 'sigma', ib, nb, file_name)
-  open (iu, file = file_name, recl = 400)
+  open(iu, file = file_name, recl = 400)
 
   call ltt_print_this_info(iu, .false.)
 
@@ -627,7 +717,7 @@ do ib = 0, nb
   !
 
   call ltt_averages_file_name(lttp%averages_output_file, 'emit', ib, nb, file_name)
-  open (iu, file = file_name, recl = 2000)
+  open(iu, file = file_name, recl = 2000)
 
   call ltt_print_this_info(iu, .false.)
 
@@ -650,7 +740,6 @@ do ib = 0, nb
   write (iu, '(a)') trim(line2)
 
   close(iu)
-
 enddo
 
 !------------------------------------------------
@@ -676,6 +765,7 @@ call ltt_write_line('# ltt%lat_file                            = ' // quote(lttp
 call ltt_write_line('# ltt%averages_output_file                = ' // quote(lttp%averages_output_file), lttp, iu, print_this)
 call ltt_write_line('# ltt%beam_binary_output_file             = ' // quote(lttp%beam_binary_output_file), lttp, iu, print_this)
 call ltt_write_line('# ltt%custom_output_file                  = ' // quote(lttp%custom_output_file), lttp, iu, print_this)
+call ltt_write_line('# ltt%per_particle_output_file            = ' // quote(lttp%per_particle_output_file), lttp, iu, print_this)
 call ltt_write_line('# ltt%phase_space_output_file             = ' // quote(lttp%phase_space_output_file), lttp, iu, print_this)
 call ltt_write_line('# ltt%action_angle_output_file            = ' // quote(lttp%action_angle_output_file), lttp, iu, print_this)
 call ltt_write_line('# ltt%map_file_prefix                     = ' // quote(lttp%map_file_prefix), lttp, iu, print_this)
@@ -698,6 +788,8 @@ if (bmad_com%sr_wakes_on) then
 endif
 call ltt_write_line('# ltt%random_sigma_cut                    = ' // real_str(lttp%random_sigma_cut, 6), lttp, iu, print_this)
 call ltt_write_line('# ltt%n_turns                             = ' // int_str(lttp%n_turns), lttp, iu, print_this)
+call ltt_write_line('# ltt%ix_turn_start                       = ' // int_str(lttp%ix_turn_start), lttp, iu, print_this)
+call ltt_write_line('# ltt%ix_turn_stop                        = ' // int_str(lttp%ix_turn_stop), lttp, iu, print_this)
 call ltt_write_line('# ltt%particle_output_every_n_turns       = ' // int_str(lttp%particle_output_every_n_turns), lttp, iu, print_this)
 call ltt_write_line('# ltt%averages_output_every_n_turns       = ' // int_str(lttp%averages_output_every_n_turns), lttp, iu, print_this)
 call ltt_write_line('# ltt%ramping_on                          = ' // logic_str(lttp%ramping_on), lttp, iu, print_this)
@@ -916,14 +1008,14 @@ endif
 
 iu_part = lunget()
 if (lttp%phase_space_output_file == '') lttp%phase_space_output_file = 'single.dat'
-open (iu_part, file = lttp%phase_space_output_file, recl = 300)
+open(iu_part, file = lttp%phase_space_output_file, recl = 300)
 call ltt_write_params_header(lttp, ltt_com, iu_part, 1)
-write (iu_part, '(a)') '## Turn ix_ele |            x              px               y              py               z              pz              pc             p0c  |    spin_x    spin_y    spin_z  | Element'
-write (iu_part, ltt_com%ps_fmt) 0, ele_start%ix_ele, orbit%vec, (1.0_rp+orbit%vec(6))*orbit%p0c, orbit%p0c, orbit%spin, trim(ele_start%name)
+write (iu_part, '(a)') '## Turn ix_ele |            x              px               y              py               z              pz              pc             p0c            time   |       spin_x       spin_y       spin_z  | Element'
+write (iu_part, ltt_com%ps_fmt) 0, ele_start%ix_ele, orbit%vec, (1.0_rp+orbit%vec(6))*orbit%p0c, orbit%p0c, orbit%t, orbit%spin, trim(ele_start%name)
 
 if (lttp%custom_output_file /= '') call ltt_write_custom (lttp, ltt_com, 0, orbit = orbit)
 
-do i_turn = 1, lttp%n_turns
+do i_turn = lttp%ix_turn_start+1, lttp%ix_turn_stop
   select case (lttp%tracking_method)
 
   case ('BMAD')
@@ -942,7 +1034,7 @@ do i_turn = 1, lttp%n_turns
                                                      orbit_too_large(orbit) .or. prb%u) orbit%state = lost$
 
       if (lttp%particle_output_every_n_turns < 1) then
-        write (iu_part, ltt_com%ps_fmt) i_turn, ele1%ix_ele, orbit%vec, (1.0_rp+orbit%vec(6))*orbit%p0c, orbit%p0c, orbit%spin, trim(ele1%name)
+        write (iu_part, ltt_com%ps_fmt) i_turn, ele1%ix_ele, orbit%vec, (1.0_rp+orbit%vec(6))*orbit%p0c, orbit%p0c, orbit%t, orbit%spin, trim(ele1%name)
       endif
 
       if (orbit%state /= alive$) exit
@@ -962,7 +1054,7 @@ do i_turn = 1, lttp%n_turns
 
   if (lttp%particle_output_every_n_turns > 0) then
     if (modulo(i_turn, lttp%particle_output_every_n_turns) == 0) then
-      write (iu_part, ltt_com%ps_fmt) i_turn, ele_start%ix_ele, orbit%vec, (1.0_rp+orbit%vec(6))*orbit%p0c, orbit%p0c, orbit%spin, trim(ele_start%name)
+      write (iu_part, ltt_com%ps_fmt) i_turn, ele_start%ix_ele, orbit%vec, (1.0_rp+orbit%vec(6))*orbit%p0c, orbit%p0c, orbit%t, orbit%spin, trim(ele_start%name)
     endif
   endif
 
@@ -981,7 +1073,7 @@ do i_turn = 1, lttp%n_turns
 enddo
 
 print '(2a)', 'Particle output file: ', trim(lttp%phase_space_output_file)
-close (iu_part)
+close(iu_part)
 
 if (lttp%averages_output_file /= '') then
   call ltt_write_single_mode_sigma_file (lttp, n_sum, average, sigma)
@@ -1016,10 +1108,13 @@ call ltt_pointer_to_map_ends(lttp, lat, ele_start)
 
 !
 
-call init_beam_distribution (ele_start, lat%param, ltt_com%beam_init, beam, err_flag, modes = ltt_com%modes)
+call init_beam_distribution (ele_start, lat%param, ltt_com%beam_init, beam, err_flag, &
+                                                            modes = ltt_com%modes, print_p0c_shift_warning = .false.)
 if (err_flag) stop
 print '(a, i8)',   'n_particle:                    ', size(beam%bunch(1)%particle)
 ltt_com%n_particle = size(beam%bunch(1)%particle)
+
+!
 
 if (bmad_com%spin_tracking_on .and. all(ltt_com%beam_init%spin == 0) .and. all(beam%bunch(1)%particle%spin(1) == 0) .and. &
                             all(beam%bunch(1)%particle%spin(2) == 0) .and. all(beam%bunch(1)%particle%spin(3) == 0)) then
@@ -1085,6 +1180,7 @@ time1 = time0
 ix_branch = ltt_com%ix_branch
 branch => lat%branch(ix_branch)
 call ltt_pointer_to_map_ends(lttp, lat, ele_start)
+call ltt_print_per_particle_file_header(lttp, ltt_com, beam)
 
 if (ltt_com%using_mpi) then
   prefix_str = 'Thread ' // int_str(ltt_com%mpi_rank) // ':'
@@ -1178,19 +1274,15 @@ do i_turn = ix_start_turn+1, ix_end_turn
     time1 = time_now
   endif
 
-  ! If using mpi then this data will all be written out at the end.
-  ! Here partial writes are used so the user can monitor progress if they want.
+  ! If using mpi then long_term_tracking_mpi will assemble the beam and call the write routines.
 
   if (.not. ltt_com%using_mpi) then
     call ltt_write_particle_data (lttp, ltt_com, i_turn, beam)
     call ltt_write_averages_data(lttp, i_turn, beam)
     call ltt_write_custom (lttp, ltt_com, i_turn, beam = beam)
+    call ltt_write_beam_binary_file(lttp, ltt_com, i_turn, beam)
   endif
 end do
-
-if (lttp%beam_binary_output_file /= '' .and. .not. ltt_com%using_mpi) then
-  call write_beam_file (lttp%beam_binary_output_file, beam)
-endif
 
 end subroutine ltt_run_beam_mode
 
@@ -1217,7 +1309,7 @@ branch => lat%branch(ltt_com%ix_branch)
 
 open(unit=20,file="twiss.dat")
 open(unit=21,file="coupling.dat")
-open (unit=22, file = "closed_orbit.dat")
+open(unit=22, file = "closed_orbit.dat")
 
 write(20,'(52x,"s",11x,"b_x",9x,"b_y",9x,"a_x",9x,"a_y",8x,"mu_x",8x,"mu_y",9x,"D_x",9x,"D_y")')
 write(22, '(a)') "Closed orbit"
@@ -1383,8 +1475,10 @@ type (ltt_params_struct) lttp
 type (ltt_com_struct), target :: ltt_com
 type (beam_struct), target :: beam
 type (bunch_struct), pointer :: bunch
+type (coord_struct), pointer :: p
 
-integer i_turn, ib, nb
+integer i_turn, ib, ip, nb, iu
+character(200) file
 
 !
 
@@ -1397,7 +1491,6 @@ end select
 !
 
 nb = size(beam%bunch)
-
 do ib = 1, nb
   bunch => beam%bunch(ib)
 
@@ -1406,6 +1499,17 @@ do ib = 1, nb
 
   if (lttp%action_angle_output_file /= '') call write_this_data (lttp, ltt_com, 'action_angle', &
             lttp%action_angle_output_file, bunch, i_turn, ib, nb, ltt_com%wrote_action_angle_file_header)
+
+  if (lttp%per_particle_output_file /= '') then
+    iu = lunget()
+    do ip = 1, size(bunch%particle)
+      p => bunch%particle(ip)
+      file = ltt_per_particle_file_name(lttp, ib, ip, nb, size(bunch%particle))
+      open(iu, file = file, recl = 300, access = 'append')
+      write (iu, '(i9, 8es16.8, 3x, 3f10.6, 4x, a)')  i_turn, p%vec, (1.0_rp+p%vec(6))*p%p0c, p%p0c, p%spin, trim(coord_state_name(p%state))
+      close(iu)
+    enddo
+  endif
 enddo
 
 !--------------------------------------------------
@@ -1451,15 +1555,15 @@ else
 endif
 
 ! Currently str is always non-blank and a new file is created (no appending is done).
-! Modifying the code to put every in one file is a consideration but it is not clear if this is useful.
+! Modifying the code to put everything in one file is a consideration but it is not clear if this is useful.
 
 if (wrote_header .and. str == '') then
-  open (iu, file = file_name, recl = 300, access = 'append')
+  open(iu, file = file_name, recl = 300, access = 'append')
 else
-  open (iu, file = file_name, recl = 300)
+  open(iu, file = file_name, recl = 300)
   call ltt_write_params_header(lttp, ltt_com, iu, ltt_com%n_particle, size(beam%bunch))
   if (who == 'phase_space') then
-    write (iu, '(a)')  '##     Ix     Turn |           x              px               y              py               z              pz              pc             p0c   |     spin_x    spin_y    spin_z    State'
+    write (iu, '(a)')  '##     Ix     Turn |           x              px               y              py               z              pz              pc             p0c           time   |        spin_x       spin_y       spin_z    State'
   else
     write (iu, '(a)')  '##     Ix     Turn |          Ja         Angle_a              Jb         Angle_b              Jc         Angle_c   |     spin_x    spin_y    spin_z    State'
   endif
@@ -1505,7 +1609,7 @@ do ip = 1, size(bunch%particle)
   else
     jvec = matmul(n_inv_mat, p%vec-b_params%centroid%vec)
     jamp = 0.5_rp * [jvec(1)**2 + jvec(2)**2, jvec(3)**2 + jvec(4)**2, jvec(5)**2 + jvec(6)**2]
-    jphase = [atan2(jvec(2), jvec(1)), atan2(jvec(3), jvec(4)), atan2(jvec(5), jvec(6))]
+    jphase = [atan2(jvec(2), jvec(1)), atan2(jvec(4), jvec(3)), atan2(jvec(6), jvec(5))]
     write (iu, '(i9, i9, 6es16.8, 3x, 3f10.6, 4x, a)')  ix, i_turn, jamp(1), jphase(1), jamp(2), jphase(2), jamp(3), jphase(3), p%spin, trim(coord_state_name(p%state))
   endif
 enddo
@@ -1570,7 +1674,7 @@ end select
 iu = lunget()
 
 if (i_turn == 0 .or. lttp%averages_output_every_n_turns == -1) then
-  open (iu, file = lttp%custom_output_file, recl = 2000)
+  open(iu, file = lttp%custom_output_file, recl = 2000)
   call ltt_write_params_header(lttp, ltt_com, iu, size(beam%bunch))
   line = '#'
   do i = 1, size(lttp%column)
@@ -1582,7 +1686,7 @@ if (i_turn == 0 .or. lttp%averages_output_every_n_turns == -1) then
   write (iu, '(a)') trim(line)
 
 else
-  open (iu, file = lttp%custom_output_file, access = 'append', recl = 2000)
+  open(iu, file = lttp%custom_output_file, access = 'append', recl = 2000)
 endif
 
 !
@@ -1696,9 +1800,43 @@ enddo
 
 write (iu, '(2a)') ' ', trim(line)
 
-close (iu)
+close(iu)
 
 end subroutine ltt_write_custom
+
+
+!-------------------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------------------
+
+subroutine ltt_write_beam_binary_file (lttp, ltt_com, i_turn, beam)
+
+type (ltt_params_struct) lttp
+type (ltt_com_struct), target :: ltt_com
+type (beam_struct), target :: beam
+
+integer i_turn, iu, ios, nt
+character(200) file
+
+!
+
+if (lttp%beam_binary_output_file == '') return
+nt = lttp%beam_output_every_n_turns 
+if ((nt < 0 .or. mod(i_turn, nt) /= 0) .and. i_turn /= lttp%n_turns) return
+
+file = trim(lttp%beam_binary_output_file) // '.' // int_str(i_turn) // '.h5'
+
+call write_beam_file (file, beam)
+
+if (ltt_com%last_beam_binary_output_file /= '') then
+  iu = lunget()
+  open(iu, file = ltt_com%last_beam_binary_output_file, status = 'old')
+  close(iu, status = 'delete')
+endif
+
+ltt_com%last_beam_binary_output_file = file
+
+end subroutine ltt_write_beam_binary_file
 
 !-------------------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------------------
@@ -1716,9 +1854,7 @@ integer iu, n_particle
 
 write (iu,  '(3a)')      '# lattice                             = ', quote(lttp%lat_file)
 write (iu,  '(3a)')      '# simulation_mode                     = ', quote(lttp%simulation_mode)
-if (present(n_bunch)) then
-  write (iu,  '(a, i8)')   '# n_bunch                             = ', n_bunch
-endif
+write (iu,  '(a, i8)')   '# n_bunch                             = ', integer_option(1, n_bunch)
 write (iu,  '(a, i8)')   '# n_particle                          = ', n_particle
 write (iu,  '(a, i8)')   '# n_turns                             = ', lttp%n_turns
 write (iu,  '(a, l1)')   '# ramping_on                          = ', lttp%ramping_on
@@ -1742,7 +1878,7 @@ write (iu, '(3a)')       '# Map_file_prefix                     = ', quote(lttp%
 if (lttp%tracking_method == 'MAP') then
   write (iu, '(a, i0)')  '# map_order                           = ', ltt_com%sec(1)%map%map_order
   write (iu, '(a, a)')   '# exclude_from_maps                   = ', lttp%exclude_from_maps
-  write (iu, '(a, l1)')  '# split_bends_for_stochastic_rad           = ', lttp%split_bends_for_stochastic_rad
+  write (iu, '(a, l1)')  '# split_bends_for_stochastic_rad      = ', lttp%split_bends_for_stochastic_rad
   write (iu, '(a, l1)')  '# symplectic_map_tracking             = ', lttp%symplectic_map_tracking
 endif
 write (iu, '(a)') '#'
@@ -2025,11 +2161,11 @@ do ib = 1, nb
   call ltt_calc_bunch_data(lttp, ix_turn, bunch, bd)
 
   call ltt_averages_file_name(lttp%averages_output_file, 'ave', ib, nb, file_name)
-  iu1 = lunget(); open (iu1, file = file_name, recl = 400, access = 'append')
+  iu1 = lunget(); open(iu1, file = file_name, recl = 400, access = 'append')
   call ltt_averages_file_name(lttp%averages_output_file, 'sigma', ib, nb, file_name)
-  iu2 = lunget(); open (iu2, file = file_name, recl = 400, access = 'append')
+  iu2 = lunget(); open(iu2, file = file_name, recl = 400, access = 'append')
   call ltt_averages_file_name(lttp%averages_output_file, 'emit', ib, nb, file_name)
-  iu3 = lunget(); open (iu3, file = file_name, recl = 2000, access = 'append')
+  iu3 = lunget(); open(iu3, file = file_name, recl = 2000, access = 'append')
 
   !
 
@@ -2049,9 +2185,9 @@ do ib = 1, nb
 
   write (iu3, '(a)') trim(line)
 
-  close (iu1)
-  close (iu2)
-  close (iu3)
+  close(iu1)
+  close(iu2)
+  close(iu3)
 enddo
 
 end subroutine ltt_write_averages_data
@@ -2071,7 +2207,7 @@ integer i, n_sum
 
 if (lttp%sigma_matrix_output_file == '') return
 
-open (1, file = lttp%sigma_matrix_output_file)
+open(1, file = lttp%sigma_matrix_output_file)
 
 if (n_sum == 0) then
   write (1, '(a)') '# NO DATA TO AVERAGE OVER!'
@@ -2091,7 +2227,7 @@ do i = 1, 6
   write (1, '(5x, 6es16.8)') sigma(i,:)
 enddo
 
-close (1)
+close(1)
 
 print '(2a)', 'Sigma matrix data file: ', trim(lttp%sigma_matrix_output_file)
 
@@ -2126,11 +2262,11 @@ branch => lat%branch(ltt_com%ix_branch)
 
 inquire (file = map_file, exist = map_file_exists)
 if (.not. map_file_exists) then
-  if (ltt_com%mpi_rank == master_rank$) print '(a)', 'MAP FILE DOES NOT EXIST: ' // map_file
+  if (ltt_com%mpi_rank == master_rank$) print '(a)', 'MAP FILE DOES NOT EXIST: ' // trim(map_file)
   return
 endif
 
-open (1, file = map_file, form = 'unformatted')
+open(1, file = map_file, form = 'unformatted')
 read (1, err = 9000, end = 9000) creation_hash
 
 read (1, err = 9000, end = 9000) n_sec
@@ -2145,14 +2281,14 @@ do i = 0, n_sec
     allocate (sec%map)
     call ptc_read_map_with_radiation(sec%map, err, file_unit = 1)
     if (err) then
-      print '(a)', 'ERROR READING MAP: ' // map_file
+      print '(a)', 'ERROR READING MAP: ' // trim(map_file)
       return
     endif
     map => sec%map
   endif
 enddo
 
-close (1)
+close(1)
 
 if (ltt_com%mpi_rank == master_rank$) then
   if (ltt_com%lat%creation_hash == creation_hash) then
@@ -2165,7 +2301,7 @@ if (ltt_com%mpi_rank == master_rank$) then
 endif
 
 if (lttp%map_ascii_output_file /= '') then
-  open (2, file = lttp%map_ascii_output_file)
+  open(2, file = lttp%map_ascii_output_file)
   do i = 1, n_sec
     if (.not. allocated(ltt_com%sec(i)%map)) cycle
     map => ltt_com%sec(i)%map
@@ -2193,7 +2329,7 @@ if (ltt_com%lat%creation_hash == creation_hash) err_flag = .false.
 return
 
 9000 continue
-close (1)
+close(1)
 print '(a)', 'ERROR READING MAP FILE: ' // map_file
 
 end subroutine ltt_read_map
@@ -2217,7 +2353,7 @@ call ltt_map_file_name (lttp, ltt_com, map_file)
 
 !
 
-open (1, file = map_file, form = 'unformatted')
+open(1, file = map_file, form = 'unformatted')
 write (1) ltt_com%lat%creation_hash
 
 do n_sec = ubound(ltt_com%sec, 1), 0, -1
@@ -2232,7 +2368,7 @@ do i = 0, n_sec
   if (sec%type == map$) call ptc_write_map_with_radiation(sec%map, file_unit = 1)
 enddo
 
-close (1)
+close(1)
 
 end subroutine ltt_write_map
 
@@ -2292,7 +2428,7 @@ logical err, in_map_section
 
 !
 
-print '(a)', 'Creating map(s) for: ' // ltt_com%lat%input_file_name
+print '(a)', 'Creating map(s) for: ' // trim(ltt_com%lat%input_file_name)
 call run_timer ('ABS', time0)
 time1 = time0
 
@@ -2306,10 +2442,10 @@ n_sec = 2
 ! Count slices and superimpose radiation points.
 do i = 1, branch%n_ele_track
   ele => branch%ele(i)
-  if (ele%key == sbend$) then
-    n_sec = n_sec + 1
-  elseif (ele%ix_pointer == not_in_map$) then
+  if (ele%ix_pointer == not_in_map$) then  ! Covers bends not in maps
     n_sec = n_sec + 2
+  elseif (ele%key == sbend$) then
+    n_sec = n_sec + 1
   endif
 enddo
 
@@ -2514,7 +2650,7 @@ do
   endif
 
   if (present(iu_part) .and. lttp%particle_output_every_n_turns < 1) then
-    write (iu_part, ltt_com%ps_fmt) i_turn, ele%ix_ele, orbit%vec, (1.0_rp+orbit%vec(6))*orbit%p0c, orbit%p0c, orbit%spin, trim(ele%name)
+    write (iu_part, ltt_com%ps_fmt) i_turn, ele%ix_ele, orbit%vec, (1.0_rp+orbit%vec(6))*orbit%p0c, orbit%p0c, orbit%t, orbit%spin, trim(ele%name)
   endif
 
   if (ele%ix_ele == ele_stop%ix_ele) exit
@@ -2605,7 +2741,7 @@ do i = 1, ubound(ltt_com%sec, 1)
   endif
 
   if (present(iu_part) .and. lttp%particle_output_every_n_turns < 1) then
-    write (iu_part, ltt_com%ps_fmt) i_turn, ele%ix_ele, orbit%vec, (1.0_rp+orbit%vec(6))*orbit%p0c, orbit%p0c, orbit%spin, trim(ele%name)
+    write (iu_part, ltt_com%ps_fmt) i_turn, ele%ix_ele, orbit%vec, (1.0_rp+orbit%vec(6))*orbit%p0c, orbit%p0c, orbit%t, orbit%spin, trim(ele%name)
   endif
 
   if (orbit%state /= alive$) return

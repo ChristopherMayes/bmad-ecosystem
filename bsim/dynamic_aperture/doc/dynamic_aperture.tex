@@ -13,7 +13,6 @@
 \usepackage{alltt}
 \usepackage{rotating}
 \usepackage{subcaption}
-\usepackage{toc-bmad}
 \usepackage{xspace}
 \usepackage[section]{placeins}   % For preventing floats from floating to end of chapter.
 \usepackage{longtable}   % For splitting long vertical tables into pieces
@@ -65,6 +64,14 @@
   {\vspace*{-1.5ex} \begin{alltt}}
   {\end{alltt} \vspace*{-1.0ex}}
 
+%%% Table of Contents spacing.
+\makeatletter
+\renewcommand{\l@section}{\@dottedtocline{1}{1.5em}{3.3em}}
+\renewcommand{\l@subsection}{\@dottedtocline{2}{3.8em}{4.2em}}
+\renewcommand{\l@figure}{\@dottedtocline{1}{1.5em}{3.3em}}
+\renewcommand{\l@table}{\@dottedtocline{1}{1.5em}{3.3em}}
+\makeatother
+
 %---------------------------------------------------------------------------------
 
 \title{Dynamic_Aperture Program}
@@ -108,10 +115,9 @@ library, developed at Cornell, for the modeling relativistic charged particles i
 Linacs, as well as modeling photons in x-ray beam lines.
 
 For historical reasons, the \vn{Tao} program (another Bmad based program) is also capable of
-calculating the dynamic aperture. 
-In fact both programs use the same underlying code for the
-aperture analysis. The basic difference is that the \da program is more flexible in terms
-of tracking. For example, the \da program can handle \vn{ramper} elements and track with maps.
+calculating the dynamic aperture.  In fact both programs use the same underlying code for the
+aperture analysis. The basic difference is that the \da program is more flexible in terms of
+tracking. For example, the \da program can handle \vn{ramper} elements and track with maps.
 
 %------------------------------------------------------------------
 \Section{Running the Dynamic Aperture Program} 
@@ -589,8 +595,8 @@ The data output file whose name is set by \vn{dat_file} will look like:
 \begin{code}
 # lat_file              = chess_arc_pretzel_20150106.lat
 # set_rf_off            = T
-# da_param%min_angle    =       0.0
-# da_param%max_angle    =       3.1
+# da_param%min_angle    =  0.0000000
+# da_param%max_angle    =  3.1415926
 # da_param%rel_accuracy =  1.00E-02
 ... etc. ...
 # da_param%n_angle      = 37

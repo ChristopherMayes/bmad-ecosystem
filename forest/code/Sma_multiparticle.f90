@@ -672,9 +672,9 @@ CONTAINS
     ENDIF
 
     ! The chart frame of reference is located here implicitely
-    IF(PATCHG==1.or.PATCHG==3) THEN
+    IF(PATCHG==1.or.PATCHG==3.or.PATCHG==10.or.PATCHG==30) THEN
        patch=ALWAYS_EXACT_PATCHING.or.C%MAG%P%EXACT
-       CALL PATCH_FIB(C,X,k,PATCH,MY_TRUE)
+       CALL PATCH_FIB(C,X,k,PATCH,MY_TRUE,PATCHG)
     ENDIF
 
     IF(PATCHT/=0.AND.PATCHT/=2.AND.(K%TOTALPATH==0)) THEN
@@ -761,9 +761,9 @@ CONTAINS
     ENDIF
 
     ! The chart frame of reference is located here implicitely
-    IF(PATCHG==1.or.PATCHG==3) THEN
+    IF(PATCHG==1.or.PATCHG==3.or.PATCHG==10.or.PATCHG==30) THEN
        patch=ALWAYS_EXACT_PATCHING.or.C%MAGP%P%EXACT
-       CALL PATCH_FIB(C,X,k,PATCH,MY_TRUE)
+       CALL PATCH_FIB(C,X,k,PATCH,MY_TRUE,PATCHG)
     ENDIF
 
     IF(PATCHT/=0.AND.PATCHT/=2.AND.(K%TOTALPATH==0)) THEN
@@ -824,9 +824,9 @@ CONTAINS
       endif
     ENDIF
 
-    IF(PATCHG==2.or.PATCHG==3) THEN
+    IF(PATCHG==2.or.PATCHG==3.or.PATCHG==20.or.PATCHG==30) THEN
        patch=ALWAYS_EXACT_PATCHING.or.C%MAG%P%EXACT
-       CALL PATCH_FIB(C,X,k,PATCH,MY_FALSE)
+       CALL PATCH_FIB(C,X,k,PATCH,MY_FALSE,PATCHG)
     ENDIF
 
     ! The CHART frame of reference is located here implicitely
@@ -908,9 +908,9 @@ ENDIF
       endif
     ENDIF
 
-    IF(PATCHG==2.or.PATCHG==3) THEN
+    IF(PATCHG==2.or.PATCHG==3.or.PATCHG==20.or.PATCHG==30) THEN
        patch=ALWAYS_EXACT_PATCHING.or.C%MAGP%P%EXACT
-       CALL PATCH_FIB(C,X,k,PATCH,MY_FALSE)
+       CALL PATCH_FIB(C,X,k,PATCH,MY_FALSE,PATCHG)
     ENDIF
 
     ! The CHART frame of reference is located here implicitely
@@ -3132,14 +3132,14 @@ doit=p%mag%kind==kind16.and.p%mag%p%b0/=0.0_dp
     endif 
 
      if(tangent) then
-      t=sqrt(1.0_dp+2.0_dp*z(5)/b0+z(5)**2)/sqrt(1.0_dp+z(2)**2+z(4)**2) 
+      t=sqrt(1.0_dp+2.0_dp*z(5)/b0+z(5)**2)/root(1.0_dp+z(2)**2+z(4)**2) 
       z(2)=z(2)*t
       z(4)=z(4)*t
      else
      t=z(6)
-     z(6)=-z(5)*sqrt(1.0_dp/b0**2+2*t+t**2)/(1.0_dp+t)
+     z(6)=-z(5)*root(1.0_dp/b0**2+2*t+t**2)/(1.0_dp+t)
      !z(5)=sqrt(1.0_dp/b0**2+2*t+t**2)-1.0_dp/b0
-      z(5)=(2*t+t**2)/(sqrt(1.0_dp/b0**2+2*t+t**2)+1.0_dp/b0)
+      z(5)=(2*t+t**2)/(root(1.0_dp/b0**2+2*t+t**2)+1.0_dp/b0)
 
      endif
      end subroutine convert_bmad_to_ptcar
@@ -3191,14 +3191,14 @@ doit=p%mag%kind==kind16.and.p%mag%p%b0/=0.0_dp
     endif 
 
      if(tangent) then
-      t=1.0_dp/sqrt(1.0_dp+2.0_dp*z(5)/b0+z(5)**2-z(2)**2-z(4)**2) 
+      t=1.0_dp/root(1.0_dp+2.0_dp*z(5)/b0+z(5)**2-z(2)**2-z(4)**2) 
       z(2)=z(2)*t
       z(4)=z(4)*t
      else
       t=z(5)
-      z(5)=-(z(6)-l)*sqrt(1.d0 +2*t/b0+t**2)/(1.d0/b0+t)
+      z(5)=-(z(6)-l)*root(1.d0 +2*t/b0+t**2)/(1.d0/b0+t)
   !    z(6)=sqrt(1.0_dp +2*t/b0+t**2)-1.d0 
-        z(6)=(2*t/b0+t**2)/(sqrt(1.0_dp +2*t/b0+t**2)+1.0_dp)
+        z(6)=(2*t/b0+t**2)/(root(1.0_dp +2*t/b0+t**2)+1.0_dp)
      endif
      end subroutine convert_ptc_to_bmadar   
 
@@ -3250,14 +3250,14 @@ doit=p%mag%kind==kind16.and.p%mag%p%b0/=0.0_dp
      b0=1
     endif 
      if(tangent) then
-      t=sqrt(1.0_dp+2.0_dp*z%x(5)/b0+z%x(5)**2)/sqrt(1.0_dp+z%x(2)**2+z%x(4)**2) 
+      t=sqrt(1.0_dp+2.0_dp*z%x(5)/b0+z%x(5)**2)/root(1.0_dp+z%x(2)**2+z%x(4)**2) 
       z%x(2)=z%x(2)*t
       z%x(4)=z%x(4)*t
      else
       t=z%x(6)
-      z%x(6)=-z%x(5)*sqrt(1.0_dp/b0**2+2*t+t**2)/(1.0_dp+t)
+      z%x(6)=-z%x(5)*root(1.0_dp/b0**2+2*t+t**2)/(1.0_dp+t)
  !    z%x(5)=sqrt(1.0_dp/b0**2+2*t+t**2)-1.0_dp/b0
-      z%x(5)=(2*t+t**2)/(sqrt(1.0_dp/b0**2+2*t+t**2)+1.0_dp/b0)
+      z%x(5)=(2*t+t**2)/(root(1.0_dp/b0**2+2*t+t**2)+1.0_dp/b0)
      endif
      end subroutine convert_bmad_to_ptcr   
 
@@ -3308,14 +3308,14 @@ doit=p%mag%kind==kind16.and.p%mag%p%b0/=0.0_dp
      b0=1
     endif 
      if(tangent) then
-      t=1.0_dp/sqrt(1.0_dp+2.0_dp*z%x(5)/b0+z%x(5)**2-z%x(2)**2-z%x(4)**2) 
+      t=1.0_dp/root(1.0_dp+2.0_dp*z%x(5)/b0+z%x(5)**2-z%x(2)**2-z%x(4)**2) 
       z%x(2)=z%x(2)*t
       z%x(4)=z%x(4)*t
      else
      t=z%x(5)
-      z%x(5)=-(z%x(6)-l)*sqrt(1.0_dp +2*t/b0+t**2)/(1.0_dp/b0+t)
+      z%x(5)=-(z%x(6)-l)*root(1.0_dp +2*t/b0+t**2)/(1.0_dp/b0+t)
  !     z%x(6)=sqrt(1.0_dp+2*t/b0+t**2)-1.0_dp 
-        z%x(6)=(2*t/b0+t**2)/(sqrt(1.0_dp +2*t/b0+t**2)+1.0_dp)
+        z%x(6)=(2*t/b0+t**2)/(root(1.0_dp +2*t/b0+t**2)+1.0_dp)
 
      endif
      end subroutine convert_ptc_to_bmadr   

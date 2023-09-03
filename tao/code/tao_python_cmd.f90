@@ -2923,7 +2923,7 @@ case ('ele:grid_field')
 
   select case (tail_str)
   case ('base')
-    nl=incr(nl); write (li(nl), ramt) 'dr;REAL_ARR;T;',                        (';', g_field%dr(i), i = 1, 3)
+    nl=incr(nl); write (li(nl), ramt) 'dr;REAL_ARR;T',                        (';', g_field%dr(i), i = 1, 3)
     nl=incr(nl); write (li(nl), ramt) 'r0;REAL_ARR;T',                         (';', g_field%r0(i), i = 1, 3)
     name = attribute_name(ele, g_field%master_parameter)
     if (name(1:1) == '!') name = '<None>'
@@ -3970,8 +3970,9 @@ case ('evaluate')
     use_real_array_buffer = .true.
   endif
 
-  if (index(line, 'chrom') /= 0) then
-    s%com%force_chrom_calc = .true.
+  if (index(line, 'chrom') /= 0 .or. index(line, 'rad') /= 0) then
+    if (index(line, 'chrom') /= 0) s%com%force_chrom_calc = .true.
+    if (index(line, 'rad') /= 0) s%com%force_rad_int_calc = .true.
     s%u%calc%lattice = .true.
     call tao_lattice_calc(ok)
   endif
@@ -4552,7 +4553,7 @@ case ('global')
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-!%% global:optimation
+!%% global:optimization
 !
 ! Output optimization parameters.
 ! Also see global:opti_de.
@@ -4560,7 +4561,7 @@ case ('global')
 ! Notes
 ! -----
 ! Command syntax:
-!   python global:opti_de
+!   python global:optimization
 !
 ! Output syntax is parameter list form. See documentation at the beginning of this file.
 !
@@ -7062,7 +7063,7 @@ case ('spin_polarization')
 
   z = anomalous_moment_of(branch%param%particle) * branch%ele(0)%value(e_tot$) / mass_of(branch%param%particle)
   nl=incr(nl); write (li(nl), rmt) 'anom_moment_times_gamma;REAL;F;',           z
-  nl=incr(nl); write (li(nl), rmt) 'spin_tune;REAL;F;',                         branch%param%spin_tune/twopi
+  nl=incr(nl); write (li(nl), rmt) 'spin_tune;REAL;F;',                         tao_branch%spin%tune/twopi
   nl=incr(nl); write (li(nl), rmt) 'polarization_limit_st;REAL;F;',             tao_branch%spin%pol_limit_st
   nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dk;REAL;F;',             tao_branch%spin%pol_limit_dk
   nl=incr(nl); write (li(nl), rmt) 'polarization_limit_dk_partial_a;REAL;F;',   tao_branch%spin%pol_limit_dk_partial(1)
@@ -7318,6 +7319,11 @@ case ('twiss_at_s')
   call twiss_and_track_at_s (tao_lat%lat, s_pos, this_ele, tao_lat%tao_branch(ix_branch)%orbit, ix_branch = ix_branch)
   call twiss_out (this_ele%a, 'a')
   call twiss_out (this_ele%b, 'b')
+  nl=incr(nl); write (li(nl), rmt) 'c_mat11;REAL;F;',            ele%c_mat(1,1)
+  nl=incr(nl); write (li(nl), rmt) 'c_mat12;REAL;F;',            ele%c_mat(1,2)
+  nl=incr(nl); write (li(nl), rmt) 'c_mat21;REAL;F;',            ele%c_mat(2,1)
+  nl=incr(nl); write (li(nl), rmt) 'c_mat22;REAL;F;',            ele%c_mat(2,2)
+  nl=incr(nl); write (li(nl), rmt) 'gamma_c;REAL;F;',            ele%gamma_c
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
@@ -8932,7 +8938,7 @@ case default
   call str_upcase (attrib_name, name)
   ix = index(attrib_name, '.')
 
-  if (attrib_name(1:ix-1) == 'ele') then
+  if (attrib_name(1:ix-1) == 'ELE') then
     attrib_name = attrib_name(ix+1:)
     call pointer_to_attribute (ele, attrib_name, .true., a_ptr, err, .false.)
   else
@@ -9080,6 +9086,8 @@ nl=incr(nl); write (li(nl), imt) 'direction;INT;F;',                         bun
 nl=incr(nl); write (li(nl), amt) 'species;SPECIES;F;',                       trim(species_name(bunch_params%centroid%species))
 nl=incr(nl); write (li(nl), amt) 'location;ENUM;F;',                         trim(location_name(bunch_params%centroid%location))
 nl=incr(nl); write (li(nl), rmt) 's;REAL;F;',                                bunch_params%s
+nl=incr(nl); write (li(nl), rmt) 't;REAL;F;',                                bunch_params%t
+nl=incr(nl); write (li(nl), rmt) 'sigma_t;REAL;F;',                          bunch_params%sigma_t
 nl=incr(nl); write (li(nl), rmt) 'charge_live;REAL;F;',                      bunch_params%charge_live
 nl=incr(nl); write (li(nl), imt) 'n_particle_tot;INT;F;',                    bunch_params%n_particle_tot
 nl=incr(nl); write (li(nl), imt) 'n_particle_live;INT;F;',                   bunch_params%n_particle_live

@@ -477,7 +477,7 @@ type (twiss_struct), pointer :: z0, z1, z2
 real(rp) datum_value, mat6(6,6), vec0(6), angle, px, py, vec2(2)
 real(rp) eta_vec(4), v_mat(4,4), v_inv_mat(4,4), a_vec(4), mc2, charge
 real(rp) gamma, one_pz, xi_sum, xi_diff, w0_mat(3,3), w_mat(3,3), vec3(3), value, s_len, n0(3)
-real(rp) dz, dx, cos_theta, sin_theta, zz_pt, xx_pt, zz0_pt, xx0_pt, dE
+real(rp) dz, dx, cos_theta, sin_theta, zz_pt, xx_pt, zz0_pt, xx0_pt, dE, s_offset
 real(rp) zz_center, xx_center, xx_wall, phase, amp, dalpha, dbeta, aa, bb
 real(rp) xx_a, xx_b, dxx1, dzz1, drad, ang_a, ang_b, ang_c, dphi, amp_a, amp_b
 real(rp), allocatable :: value_vec(:)
@@ -594,6 +594,29 @@ case default
   endif
 end select
 
+if (index(head_data_type, 'stable') == 0 .and. head_data_type /= 'expression:') then
+  if (associated(ele)) then
+    if (orbit(ix_ele)%state /= alive$) then
+      call tao_set_invalid (datum, 'UNSTABLE ORBIT AT EVALUATION POINT', why_invalid)
+      return
+    endif
+  endif
+
+  if (associated(ele_ref)) then
+    if (orbit(ix_ref)%state /= alive$) then
+      call tao_set_invalid (datum, 'UNSTABLE ORBIT AT REFERENCE EVALUATION POINT', why_invalid)
+      return
+    endif
+  endif
+
+  if (associated(ele_start)) then
+    if (orbit(ix_start)%state /= alive$) then
+      call tao_set_invalid (datum, 'UNSTABLE ORBIT AT START EVALUATION POINT', why_invalid)
+      return
+    endif
+  endif
+endif
+
 ! ele_ref must not be specified for some data types. Check this.
 
 select case (head_data_type)
@@ -647,7 +670,7 @@ if (head_data_type /= 'expression:' .and. (datum%s_offset /= 0 .or. datum%eval_p
     call out_io (s_warn$, r_name, 'If there is an evaluation range (that is, ele_start is set), s_offset and', & 
                                   ' eval_point are ignored. For datum:' // tao_datum_name(datum))
   else
-    datum_value = tao_evaluate_datum_at_s (datum%eval_point, datum%s_offset, datum%data_type, tao_lat, ele, ele_ref, valid_value, str, exterminate)
+    datum_value = tao_evaluate_datum_at_s (datum, tao_lat, ele, ele_ref, valid_value, str, exterminate)
     if (.not. valid_value) call tao_set_invalid (datum, str, why_invalid, exterminate)
     return
   endif
@@ -1014,19 +1037,19 @@ case ('c_mat.', 'cmat.')
 
   case ('cmat.11')
     if (data_source == 'beam') goto 9000  ! Set error message and return
-    call tao_load_this_datum (branch%ele(:)%c_mat(1,1), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (branch%ele(:)%c_mat(1,1), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
 
   case ('cmat.12')
     if (data_source == 'beam') goto 9000  ! Set error message and return
-    call tao_load_this_datum (branch%ele(:)%c_mat(1,2), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (branch%ele(:)%c_mat(1,2), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
 
   case ('cmat.21')
     if (data_source == 'beam') goto 9000  ! Set error message and return
-    call tao_load_this_datum (branch%ele(:)%c_mat(2,1), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (branch%ele(:)%c_mat(2,1), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
 
   case ('cmat.22')
     if (data_source == 'beam') goto 9000  ! Set error message and return
-    call tao_load_this_datum (branch%ele(:)%c_mat(2,2), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (branch%ele(:)%c_mat(2,2), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
 
   case default
     call tao_set_invalid (datum, 'DATA_TYPE = "' // trim(data_type) // '" IS NOT VALID', why_invalid, .true.)
@@ -1048,22 +1071,22 @@ case ('cbar.')
   case ('cbar.11')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%cbar(1,1), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (scratch%cc%cbar(1,1), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
 
   case ('cbar.12')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%cbar(1,2), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (scratch%cc%cbar(1,2), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
 
   case ('cbar.21')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%cbar(2,1), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (scratch%cc%cbar(2,1), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
 
   case ('cbar.22')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%cbar(2,2), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (scratch%cc%cbar(2,2), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
 
   case default
     call tao_set_invalid (datum, 'DATA_TYPE = "' // trim(data_type) // '" IS NOT VALID', why_invalid, .true.)
@@ -1077,10 +1100,14 @@ case ('chrom.')
   
   if (data_source == 'beam') goto 9000  ! Set error message and return
 
-  if (.not. allocated(tao_lat%low_E_lat%branch)) then
-    if (branch%param%geometry == open$) then
-      call tao_set_invalid (datum, 'Cannot calc ' // trim(data_type) // ' with an open geometry.', why_invalid)
-    elseif (branch%param%unstable_factor == 0) then
+  if (branch%param%geometry == open$) then
+    call tao_set_invalid (datum, 'Cannot calc ' // trim(data_type) // ' with an open geometry.', why_invalid)
+    return
+  elseif (.not. tao_lat%chrom_calc_ok) then
+    call tao_set_invalid (datum, 'Chrom calc failed.', why_invalid)
+    return
+  elseif (.not. allocated(tao_lat%low_E_lat%branch)) then
+    if (branch%param%unstable_factor == 0) then
       call tao_set_invalid (datum, 'Chrom bookkeeping problem. Please contact DCS.', why_invalid)
     else
       call tao_set_invalid (datum, 'Unstable lattice.', why_invalid)
@@ -1683,10 +1710,19 @@ case ('expression:', 'expression.')
   case ('max-min');  datum_value = maxval(expression_value_vec) - minval(expression_value_vec)
 
   case ('integral', 'average', 'rms')
+    s_offset = 0
+    if (.not. associated(ele_start)) then
+      call tao_set_invalid (datum, 'ELE_START NOT SET. THIS IS NEEDED WHEN MERIT_TYPE IS SET TO "integral", "average", OR "rms".', why_invalid)
+      return
+    endif
+
     do i = 1, size(info)
       j = i + ele_start%ix_ele - 1
-      if (j > branch%n_ele_track) j = j - branch%n_ele_track - 1
-      info(i)%s = tao_datum_s_position(datum, branch%ele(j))
+      if (j > branch%n_ele_track) then
+        j = j - branch%n_ele_track - 1
+        s_offset = branch%param%total_length
+      endif
+      info(i)%s = tao_datum_s_position(datum, branch%ele(j)) + s_offset
     enddo
 
     if (j /= ele%ix_ele) then
@@ -1839,19 +1875,19 @@ case ('k.')
   case ('k.11b')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%k_11a, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (scratch%cc%k_11a, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
   case ('k.12a')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%k_12a, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (scratch%cc%k_12a, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
   case ('k.12b')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%k_12b, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (scratch%cc%k_12b, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
   case ('k.22a')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%k_22b, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+    call tao_load_this_datum (scratch%cc%k_22b, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
 
   case default
     call tao_set_invalid (datum, 'DATA_TYPE = "' // trim(data_type) // '" IS NOT VALID', why_invalid, .true.)
@@ -1929,7 +1965,7 @@ case ('momentum_compaction_ptc.')
 !-----------
 
 case ('n_particle_loss')
-  if (data_source /= 'beam') goto 9000  ! Set error message and return
+  if (data_source /= 'beam') goto 9001  ! Set error message and return
   if (ix_ele < 0) ix_ele = branch%n_ele_track
   datum_value = sum(bunch_params(ix_ref+1:ix_ele)%n_particle_lost_in_ele)
   valid_value = .true.
@@ -2134,22 +2170,22 @@ case ('orbit.')
   case ('orbit.amp_a')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%amp_a, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%n_particle_live > 0, orbit)
+    call tao_load_this_datum (scratch%cc%amp_a, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%n_particle_live > 0)
 
   case ('orbit.amp_b')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%amp_b, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%n_particle_live > 0, orbit)
+    call tao_load_this_datum (scratch%cc%amp_b, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%n_particle_live > 0)
 
   case ('orbit.norm_amp_a')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%amp_na, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%n_particle_live > 0, orbit)
+    call tao_load_this_datum (scratch%cc%amp_na, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%n_particle_live > 0)
 
   case ('orbit.norm_amp_b')
     if (data_source == 'beam') goto 9000  ! Set error message and return
     call tao_scratch_values_calc (ele_ref, ele_start, ele, datum, branch, orbit)
-    call tao_load_this_datum (scratch%cc%amp_nb, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%n_particle_live > 0, orbit)
+    call tao_load_this_datum (scratch%cc%amp_nb, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%n_particle_live > 0)
 
   case default
     call tao_set_invalid (datum, 'DATA_TYPE = "' // trim(data_type) // '" IS NOT VALID', why_invalid, .true.)
@@ -2826,7 +2862,7 @@ case ('sigma.')
   j = index('123456', data_type(8:8))
   if (i > 0 .and. j > 0) then
     if (data_source == 'lat') then
-      call tao_load_this_datum (tao_branch%lat_sigma%mat(i,j), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+      call tao_load_this_datum (tao_branch%lat_sigma%mat(i,j), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
     else
       call tao_load_this_datum (bunch_params(:)%sigma(i,j), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%twiss_valid)
     endif
@@ -2837,7 +2873,7 @@ case ('sigma.')
 
   case ('sigma.x')
     if (data_source == 'lat') then
-      call tao_load_this_datum (tao_branch%lat_sigma%mat(1,1), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+      call tao_load_this_datum (tao_branch%lat_sigma%mat(1,1), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
       datum_value = sqrt(datum_value)
     else
       call tao_load_this_datum (bunch_params(:)%sigma(1,1), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%twiss_valid)
@@ -2846,7 +2882,7 @@ case ('sigma.')
 
   case ('sigma.px')  
     if (data_source == 'lat') then
-      call tao_load_this_datum (tao_branch%lat_sigma%mat(2,2), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+      call tao_load_this_datum (tao_branch%lat_sigma%mat(2,2), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
       datum_value = sqrt(datum_value)
     else
       call tao_load_this_datum (bunch_params(:)%sigma(2,2), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%twiss_valid)
@@ -2855,7 +2891,7 @@ case ('sigma.')
 
   case ('sigma.y')  
     if (data_source == 'lat') then
-      call tao_load_this_datum (tao_branch%lat_sigma%mat(3,3), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+      call tao_load_this_datum (tao_branch%lat_sigma%mat(3,3), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
       datum_value = sqrt(datum_value)
     else
       call tao_load_this_datum (bunch_params(:)%sigma(3,3), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%twiss_valid)
@@ -2864,7 +2900,7 @@ case ('sigma.')
     
   case ('sigma.py')  
     if (data_source == 'lat') then
-      call tao_load_this_datum (tao_branch%lat_sigma%mat(4,4), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+      call tao_load_this_datum (tao_branch%lat_sigma%mat(4,4), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
       datum_value = sqrt(datum_value)
     else
       call tao_load_this_datum (bunch_params(:)%sigma(4,4), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%twiss_valid)
@@ -2873,7 +2909,7 @@ case ('sigma.')
     
   case ('sigma.z')
     if (data_source == 'lat') then
-      call tao_load_this_datum (tao_branch%lat_sigma%mat(5,5), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+      call tao_load_this_datum (tao_branch%lat_sigma%mat(5,5), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
       datum_value = sqrt(datum_value)
     else
       call tao_load_this_datum (bunch_params(:)%sigma(5,5), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, bunch_params%twiss_valid)
@@ -2883,7 +2919,7 @@ case ('sigma.')
   case ('sigma.pz')  
     if (data_source == 'lat') then
       if (lat%param%geometry == closed$) then
-        call tao_load_this_datum (tao_branch%lat_sigma%mat(6,6), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, orbit = orbit)
+        call tao_load_this_datum (tao_branch%lat_sigma%mat(6,6), ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid)
         datum_value = sqrt(datum_value)
       else
         if (ix_ele == -1) ix_ele = branch%n_ele_track
@@ -3034,24 +3070,24 @@ case ('spin_dn_dpz.')
   select case (data_type)
   case ('spin_dn_dpz.x')
     do i = ix_start, ix_ele
-      value_vec(i) = tao_branch%dn_dpz(i)%vec(1)
+      value_vec(i) = tao_branch%spin_ele(i)%dn_dpz%vec(1)
     enddo
-    value_vec(ix_ele) = tao_branch%dn_dpz(ix_ele)%vec(1)
+    value_vec(ix_ele) = tao_branch%spin_ele(ix_ele)%dn_dpz%vec(1)
   case ('spin_dn_dpz.y')
     do i = ix_start, ix_ele
-      value_vec(i) = tao_branch%dn_dpz(i)%vec(2)
+      value_vec(i) = tao_branch%spin_ele(i)%dn_dpz%vec(2)
     enddo
-    value_vec(ix_ele) = tao_branch%dn_dpz(ix_ele)%vec(2)
+    value_vec(ix_ele) = tao_branch%spin_ele(ix_ele)%dn_dpz%vec(2)
   case ('spin_dn_dpz.z')
     do i = ix_start, ix_ele
-      value_vec(i) = tao_branch%dn_dpz(i)%vec(3)
+      value_vec(i) = tao_branch%spin_ele(i)%dn_dpz%vec(3)
     enddo
-    value_vec(ix_ele) = tao_branch%dn_dpz(ix_ele)%vec(3)
+    value_vec(ix_ele) = tao_branch%spin_ele(ix_ele)%dn_dpz%vec(3)
   case ('spin_dn_dpz.amp')
     do i = ix_start, ix_ele
-      value_vec(i) = norm2(tao_branch%dn_dpz(i)%vec)
+      value_vec(i) = norm2(tao_branch%spin_ele(i)%dn_dpz%vec)
     enddo
-    value_vec(ix_ele) = norm2(tao_branch%dn_dpz(ix_ele)%vec)
+    value_vec(ix_ele) = norm2(tao_branch%spin_ele(ix_ele)%dn_dpz%vec)
   case default
     call tao_set_invalid (datum, 'DATA_TYPE = "' // trim(data_type) // '" IS NOT VALID', why_invalid, .true.)
     return
@@ -3589,11 +3625,11 @@ call tao_set_invalid (datum, 'PARTICLE SPECIES TYPE NOT SET ??!! PLEASE SEEK HEL
 return
 
 9000 continue
-call tao_set_invalid (datum, 'DATA_TYPE = "beam" NOT VALID FOR THIS DATA_TYPE: ' // datum%data_type, why_invalid, .true.)
+call tao_set_invalid (datum, 'DATA_SOURCE = "beam" NOT VALID FOR THIS DATA_TYPE: ' // datum%data_type, why_invalid, .true.)
 return
 
 9001 continue
-call tao_set_invalid (datum, 'DATA_TYPE = "lat" NOT VALID FOR THIS DATA_TYPE: ' // datum%data_type, why_invalid, .true.)
+call tao_set_invalid (datum, 'DATA_SOURCE = "lat" NOT VALID FOR THIS DATA_TYPE: ' // datum%data_type, why_invalid, .true.)
 return
 
 9100 continue
@@ -3610,12 +3646,11 @@ end subroutine tao_evaluate_a_datum
 !-----------------------------------------------------------------------
 !-----------------------------------------------------------------------
 
-subroutine tao_load_this_datum (vec, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, good, orbit)
+subroutine tao_load_this_datum (vec, ele_ref, ele_start, ele, datum_value, valid_value, datum, branch, why_invalid, good)
 
 type (tao_data_struct) datum
 type (branch_struct) branch
 type (ele_struct), pointer :: ele_ref, ele_start, ele
-type (coord_struct), optional :: orbit(0:)
 
 real(rp), target :: vec(0:)
 real(rp) datum_value, ref_value, l_sum
@@ -3758,7 +3793,7 @@ if (ix_ele < ix_start) then   ! wrap around
 
     do i = 0, ix_ele
       n = n + 1
-      s_pos(n) = tao_datum_s_position(datum, branch%ele(i))
+      s_pos(n) = tao_datum_s_position(datum, branch%ele(i)) + branch%param%total_length
       value(n) = vec_ptr(i)
     enddo
 
@@ -3917,17 +3952,13 @@ if (n_pt < 2) then
 endif
 
 ds1 = s_pos(2) - s_pos(1)
-if (ds1 < 0) ds1 = ds1 + branch%param%total_length
-
 ds2 = s_pos(n_pt) - s_pos(n_pt-1)
-if (ds2 < 0) ds2 = ds2 + branch%param%total_length
 
 integ = 0.5_rp * (values(1) * ds1 + values(n_pt) * ds2)
 integ2 = 0.5_rp * (values(1)**2 * ds1 + values(n_pt)**2 * ds2)
 
 do i = 2, n_pt-1
   ds2 = s_pos(i+1) - s_pos(i)
-  if (ds2 < 0) ds2 = ds2 + branch%param%total_length
   integ = integ + 0.5_rp * values(i) * (ds1 + ds2)
   integ2 = integ2 + 0.5_rp * values(i)**2 * (ds1 + ds2)
   ds1 = ds2
@@ -3939,7 +3970,6 @@ case ('integral')
 
 case ('average', 'rms')
   ds2 = s_pos(n_pt) - s_pos(1)
-  if (ds2 < 0) ds2 = ds2 + branch%param%total_length
   if (ds2 == 0) then
     call tao_set_invalid (datum, 'INTERVAL TO AVERAGE OVER HAS ZERO LENGTH!')
     return
@@ -4646,6 +4676,9 @@ parsing_loop: do
       case ('atan2')
         call push_op_stack (op, i_op, atan2$)
         func(n_func)%n_arg_target = 2
+      case ('modulo')
+        call push_op_stack (op, i_op, modulo$)
+        func(n_func)%n_arg_target = 2
       case ('sinh');            call push_op_stack (op, i_op, sinh$)
       case ('cosh');            call push_op_stack (op, i_op, cosh$)
       case ('tanh');            call push_op_stack (op, i_op, tanh$)
@@ -5283,14 +5316,12 @@ end subroutine tao_param_value_routine
 !-------------------------------------------------------------------------
 !-------------------------------------------------------------------------
 !+
-! Function tao_evaluate_datum_at_s (eval_point, s_offset, data_type, tao_lat, ele, ele_ref, valid_value, err_str, bad_datum) result(value)
+! Function tao_evaluate_datum_at_s (datum, tao_lat, ele, ele_ref, valid_value, err_str, bad_datum) result(value)
 !
 ! Routine to evaluate a datum at a given s-position in the lattice
 !
 ! Input:
-!   eval_point    -- integer: Where to evaluate data relative to the element. anchor_beginning$, anchor_center$, or anchor_end$.
-!   s_offset      -- real(rp): Offset from eval_point to evaluate at.
-!   data_type     -- character(*): Type of data.
+!   datum         -- tao_data_struct: Datum to evaluate.
 !   tao_lat       -- tao_lattice_struct: 
 !   ele           -- ele_struct, pointer: Evaluation element.
 !   ele_ref       -- ele_struct, pointer: Reference element.
@@ -5303,11 +5334,12 @@ end subroutine tao_param_value_routine
 !   value         -- real(rp): Datum value.
 !-
 
-function tao_evaluate_datum_at_s (eval_point, s_offset, data_type, tao_lat, ele, ele_ref, valid_value, err_str, bad_datum) result(value)
+function tao_evaluate_datum_at_s (datum, tao_lat, ele, ele_ref, valid_value, err_str, bad_datum) result(value)
 
 use twiss_and_track_mod, only: twiss_and_track_at_s
 use transfer_map_mod, only: mat6_from_s_to_s
 
+type (tao_data_struct) datum
 type (tao_lattice_struct), target :: tao_lat
 type (ele_struct), pointer :: ele, ele_ref
 type (branch_struct), pointer :: branch
@@ -5316,20 +5348,20 @@ type (coord_struct) :: orb_at_s, orb2
 type (coord_struct), pointer :: orbit(:)
 
 real(rp) s_offset, value
-real(rp) s_eval, s_eval_ref
-integer eval_point, ix_ref
+real(rp) s_eval_ref
+integer ix_ref
 logical valid_value, bad_datum, compute_floor, err
-character(*) data_type, err_str
-character(40) d_type
+character(*) err_str
 
 !
 
-compute_floor = (data_type(1:min(5,len(data_type))) == 'floor')
+compute_floor = (datum%data_type(1:min(5,len(datum%data_type))) == 'floor')
 branch => pointer_to_branch(ele)
 orbit => tao_lat%tao_branch(ele%ix_branch)%orbit
+bad_datum = .false.
 
 valid_value = .false.
-d_type = data_type
+value = real_garbage$
 s_eval_ref = branch%ele(0)%s
 ix_ref = 0
 if (associated(ele_ref)) ix_ref = ele_ref%ix_ele
@@ -5337,49 +5369,44 @@ if (associated(ele_ref)) ix_ref = ele_ref%ix_ele
 if (.not. associated(ele)) then
   err_str = 'THERE MUST BE AN ASSOCIATED ELEMENT WHEN S_OFFSET IS NON-ZERO OR EVAL_POINT != END.'
   bad_datum = .true.
-  value = real_garbage$
   return
 endif
 
-select case (eval_point)
+select case (datum%eval_point)
 case (anchor_beginning$)
-  s_eval = ele%s_start + s_offset
+  datum%s = ele%s_start + datum%s_offset
   if (associated(ele_ref)) s_eval_ref = ele_ref%s_start
 case (anchor_center$)
-  s_eval = (ele%s_start + ele%s) / 2 + s_offset
+  datum%s = (ele%s_start + ele%s) / 2 + datum%s_offset
   if (associated(ele_ref)) s_eval_ref = (ele_ref%s_start + ele_ref%s) / 2
 case (anchor_end$)
-  s_eval = ele%s + s_offset
+  datum%s = ele%s + datum%s_offset
   if (associated(ele_ref)) s_eval_ref = ele_ref%s
 end select
 
 !--------------------------------------------
 
-if (d_type(1:2) == 'r.') then
+if (substr(datum%data_type,1,2) == 'r.') then
   orb_at_s = orbit(ix_ref)
-  call mat6_from_s_to_s (branch%lat, ele_at_s%mat6, ele_at_s%vec0, s_eval_ref, s_eval, &
+  call mat6_from_s_to_s (branch%lat, ele_at_s%mat6, ele_at_s%vec0, s_eval_ref, datum%s, &
                                                        orbit(ele%ix_ele), orb2, branch%ix_branch, .true.)
-  value = tao_param_value_at_s (data_type, ele_at_s, orb_at_s, err)
+  value = tao_param_value_at_s (datum%data_type, ele_at_s, orb_at_s, err, bad_datum = bad_datum)
   if (err) then
     err_str = 'CANNOT EVALUATE DATUM AT OFFSET POSITION.'
-    bad_datum = .true.
     return
   endif
 
 else
-  call twiss_and_track_at_s (branch%lat, s_eval, ele_at_s, orbit, orb_at_s, branch%ix_branch, &
+  call twiss_and_track_at_s (branch%lat, datum%s, ele_at_s, orbit, orb_at_s, branch%ix_branch, &
                                                                       err, compute_floor_coords = compute_floor)
   if (err) then
     err_str = 'CANNOT TRACK TO OFFSET POSITION.'
-    bad_datum = .false.
-    value = real_garbage$
     return
   endif
 
-  value = tao_param_value_at_s (data_type, ele_at_s, orb_at_s, err)
+  value = tao_param_value_at_s (datum%data_type, ele_at_s, orb_at_s, err, bad_datum = bad_datum)
   if (err) then
     err_str = 'CANNOT EVALUATE DATUM AT OFFSET POSITION.'
-    bad_datum = .true.
     return
   endif
 
@@ -5388,14 +5415,12 @@ else
                                                                       err, compute_floor_coords = compute_floor)
     if (err) then
       err_str = 'CANNOT TRACK TO REFERENCE POSITION.'
-      bad_datum = .false.
       return
     endif
 
-    value = value - tao_param_value_at_s (data_type, ele_at_s, orb_at_s, err)
+    value = value - tao_param_value_at_s (datum%data_type, ele_at_s, orb_at_s, err, bad_datum = bad_datum)
     if (err) then
       err_str = 'CANNOT EVALUATE DATUM AT REFERENCE POSITION.'
-      bad_datum = .true.
       return
     endif
   endif
@@ -5653,6 +5678,10 @@ do i = 1, size(stack)
 
   case (atan2$) 
     stk2(i2-1)%value = atan2(stk2(i2-1)%value, stk2(i2)%value)
+    i2 = i2 - 1
+
+  case (modulo$) 
+    stk2(i2-1)%value = modulo(stk2(i2-1)%value, stk2(i2)%value)
     i2 = i2 - 1
 
   case (sinh$)

@@ -1,14 +1,28 @@
 !+
-! Subroutine hdf5_read_beam (file_name, beam, error, ele, pmd_header)
+! Subroutine hdf5_read_beam (file_name, beam, error, ele, pmd_header, print_mom_shift_warning, conserve_momentum)
 !
 ! Routine to read a beam data file. 
 ! See also hdf5_write_beam.
+!
+! What is stored in the file is the momentum and ref momentum for each particle. If ele has a different ref p0c than
+! the stored values, the particles that are created, since they inherit the ele p0c, can either have the same momentum
+! as the particles there were used to create the beam file or they can have the same phase space px, py, pz values. But 
+! not both. This is determined by the conserve_momentum arg.
 !
 ! Input:
 !   file_name         -- character(*): Name of the beam data file.
 !                           Default is False.
 !   ele               -- ele_struct, optional: Element where beam is to be started from.
 !                           The element reference momentum will be used for the particle reference momentum.
+!   print_mom_shift_warning   -- logical, optional: Default is True. Oly relavent if ele arg is present.
+!                                 Print warning if element p0c reference momentum
+!                                 is different from what is stored for the particles?
+!   conserve_momentum         -- logical, optional: Default is False. Only relavent if ele arg is present and 
+!                                 ele ref p0c is different from the ref p0c stored in the file.
+!                                 If True and the ref p0c's differ, the output particles will have the same actual momentum 
+!                                 as the particles used to create the beam file but phase space px, py, pz will differ. 
+!                                 If False, phase space px, py, pz will be the same and the actual momentums can differ. See above.
+!                                   
 !
 ! Output:
 !   beam              -- beam_struct: Particle positions.
@@ -16,7 +30,7 @@
 !   pmd_header        -- pmd_header_struct, optional: Extra info like file creation date.
 !-
 
-subroutine hdf5_read_beam (file_name, beam, error, ele, pmd_header)
+subroutine hdf5_read_beam (file_name, beam, error, ele, pmd_header, print_mom_shift_warning, conserve_momentum)
 
 use hdf5_openpmd_mod
 use bmad_interface, dummy => hdf5_read_beam
@@ -45,6 +59,7 @@ character(*) file_name
 character(*), parameter :: r_name = 'hdf5_read_beam'
 character(100) c_name, name, t_match, sub_dir
 
+logical, optional :: print_mom_shift_warning, conserve_momentum
 logical error, err
 
 ! Init
@@ -157,9 +172,8 @@ integer, allocatable :: charge_state(:)
 character(*) bunch_obj_name
 character(:), allocatable :: string
 character(100) g_name, a_name, name, c_name
-character(*), parameter :: r_name = 'hdf5_read_bunch'
 
-logical error
+logical error, momentum_warning_printed
 
 ! General note: There is no way to check names for misspellings since any name may just be an extension standard.
 
@@ -173,6 +187,7 @@ call hdf5_read_attribute_int(g2_id, 'numParticles', n, error, .true.);  if (erro
 allocate (dt(n), charge_state(n), tot_mom(n), mom_x_off(n), mom_y_off(n), mom_z_off(n))
 allocate (pos_x_off(n), pos_y_off(n), pos_z_off(n))
 
+momentum_warning_printed = .false.
 charge_factor = 0
 species = int_garbage$  ! Garbage number
 tot_mom = real_garbage$
@@ -191,6 +206,8 @@ bunch%charge_live = 0
 if (present(ele)) then
   bunch%particle%ix_ele = ele%ix_ele
   bunch%particle%ix_branch = ele%ix_branch
+  bunch%particle%s = ele%s
+  bunch%particle%location = exit_end$
   if (associated(ele%branch)) species = ele%branch%param%particle
 endif
 
@@ -267,7 +284,7 @@ do idx = 0, n_links-1
     call pmd_read_real_dataset(g2_id, 'photonPolarizationPhase/x', 1.0_rp, bunch%particle%phase(1), error)
     call pmd_read_real_dataset(g2_id, 'photonPolarizationPhase/y', 1.0_rp, bunch%particle%phase(2), error)
   case ('sPosition')
-    call pmd_read_real_dataset(g2_id, name, 1.0_rp, bunch%particle%s, error)
+    if (.not. present(ele)) call pmd_read_real_dataset(g2_id, name, 1.0_rp, bunch%particle%s, error)
   case ('time')
     call pmd_read_real_dataset(g2_id, name, 1.0_rp, dt, error)
   case ('timeOffset')
@@ -283,19 +300,21 @@ do idx = 0, n_links-1
   case ('chargeState')
     call pmd_read_int_dataset(g2_id, name, 1.0_rp, charge_state, error)
   case ('branchIndex')
-    call pmd_read_int_dataset(g2_id, name, 1.0_rp, bunch%particle%ix_branch, error)
+    if (.not. present(ele)) call pmd_read_int_dataset(g2_id, name, 1.0_rp, bunch%particle%ix_branch, error)
   case ('elementIndex')
-    call pmd_read_int_dataset(g2_id, name, 1.0_rp, bunch%particle%ix_ele, error)
+    if (.not. present(ele)) call pmd_read_int_dataset(g2_id, name, 1.0_rp, bunch%particle%ix_ele, error)
   case ('locationInElement')
-    call pmd_read_int_dataset(g2_id, name, 1.0_rp, bunch%particle%location, error)
-    do ip = 1, size(bunch%particle)
-      p => bunch%particle(ip)
-      select case(p%location)
-      case (-1);    p%location = upstream_end$
-      case ( 0);    p%location = inside$
-      case ( 1);    p%location = downstream_end$
-      end select
-    enddo
+    if (.not. present(ele)) then
+      call pmd_read_int_dataset(g2_id, name, 1.0_rp, bunch%particle%location, error)
+      do ip = 1, size(bunch%particle)
+        p => bunch%particle(ip)
+        select case(p%location)
+        case (-1);    p%location = upstream_end$
+        case ( 0);    p%location = inside$
+        case ( 1);    p%location = downstream_end$
+        end select
+      enddo
+    endif
   end select
 
   if (error) exit
@@ -339,8 +358,10 @@ do ip = 1, size(bunch%particle)
 
   p0c_initial = p%p0c
   p0c_final   = p%p0c
-  if (present(ele) .and. p0c_initial == 0) p0c_initial   = ele%value(p0c$)
-  if (present(ele)) p0c_final   = ele%value(p0c$)
+  if (present(ele)) then
+    if (p0c_initial == 0) p0c_initial   = ele%value(p0c$)
+    p0c_final   = ele%value(p0c$)
+  endif
 
   if (p0c_final == 0) then
     call out_io (s_error$, r_name, 'REFERENCE MOMENTUM NOT PRESENT WHILE READING BEAM DATA FROM: ' // file_name, 'ABORTING READ...')
@@ -350,14 +371,23 @@ do ip = 1, size(bunch%particle)
 
   select case (p%state)
   case (alive$)
-    if (abs(p0c_initial - p0c_final) > 1e-12 * p0c_final) then
-      call out_io (s_warn$, r_name, 'REFERENCE MOMENTUM OF PARTICLE IN BEAM FILE:  \es20.12\ ', &
-                                    'FROM FILE: ' // file_name, &
-                                    'DIFFERENT FROM REFERNECE MOMENTUM IN LATTICE: \es20.12\ ', &
-                                    'THIS WILL CAUSE A SHIFT IN PHASE SPACE pz = (P - P0)/P', &
-                                    r_array = [p0c_initial, p0c_final])
+    if (abs(p0c_initial - p0c_final) > 1e-12 * p0c_final .and. &
+            logic_option(.true., print_mom_shift_warning) .and. .not. momentum_warning_printed) then
+      if (logic_option(.false., conserve_momentum)) then
+        call out_io (s_warn$, r_name, 'REFERENCE MOMENTUM OF PARTICLE IN BEAM FILE:  \es20.12\ ', &
+                                      'FROM FILE: ' // file_name, &
+                                      'DIFFERENT FROM REFERNECE MOMENTUM IN LATTICE: \es20.12\ ', &
+                                      'THIS WILL CAUSE A SHIFT IN PARTICLE''S MOMENTUM (BUT NOT PZ)', &
+                                      r_array = [p0c_initial, p0c_final])
+      else
+        call out_io (s_warn$, r_name, 'REFERENCE MOMENTUM OF PARTICLE IN BEAM FILE:  \es20.12\ ', &
+                                      'FROM FILE: ' // file_name, &
+                                      'DIFFERENT FROM REFERNECE MOMENTUM IN LATTICE: \es20.12\ ', &
+                                      'THIS WILL CAUSE A SHIFT IN PARTICLE''S PHASE SPACE pz = (P - P0)/P (BUT NOT THE MOMENTUM)', &
+                                      r_array = [p0c_initial, p0c_final])
+      endif
     endif
-
+    momentum_warning_printed = .true.
   case (pre_born$)
     ! Nothing to be done
 
@@ -365,17 +395,27 @@ do ip = 1, size(bunch%particle)
     if (pmd_head%software /= 'Bmad') p%state = lost$
   end select
 
+  p%species = set_species_charge(species, charge_state(ip))
+
   if (tot_mom(ip) == real_garbage$ .or. p0c_initial == 0) then 
     p%vec(6) = (sqrt(p%vec(2)**2 + p%vec(4)**2 + p%vec(6)**2) - p0c_final) / p0c_final
-  else
+  elseif (logic_option(.false., conserve_momentum)) then
     p%vec(6) = (tot_mom(ip) + (p0c_initial - p0c_final)) / p0c_final
+  else
+    p%vec(6) = tot_mom(ip) / p0c_initial
   endif
 
-  p%species = set_species_charge(species, charge_state(ip))
-  call convert_pc_to ((1 + p%vec(6)) * p0c_final, p%species, beta = p%beta)
-  p%vec(2) = p%vec(2) / p0c_final
-  p%vec(4) = p%vec(4) / p0c_final
-  p%vec(5) = -p%beta * c_light * dt(ip)
+  if (logic_option(.true., conserve_momentum)) then
+    call convert_pc_to ((1 + p%vec(6)) * p0c_final, p%species, beta = p%beta)
+    p%vec(2) = p%vec(2) / p0c_final
+    p%vec(4) = p%vec(4) / p0c_final
+    p%vec(5) = -p%beta * c_light * dt(ip)
+  else
+    call convert_pc_to ((1 + p%vec(6)) * p0c_initial, p%species, beta = p%beta)
+    p%vec(2) = p%vec(2) / p0c_initial
+    p%vec(4) = p%vec(4) / p0c_initial
+    p%vec(5) = -p%beta * c_light * dt(ip)
+  endif
 
   p%p0c = p0c_final
 enddo

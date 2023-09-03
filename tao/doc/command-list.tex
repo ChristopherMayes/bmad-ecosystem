@@ -55,16 +55,16 @@ possible
   change        & \sref{s:change}   & reinitialize  & \sref{s:reinit}   \\ 
   clear         & \sref{s:clear}    & restore       & \sref{s:restore}  \\ 
   clip          & \sref{s:clip}     & run_optimizer & \sref{s:run}      \\ 
-  cut_ring      & \sref{s:cut.ring} & scale         & \sref{s:scale}    \\ 
-  continue      & \sref{s:continue} & set           & \sref{s:set}      \\  
-  derivative    & \sref{s:deriv}    & show          & \sref{s:show}     \\ 
-  do, enddo     & \sref{s:do}       & single_mode   & \sref{s:sing}     \\ 
-  end_file      & \sref{s:end.file} & spawn         & \sref{s:spawn}    \\ 
-  exit          & \sref{s:exit}     & taper         & \sref{s:taper}    \\
-  flatten       & \sref{s:flatten}  & timer         & \sref{s:timer}    \\
-  help          & \sref{s:help}     & use           & \sref{s:use}      \\ 
-  ls            & \sref{s:ls}       & veto          & \sref{s:veto}     \\ 
-  misalign      & \sref{s:misalign} & view          & \sref{s:view}     \\
+  continue      & \sref{s:continue} & scale         & \sref{s:scale}    \\ 
+  create        & \sref{s:create}   & set           & \sref{s:set}      \\  
+  cut_ring      & \sref{s:cut.ring} & show          & \sref{s:show}     \\ 
+  derivative    & \sref{s:deriv}    & single_mode   & \sref{s:sing}     \\ 
+  do, enddo     & \sref{s:do}       & spawn         & \sref{s:spawn}    \\ 
+  end_file      & \sref{s:end.file} & taper         & \sref{s:taper}    \\
+  exit          & \sref{s:exit}     & timer         & \sref{s:timer}    \\
+  flatten       & \sref{s:flatten}  & use           & \sref{s:use}      \\ 
+  help          & \sref{s:help}     & veto          & \sref{s:veto}     \\ 
+  ls            & \sref{s:ls}       & view          & \sref{s:view}     \\
   pause         & \sref{s:pause}    & wave          & \sref{s:wave}     \\
   place         & \sref{s:place}    & write         & \sref{s:write}    \\ 
   ptc           & \sref{s:ptc}      & x_axis        & \sref{s:x.axis}   \\ 
@@ -331,6 +331,42 @@ Examples:
                     ! in other graphs of the orbit plot.
 \end{example}
 
+%% create --------------------------------------------------------------
+\section{create}\index{commands!create}
+\label{s:create}
+
+Format:
+\begin{example}
+  create data ... ! \sref{s:create.data}
+\end{example}
+
+The \vn{create} command constructs various tao objects that would have
+otherwise been created in tao initialiation. 
+
+% Use the command:
+%   help create <subcommand>
+% to obtain more information on a particular write subcommand. Example:
+%   help create data
+
+%% create data --------------------------------------------------------------
+
+\subsection{create data}
+\label{s:create.data}
+
+The \vn{create data} constructs a new \vn{d2_data} and one or more \vn{d1_data} for it.
+The primary purpose of this command is to make more data available for design
+and optimization in an interactive session; for repeated use, create data using
+data initialization namelists (\sref{s:init.data}). The resulting data must be
+initialized with the \vn{set data} command (\sref{s:set.data}).
+
+Syntax:
+\begin{example}
+  create data d2_name d1_name[ix_min:ix_max] ...
+\end{example}
+
+You may have as many \vn{d1_name}s as needed.
+\vn{ix_min} and \vn{ix_max} must be literal integers, not expressions.
+
 %% cut_ring --------------------------------------------------------------
 \section{cut_ring}\index{commands!cut_ring}
 \label{s:cut.ring}
@@ -455,18 +491,21 @@ When the \vn{help} command parses the \vn{\$TAO_DIR/doc/command-list.tex} file, 
 modified to produce a reasonable looking output on the terminal. This translation is not perfect so
 reference should be made to the \tao manual if there is a problem in the translation.
 
-%% misalign --------------------------------------------------------------
-\section{misalign}\index{command!misalign}
-\label{s:misalign}
-
 %% ls --------------------------------------------------------------
 \section{ls}\index{command!ls}
 \label{s:ls}
 
 The \vn{ls} command is the same as the standard UNIX \vn{ls} command to display a list of files and
-directories. The standard ls switches are accepted.
+directories. The standard ls switches are accepted. This is equivalent to the \vn{spawn ls} command.
+Format:
+\begin{example}
+  ls \{switches\}
+\end{example}
 
-This is equivalent to the \vn{spawn ls} command.
+Example:
+\begin{example}
+  ls -lrt
+\end{example}
 
 %% pause --------------------------------------------------------------
 \section{pause}\index{commands!pause}
@@ -1118,7 +1157,7 @@ Examples:
 
 Format:
 \begin{example}
-  set data <data_name>|<component> = <value>
+  set data \{-silent\} <data_name>|<component> = <value>
 \end{example}
 Set datum parameters.
 
@@ -1133,12 +1172,18 @@ that \vn{cannot} be set is:
   ix_d1
 \end{example}
 
+The \vn{-silent} switch, if present, prevents \tao from issuing an error message if \tao detects a
+malformed datum. This is useful when creating datums from scratch (via \vn{python data_d2_create})
+or when modifying multiple datum parameters, like a datum's \vn{data_type} and \vn{data_source},
+where it is known that the datum will be in a malformed state before the final set.
+
 Examples:
 \begin{example}
-  set data *|ref = *|meas            ! Set ref data = measured in current universe.
+  set data *|ref = *|meas              ! Set ref data = measured in current universe.
   set data 2@orbit.x|base = 2@orbit.x|model 
-                                     ! Set the base orbit.x in universe 2 to model
-  set data beta.x[10]|weight = 1e-5  ! Set weight of datum.
+                                       ! Set the base orbit.x in universe 2 to model
+  set data beta.x[10]|weight = 1e-5    ! Set weight of datum.
+  set -silent d[1]|data_type = beta.a  ! Set type_type.
 \end{example}
 
 %% set default --------------------------------------------------------------
@@ -1539,9 +1584,12 @@ Format:
 The \vn{set plot_page} command sets \vn{plot page} parameters (\sref{s:plot.page.def}).
 use the \vn{show plot -page} command to see a list of plot page parameters.
 
-Example:
+The \vn{<value2>} value is needed for the plot window \vn{size}.
+
+Examples:
 \begin{example}
   set plot_page title = 'XYZ'  ! Set plot page title string
+  set plot_page size = 500 600 ! Set plot window size in pixels.
 \end{example}
 
 %% set ptc_com --------------------------------------------------------------
@@ -1892,7 +1940,7 @@ Format:
   show value ...               ! Show value of an expression \sref{s:show.value}.
   show variables ...           ! Show optimization variable info \sref{s:show.variables}.
   show version                 ! Show Tao version.
-  show wakes                   ! Show wake info \sref{s:show.wakes}.
+  show wake_elements           ! Show wake info \sref{s:show.wake_elements}.
   show wall ...                ! Show vacuum chamber wall info \sref{s:show.wall}.
   show wave                    ! Show wave analysis info \sref{s:show.wave}.
 \end{example}
@@ -1949,7 +1997,7 @@ Shows a list of defined aliases. See the \vn{alias} command for more details.
 
 Command to show beam parameters. Syntax:
 \begin{example}
-  show beam \{-comb\} \{-universe <uni_index>\} \{-lattice\} \{<element_id>\}
+  show beam \{-comb\} \{-universe <uni_index>\} \{-lattice\} \{-z <z1> <z2>\} \{<element_id>\}
 \end{example}
 
 If both \vn{<element_id>} and \vn{-lattice} are absent, \vn{show beam} shows parameters
@@ -1971,6 +2019,13 @@ of longitudinally equally spaced points where the beam parameters are evaluated 
 \vn{write bunch_comb} (\sref{s:write.bunch.comb}) and \vn{python bunch_comb} (\sref{p:bunch.comb})
 commands.
 
+The \vn{-z <z1> <z2>} option shows bunch parameters for a slice of the beam. The slice boundaries
+are specified by \vn{<z1>} and \vn{<z2>}. Both values must be in the range [0.0, 1.0] with 0.0
+indicating the back of the bunch and 1.0 indicating the front of the bunch. For example, "-z 0.0,
+0.5" would give bunch parameters for the back half of the bunch. If the \vn{-z} option is used,
+the \vn{<element_id>} must be specified and the beam must have been saved at the corresponding
+element (\sref{s:beam.init}).
+
 Note: To show individual particle positions, see the \vn{show particle} command
 (\sref{s:show.particle}).
 
@@ -1981,6 +2036,7 @@ Examples:
   show beam          ! Show beam initialization parameters.
   show beam -lat 37  ! Show sigma matrix, etc. calculated at element #37.
   show beam -comb 3  ! Show sigma matrix, etc. calculated at comb index #3.
+  show beam -z 0.1 0.4 q3w  ! Show parameters of a slice of the bunch.
 \end{example}
 
 %% show branch --------------------------------------------------------------
@@ -2460,7 +2516,7 @@ Shows all key bindings (\sref{s:key.bind}).
 Syntax:
 \begin{example}
   show lattice \{-0undef\} \{-all\} \{-attribute <attrib>\} \{-base\} \{-beginning\}
-      \{-blank_replacement <string>\}  \{-branch <name_or_index>\}
+      \{-blank_replacement <string>\}  \{-branch <name_or_index>\} \{-center\}
       \{-custom <file_name>\} \{-design\} \{-floor_coords\} \{-lords\} \{-middle\}
       \{-no_label_lines\} \{-no_slaves\} \{-no_super_slaves\} \{-no_tail_lines\} \{-orbit\} 
       \{-python\} \{-radiation_integrals\} \{-remove_line_if_zero <column \#>\} 
@@ -2522,7 +2578,6 @@ Show value evaluated at the beginning of the lattice elements instead of the def
 element's length or an element's field strength (which can be displayed using the \vn{-attribute}
 switch as discussed below). Also the \vn{-beginning} switch is ignored when displaying beam based
 parameters. Also see \vn{-middle}.
-
 %
 \item[-blank_replacement <string>] \Newline
 The \vn{-blank_replacement} switch specifies that whenever a blank string is encountered (for
@@ -2536,6 +2591,9 @@ This will replace any blank fields with ``zz''.
 \item[-branch] \Newline
 The \vn{-branch <name_or_index>} option can be used to specify the branch of the lattice.
 \vn{<name_or_index>} can be the name or index of the branch.  The default is the main branch (\# 0).
+%
+\item[-center] \Newline
+Same as \vn{-middle}. See \vn{-middle} documentation for more details.
 %
 \item[-custom <file_name>] \Newline
 A table with customized columns may be constructed either by using the \vn{-custom} switch which
@@ -3327,12 +3385,13 @@ in with a \vn{call} command.
 
 Syntax:
 \begin{example}
-  show value \{-format <format-string>\} <expression>
+  show value \{#format <format-string>\} <expression>
 \end{example}
 
-Shows the value of an expression. The \vn{-format} switch can be used to set the number format.  The
-default format is \vn{es25.17} which results in number printed in scientific notation format with a
-field width of 25 and 17 digits displayed after the decimal place. Use ``\vn{f}'' for fixed point
+Shows the value of an expression. The \vn{\#format} switch (notice that "\vn{\#}" is used instead of
+"\vn{-}" to avoid confusion with negative signs) can be used to set the number format.  The default
+format is \vn{es25.17} which results in number printed in scientific notation format with a field
+width of 25 and 17 digits displayed after the decimal place. Use ``\vn{f}'' for fixed point
 numbers. For example, ``\vn{f10.3}'' will give display numbers in fixed point format with a field
 width of 10 and 3 digits displayed after the decimal place. Rule: The format string must not contain
 an embedded blank space.
@@ -3342,15 +3401,16 @@ is a format specified and if the format has a repeat count\footnote
   {
 for example ``\vn{4f10.3}'' has a repeat count of 4.
   }
-or a comma (example ``\vn{f9.3,es9.1}''), the values will be printed on one line.
+or a comma (example ``\vn{f9.3,es9.1}''), the values will be printed on one line. 
+
 
 Also see \vn{show string}.
 
 Examples:
 \begin{example}
   show value sqrt(3@lat::orbit.x[34]|model) + sin(0.35)
-  show value -form f10.4 ran_gauss()
-  show value -form 2es10.2 [ele::q20w[hkick], lat::beta.a[4]] ! Output on one line
+  show value #form f10.4 ran_gauss()
+  show value #form 2es10.2 [ele::q20w[hkick], lat::beta.a[4]] ! Output on one line
 \end{example}
 The last example shows how to 
 
@@ -3419,23 +3479,23 @@ For developers who use SVN to update their Distributions: The version string is 
 you update your Distribution (the version file is not in the SVN repository). 
   }
 
-%% show wakes --------------------------------------------------------------
+%% show wake_elements --------------------------------------------------------------
 
-\subsection{show wakes}
-\label{s:show.wakes}
+\subsection{show wake_elements}
+\label{s:show.wake_elements}
 
 Syntax:
 \begin{example}
-  show wakes 
+  show wake_elements 
 \end{example}
 
-The \vn{show wakes} command will list the lattice elements that have associated wake fields.  Use
+The \vn{show wake_elements} command will list the lattice elements that have associated wake fields.  Use
 the \vn{show ele} command to get more details on a given element. Note that wakes only affect
 particle tracking when tracking with a beam of particles (not when tracking just a single particle
 which is the default for \tao).
 
 At this point in time, \tao is not setup to do multiturn tracking with bunches which means that if
-simulations with wakefields is desired, a different program have to be used.
+simulations with wakefields is desired, a different program have to be used like \vn{long_term_tracking}.
 
 %% show wall --------------------------------------------------------------
 
@@ -4037,7 +4097,7 @@ The default file name is \vn{lat_\#.madx} where \vn{\#} is replaced by the unive
 
 Syntax:
 \begin{example}
-    write madx \{-branch <branch>\} \{-single\} \{-from_start\} \{-combined\}
+    write matrix \{-branch <branch>\} \{-single\} \{-from_start\} \{-combined\}
                \{-universe <ix_uni>\} \{<file_name>\}  ! Write transport matrices
 \end{example}
 

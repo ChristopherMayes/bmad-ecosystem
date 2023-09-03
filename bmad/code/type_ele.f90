@@ -78,12 +78,13 @@ type (all_pointer_struct) a_ptr
 type (ac_kicker_struct), pointer :: ac
 type (str_index_struct) str_index
 type (rad_map_struct), pointer :: rm0, rm1
+type (photon_reflect_table_struct), pointer :: rt
 
 integer, optional, intent(in) :: type_mat6, twiss_out, type_field
 integer, optional, intent(out) :: n_lines
 integer ia, im, i1, ig, i, j, n, is, ix, iw, ix2_attrib, iv, ic, nl2, l_status, a_type, default_val
 integer nl, nt, n_term, n_att, attrib_type, n_char, iy, particle, ix_pole_max, lb(2), ub(2)
-integer id1, id2, id3
+integer id1, id2, id3, ne, na
 
 real(rp) coef, val, L_mis(3), S_mis(3,3) 
 real(rp) a(0:n_pole_maxx), b(0:n_pole_maxx)
@@ -592,7 +593,7 @@ if (associated(ele%grid_field)) then
       j = j + 1
       if (j > nl2) exit
       if (nl+1 > size(li)) call re_allocate(li, 2 * nl, .false.)
-      nl = nl + 1
+      nl=nl + 1
 
       select case (grid_field_dimension(g_field%geometry))
       case (1)
@@ -784,18 +785,66 @@ if (associated(ph)) then
 
   if (ph%material%f_h /= 0) then
     nl=nl+1; li(nl) = ''
-    nl=nl+1; li(nl) = 'Structure Factors:'
+    nl=nl+1; li(nl) = 'Structure Factors (Re, Im):'
     if (ele%key == multilayer_mirror$) then
-      nl = nl+1; write (li(nl), '(4x, 2(a,f10.3))') 'F_0 (Material 1):', real(ph%material%f0_m1), ' + I ', aimag(ph%material%f0_m1)
-      nl = nl+1; write (li(nl), '(4x, 2(a,f10.3))') 'F_0 (Material 2):', real(ph%material%f0_m2), ' + I ', aimag(ph%material%f0_m2)
+      nl=nl+1; write (li(nl), '(4x, 2(a,f10.4))') 'F_0 (Material 1):', real(ph%material%f0_m1), ',', aimag(ph%material%f0_m1)
+      nl=nl+1; write (li(nl), '(4x, 2(a,f10.4))') 'F_0 (Material 2):', real(ph%material%f0_m2), ', ', aimag(ph%material%f0_m2)
     else
-      nl = nl+1; write (li(nl), '(4x, 2(a,f10.3))') 'F_0:             ', real(ph%material%f_0), ' + I ', aimag(ph%material%f_0)
+      nl=nl+1; write (li(nl), '(4x, 2(a,f10.4))') 'F_0:             ', real(ph%material%f_0), ', ', aimag(ph%material%f_0)
     endif
-    nl = nl+1; write (li(nl), '(4x, 2(a,f10.3))') 'F_H:             ', real(ph%material%f_h), ' + I ', aimag(ph%material%f_h)
-    nl = nl+1; write (li(nl), '(4x, 2(a,f10.3))') 'F_Hbar:          ', real(ph%material%f_hbar), ' + I ', aimag(ph%material%f_hbar)
-    nl = nl+1; write (li(nl), '(4x, 2(a,f10.3))') 'Sqrt(F_H*F_Hbar):', real(ph%material%f_hkl), ' + I ', aimag(ph%material%f_hkl)
+    nl=nl+1; write (li(nl), '(4x, 2(a,f10.4))') 'F_H:             ', real(ph%material%f_h), ', ', aimag(ph%material%f_h)
+    nl=nl+1; write (li(nl), '(4x, 2(a,f10.4))') 'F_Hbar:          ', real(ph%material%f_hbar), ', ', aimag(ph%material%f_hbar)
+    nl=nl+1; write (li(nl), '(4x, 2(a,f10.4))') 'Sqrt(F_H*F_Hbar):', real(ph%material%f_hkl), ', ', aimag(ph%material%f_hkl)
+  endif
+
+  if (allocated(ph%init_energy_prob)) then
+    nl=nl+1; li(nl) = ''
+    nl=nl+1; li(nl) = 'Energy_probability_curve:'
+    nl=nl+1; li(nl) = '   Energy(eV)      Prob_density/eV (normalized)'
+    n = size(ph%init_energy_prob)
+    do i = 1, min(5, n)
+      nl=nl+1; write(li(nl), '(4x, 2es12.4)') ph%init_energy_prob(i)%x0, ph%init_energy_prob(i)%y0 / ph%integrated_init_energy_prob(n)
+    enddo
+    if (n > 10) then
+      nl=nl+1; write(li(nl), '(3a)') '   ..... ', int_str(n), ' terms total ...'
+    endif
+    do i = 1, min(5, n-5)
+      j = i + n - 5
+      nl=nl+1; write(li(nl), '(4x, 2es12.4)') ph%init_energy_prob(j)%x0, ph%init_energy_prob(j)%y0 / ph%integrated_init_energy_prob(n)
+    enddo
+  endif
+
+  rt => ph%reflectivity_table_sigma
+  if (allocated(rt%p_reflect)) then
+    na = size(rt%angle)
+    ne = size(rt%energy)
+    nl=nl+1; li(nl) = ''
+    select case (ph%reflectivity_table_type)
+    case (polarized$);  nl=nl+1; li(nl) = 'Reflectivity table for Sigma polarization:'
+    case default;       nl=nl+1; li(nl) = 'Reflectivity table for both polarizations:'
+    end select
+    nl=nl+1; write(li(nl), '(a, 2f14.9, i6)') '  Angles Min, Max, #Points:           ', rt%angle(1),  rt%angle(na),  na
+    nl=nl+1; write(li(nl), '(a, 2f14.1, i6)') '  Energy Min, Max, #Points:           ', rt%energy(1), rt%energy(ne), ne
+    if (ele%key == crystal$) then
+      nl=nl+1; write(li(nl), '(a, 2f14.9)')   '  Bragg angle (uncorrected) Min, Max: ', rt%bragg_angle(1), rt%bragg_angle(ne)
+    endif
+  endif
+
+  rt => ph%reflectivity_table_pi
+  if (allocated(rt%p_reflect)) then
+    na = size(rt%angle)
+    ne = size(rt%energy)
+    nl=nl+1; li(nl) = ''
+    nl=nl+1; li(nl) = 'Reflectivity table for Pi polarization:'
+    nl=nl+1; write(li(nl), '(a, 2f14.9, i6)') '  Angles Min, Max, #Points:           ', rt%angle(1),  rt%angle(na),  na
+    nl=nl+1; write(li(nl), '(a, 2f14.1, i6)') '  Energy Min, Max, #Points:           ', rt%energy(1), rt%energy(ne), ne
+    if (ele%key == crystal$) then
+      nl=nl+1; write(li(nl), '(a, 2f14.9)')   '  Bragg angle (uncorrected) Min, Max: ', rt%bragg_angle(1), rt%bragg_angle(ne)
+    endif
   endif
 endif
+
+
 
 ! Encode branch info
 
@@ -932,7 +981,7 @@ if (associated(lat) .and. logic_option(.true., type_control)) then
     enddo
   endif
 
-  if (.not. has_it) nl = nl - 3
+  if (.not. has_it) nl=nl - 3
 
   ! Print info on elements slaves.
 
@@ -1087,7 +1136,7 @@ if (associated(lat) .and. logic_option(.true., type_control)) then
     enddo
   endif
 
-  if (.not. has_it) nl = nl - 3
+  if (.not. has_it) nl=nl - 3
 endif
 
 ! Encode Twiss info
@@ -1103,7 +1152,7 @@ if (integer_option(radians$, twiss_out) /= 0 .and. ele%a%beta /= 0) then
   nl=nl+1; li(nl) = ''
   nl=nl+1; li(nl) = 'Twiss at end of element:'
   call type_twiss (ele, twiss_out, .false., li(nl+1:), nl2)
-  nl = nl + nl2
+  nl=nl + nl2
 endif
 
 l_status = ele%lord_status
@@ -1383,7 +1432,7 @@ character(*) attrib_name
 character(40) a_name, a2_name
 logical is_2nd_col_attrib
 
-character(41), parameter :: att_name(83) = [character(40):: 'X_PITCH', 'Y_PITCH', 'X_OFFSET', &
+character(41), parameter :: att_name(86) = [character(40):: 'X_PITCH', 'Y_PITCH', 'X_OFFSET', &
                 'Y_OFFSET', 'Z_OFFSET', 'REF_TILT', 'TILT', 'ROLL', 'X1_LIMIT', 'Y1_LIMIT', &
                 'FB1', 'FQ1', 'LORD_PAD1', 'HKICK', 'VKICK', 'KICK', 'FRINGE_TYPE', 'DS_STEP', 'R0_MAG', &
                 'KS', 'K1', 'K2', 'G', 'DG', 'G_TOT', 'H1', 'E1', 'FINT', 'HGAP', &
@@ -1395,9 +1444,10 @@ character(41), parameter :: att_name(83) = [character(40):: 'X_PITCH', 'Y_PITCH'
                 'BETA_A0', 'BETA_B0', 'ALPHA_A0', 'ALPHA_B0', 'ETA_X0', 'ETAP_X0', &
                 'ETA_Y0', 'ETAP_Y0', 'MATCH_END_INPUT', 'X0', 'PX0', 'Y0', 'PY0', 'Z0', 'PZ0', &
                 'MATCH_END_ORBIT_INPUT', 'C11_MAT0', 'C12_MAT0', 'C21_MAT0', 'C22_MAT0', 'PHASE_TROMBONE_INPUT', &
-                'MODE_FLIP0', 'BETA_A_STRONG', 'BETA_B_STRONG', 'REF_TIME_START']
+                'MODE_FLIP0', 'BETA_A_STRONG', 'BETA_B_STRONG', 'REF_TIME_START', &
+                'PX_KICK', 'PY_KICK', 'PZ_KICK']
 
-character(41), parameter :: att2_name(83) = [character(40):: 'X_PITCH_TOT', 'Y_PITCH_TOT', 'X_OFFSET_TOT', &
+character(41), parameter :: att2_name(86) = [character(40):: 'X_PITCH_TOT', 'Y_PITCH_TOT', 'X_OFFSET_TOT', &
                 'Y_OFFSET_TOT', 'Z_OFFSET_TOT', 'REF_TILT_TOT', 'TILT_TOT', 'ROLL_TOT', 'X2_LIMIT', 'Y2_LIMIT', &
                 'FB2', 'FQ2', 'LORD_PAD2', 'BL_HKICK', 'BL_VKICK', 'BL_KICK', 'FRINGE_AT', 'NUM_STEPS', 'R0_ELEC', &
                 'BS_FIELD', 'B1_GRADIENT', 'B2_GRADIENT', 'B_FIELD', 'DB_FIELD', 'B_FIELD_TOT', 'H2', 'E2', 'FINTX', 'HGAPX', &
@@ -1409,7 +1459,8 @@ character(41), parameter :: att2_name(83) = [character(40):: 'X_PITCH_TOT', 'Y_P
                 'BETA_A1', 'BETA_B1', 'ALPHA_A1', 'ALPHA_B1', 'ETA_X1', 'ETAP_X1', &
                 'ETA_Y1', 'ETAP_Y1', 'MATCH_END', 'X1', 'PX1', 'Y1', 'PY1', 'Z1', 'PZ1', &
                 'MATCH_END_ORBIT', 'C11_MAT1', 'C12_MAT1', 'C21_MAT1', 'C22_MAT1', 'PHASE_TROMBONE', &
-                'MODE_FLIP1', 'ALPHA_A_STRONG', 'ALPHA_B_STRONG', 'DELTA_REF_TIME']
+                'MODE_FLIP1', 'ALPHA_A_STRONG', 'ALPHA_B_STRONG', 'DELTA_REF_TIME', &
+                'X_KICK', 'Y_KICK', 'Z_KICK']
 
 ! Exceptional cases
 

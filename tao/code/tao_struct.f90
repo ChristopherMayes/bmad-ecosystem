@@ -767,6 +767,7 @@ type tao_common_struct
   logical :: all_merit_weights_positive = .true.  
   logical :: multi_turn_orbit_is_plotted = .false.   ! Is a multi_turn_orbit being plotted?
   logical :: force_chrom_calc = .false.              ! Used by a routine to force calculation
+  logical :: force_rad_int_calc = .false.            ! Used by a routine to force calculation
   character(16) :: valid_plot_who(10) = ''           ! model, base, ref etc...
   character(200) :: single_mode_buffer = ''
   character(200) :: cmd = ''                         ! Used for the cmd history
@@ -861,10 +862,17 @@ type tao_lat_sigma_struct
   real(rp) :: mat(6,6) = 0
 end type
 
-type tao_dn_dpz_struct
-  real(rp) vec(3)         ! Spin n0 derivative wrt pz.
+type tao_spin_dn_dpz_struct
+  real(rp) vec(3)         ! n0 derivative wrt pz.
   real(rp) partial(3,3)   ! partial(i:) is spin n0 derivative wrt pz for i^th oscillation mode (1 => a-mode, etc.)
   real(rp) partial2(3,3)  ! partial(i:) is spin n0 derivative wrt pz with i^th oscillation mode missing (1 => a-mode, etc.)
+end type
+
+type tao_spin_ele_struct
+  type (tao_spin_dn_dpz_struct) dn_dpz
+  real(rp) orb_eigen_val(6)
+  real(rp) orb_eigen_vec(6,6)             ! (j,:) is j^th vector
+  real(rp) spin_eigen_vec(6,3)            ! (j,:) is j^th vector
 end type
 
 type tao_spin_polarization_struct
@@ -898,12 +906,11 @@ end type
 type tao_lattice_branch_struct
   type (tao_lattice_struct), pointer :: tao_lat => null()        ! Parent tao_lat
   type (tao_lat_sigma_struct), allocatable :: lat_sigma(:)       ! Sigma matrix derived from lattice (not beam).
-  type (tao_dn_dpz_struct), allocatable :: dn_dpz(:)             ! Spin invariant field
+  type (tao_spin_ele_struct), allocatable :: spin_ele(:)             ! Spin stuff
   type (bunch_params_struct), allocatable :: bunch_params(:)     ! Per element
   type (bunch_track_struct), allocatable :: bunch_params_comb(:) ! A comb for each bunch in beam.
   type (coord_struct), allocatable :: orbit(:)
   type (tao_plot_cache_struct), allocatable :: plot_cache(:)  ! Plotting data cache
-  type (tao_plot_cache_struct) :: plot_ref_cache              ! Plotting data cache
   type (tao_lat_mode_struct) a, b
   type (tao_spin_polarization_struct) spin
   type (summation_rdt_struct) srdt
@@ -930,6 +937,7 @@ type tao_lattice_struct
   character(8) :: name                         ! "model", "base", or "design".
   type (lat_struct) lat                        ! lattice structures
   type (lat_struct) :: high_E_lat, low_E_lat   ! For chrom calc.
+  logical :: chrom_calc_ok = .false.
   type (tao_universe_struct), pointer :: u => null()  ! Parent universe
   type (rad_int_all_ele_struct) rad_int
   type (tao_lattice_branch_struct), allocatable :: tao_branch(:)

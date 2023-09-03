@@ -1205,6 +1205,7 @@ value(p0c_start$)      = slave%value(p0c_start$)
 value(E_tot$)          = slave%value(E_tot$)
 value(p0c$)            = slave%value(p0c$)
 value(num_steps$)      = slave%value(num_steps$)
+if (attribute_name(slave%key, split_id$, .true.) == 'SPLIT_ID') value(split_id$) = slave%value(split_id$)
 
 ! Taylor element has a zero length map. Rule: The map gets applied at the entrance end.
 ! There is no reason why the entrance end was chosen over the exit end.
@@ -1265,7 +1266,13 @@ elseif (has_hkick_attributes(lord%key)) then
 endif
 
 select case (slave%key)
-case (rfcavity$, crab_cavity$, lcavity$, e_gun$);  value(voltage$) = lord%value(voltage$) * coef
+case (crab_cavity$)
+  value(voltage$)     = lord%value(voltage$) * coef
+  value(voltage_tot$) = lord%value(voltage_tot$) * coef
+case (lcavity$, rfcavity$, e_gun$)
+  value(voltage$)     = lord%value(voltage$) * coef
+  value(voltage_tot$) = lord%value(voltage_tot$) * coef
+  value(voltage_err$) = lord%value(voltage_err$) * coef
 end select
 
 ! s_del is the distance between lord and slave centers

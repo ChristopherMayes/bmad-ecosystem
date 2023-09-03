@@ -16,6 +16,8 @@ use bookkeeper_mod
 use wall3d_mod
 use random_mod
 use taylor_mod
+use iso_fortran_env, only: iostat_eor   ! End of record
+
 implicit none
 
 contains
@@ -55,7 +57,7 @@ contains
 
 subroutine parser_set_attribute (how, ele, delim, delim_found, err_flag, pele, check_free, heterogeneous_ele_list, set_field_master)
 
-use photon_reflection_mod, only: finalize_reflectivity_tables
+use photon_reflection_mod, only: finalize_reflectivity_table
 
 implicit none
 
@@ -83,7 +85,7 @@ type (photon_element_struct), pointer :: ph
 type (photon_reflect_table_struct), allocatable :: rt_save(:)
 type (photon_reflect_table_struct), pointer :: rt
 
-real(rp) kx, ky, kz, tol, value, coef, r_vec(10), r0(2), vec(100)
+real(rp) kx, ky, kz, tol, value, coef, r_vec(10), r0(2), vec(1000)
 real(rp), allocatable :: table(:,:)
 real(rp), pointer :: r_ptr
 
@@ -91,14 +93,14 @@ integer i, i2, j, k, n, na, ne, nn, nt, ix_word, how, ix_word1, ix_word2, ios, i
 integer expn(6), ix_attrib, i_section, ix_v, ix_sec, i_ptr, i_term, ib, ie, im
 integer ix_bounds(2), iy_bounds(2), i_vec(2), n_sec, key
 
-character(40) :: word, str_ix, attrib_word, word2, name
+character(40) :: word, str_ix, attrib_word, word2, name, who
 character(40), allocatable :: name_list(:)
 character(1) delim, delim1, delim2
-character(80) str, err_str
+character(80) str, err_str 
 character(200) line
 
 logical, target :: delim_found, err_flag, logic, set_done, end_of_file, do_evaluate, hetero_list
-logical is_attrib, err_flag2, old_style_input, ok, err
+logical is_attrib, err_flag2, old_style_input, ok, err, call_found
 logical, optional :: check_free, heterogeneous_ele_list, set_field_master
 
 ! Get next WORD.
@@ -108,6 +110,7 @@ logical, optional :: check_free, heterogeneous_ele_list, set_field_master
 err_flag = .true.  ! assume the worst
 call get_next_word (word, ix_word, ':, =(){', delim, delim_found, call_check = .true., err_flag = err); if (err) return
 lat => ele%branch%lat
+err_str = trim(ele%name) // '[' // trim(word) // ']'
 
 if (ele%key == def_particle_start$ .and. word == 'SIG_E') word = 'SIG_PZ'
 
@@ -266,7 +269,7 @@ if ((ele%key == overlay$ .or. ele%key == group$ .or. ele%key == ramper$) .and. (
 
     value = 0
     if (delim == '=') then  ! value
-      call parse_evaluate_value (trim(ele%name) // ' ' // word, value, lat, delim, delim_found, err_flag, ele = ele)
+      call parse_evaluate_value (err_str, value, lat, delim, delim_found, err_flag, ele = ele)
       if (err_flag) return
     endif
 
@@ -290,7 +293,7 @@ endif   ! Overlay, Ramper, or Group
 if (ele%key == wiggler$ .or. ele%key == undulator$) then
   if (word == 'L_POLE' .or. word == 'N_POLE') then
     if (.not. expect_one_of ('=', .true., ele%name, delim, delim_found)) return
-    call parse_evaluate_value (trim(ele%name) // ' ' // word, value, lat, delim, delim_found, err_flag, ele = ele)
+    call parse_evaluate_value (err_str, value, lat, delim, delim_found, err_flag, ele = ele)
     if (err_flag) return
     if (word == 'L_POLE') then
       ele%value(l_period$) = 2.0_rp * value
@@ -323,7 +326,7 @@ endif
 if (word == 'N_REF_PASS' .or. word == 'MULTIPASS_REF_ENERGY') then
   call parser_error(quote(word) // ' IS NOT SETTABLE. PLEASE REMOVE FROM LATTICE FILE. PARSING WILL PROCEED AS NORMAL.', &
                     'FOR ELEMENT: ' // ele%name, level = s_warn$)
-  call parse_evaluate_value (trim(ele%name) // ' ' // word, value, lat, delim, delim_found, err_flag, ele = ele) 
+  call parse_evaluate_value (err_str, value, lat, delim, delim_found, err_flag, ele = ele) 
   return
 endif
 
@@ -425,19 +428,19 @@ if (key == def_particle_start$ .or. key == def_bmad_com$ .or. key == def_space_c
   endif
 
   if (word == 'D_ORB') then
-    if (.not. parse_real_list (lat, trim(ele%name) // ' ' // word, bmad_com%d_orb, .true., delim, delim_found)) return
+    if (.not. parse_real_list (lat, err_str, bmad_com%d_orb, .true., delim, delim_found)) return
     bp_com%extra%d_orb_set = .true.
     return
   endif
 
   if (word == 'SPACE_CHARGE_MESH_SIZE') then
-    if (.not. parse_integer_list (trim(ele%name) // ' ' // word, lat, space_charge_com%space_charge_mesh_size, .true., delim, delim_found)) return
+    if (.not. parse_integer_list (err_str, lat, space_charge_com%space_charge_mesh_size, .true., delim, delim_found)) return
     bp_com%extra%space_charge_mesh_size_set = .true.
     return
   endif
 
   if (word == 'CSR3D_MESH_SIZE') then
-    if (.not. parse_integer_list (trim(ele%name) // ' ' // word, lat, space_charge_com%csr3d_mesh_size, .true., delim, delim_found)) return
+    if (.not. parse_integer_list (err_str, lat, space_charge_com%csr3d_mesh_size, .true., delim, delim_found)) return
     bp_com%extra%csr3d_mesh_size_set = .true.
     return
   endif
@@ -457,7 +460,7 @@ if (key == def_particle_start$ .or. key == def_bmad_com$ .or. key == def_space_c
   endif
 
   if (associated(a_ptrs(1)%r)) then
-    call parse_evaluate_value (trim(ele%name) // ' ' // word, value, lat, delim, delim_found, err_flag, ele = ele) 
+    call parse_evaluate_value (err_str, value, lat, delim, delim_found, err_flag, ele = ele) 
     if (err_flag) return
     a_ptrs(1)%r = value
     if (associated(a_ptrs(1)%r, bmad_com%max_aperture_limit))              bp_com%extra%max_aperture_limit_set          = .true.
@@ -1051,55 +1054,92 @@ endif
 ! Reflecting Surface
 
 select case (attrib_word)
-case ('REFLECTIVITY_TABLE')
+case ('ENERGY_PROBABILITY_CURVE')
   ph => ele%photon
   nt = 0
-  if (allocated(ph%reflectivity_table)) deallocate(ph%reflectivity_table)
+  if (.not. allocated(ph%init_energy_prob)) allocate(ph%init_energy_prob(100))
   if (.not. expect_this ('={', .true., .true., 'AFTER ' // quote(attrib_word), ele, delim, delim_found)) return
-
+  call parser_call_check(word, ix_word, delim, delim_found, call_found)
   do
     nt = nt + 1
-    if (nt == 1) then
-      allocate(ph%reflectivity_table(nt))
-    else
-      call move_alloc(ph%reflectivity_table, rt_save)
-      allocate (ph%reflectivity_table(nt))
-      ph%reflectivity_table(1:nt-1) = rt_save
-    endif
-    rt => ph%reflectivity_table(nt)
-    if (.not. expect_this ('{', .false., .true., 'AFTER ' // quote(attrib_word), ele, delim, delim_found)) return
-    call get_next_word (word, ix_word, '{}=,()', delim, delim_found)
-    if (word /= 'ANGLES') then
-      call parser_error ('EXPECTING "ANGLES" ATTRIBUTE IN REFLECTIVITY_TABLE CONSTRUCT FOR ELEMENT: ' // ele%name)
-      return
-    endif
-    if (.not. expect_this ('=', .true., .false., 'AFTER ' // quote(attrib_word), ele, delim, delim_found)) return
-    if (.not. parse_real_list2(lat, trim(ele%name) // ' ANGLES', rt%angle, na, delim, delim_found)) return
-    if (.not. expect_this (',', .false., .false., 'AFTER ' // quote(attrib_word), ele, delim, delim_found)) return
-    ne = 0
-    do
-      ne = ne + 1
-      call re_allocate(rt%energy, ne)
-      call re_allocate2d(rt%p_reflect, na, ne)
-      call get_next_word (word, ix_word, '{}=,()', delim, delim_found)
-      if (word /= 'P_REFLECT') then
-        call parser_error ('EXPECTING "P_REFLECT" ATTRIBUTE IN REFLECTIVITY_TABLE CONSTRUCT FOR ELEMENT: ' // ele%name)
-        return
-      endif
-      if (.not. expect_this ('=', .true., .false., 'AFTER ' // quote(attrib_word), ele, delim, delim_found)) return
-      call parse_evaluate_value (ele%name, rt%energy(ne), lat, delim, delim_found, err_flag, ',', ele);  if (err_flag) return
-      if (.not. parse_real_list (lat, trim(ele%name) // ' P_REFLECT', rt%p_reflect(:,ne), .true., delim, delim_found)) return
-      rt%max_energy = vec(1)
-      if (.not. expect_one_of(',}', .false., ele%name, delim, delim_found)) return
-      if (delim == '}') exit
-    enddo
-    allocate(rt%int1(ne))
-    if (.not. expect_one_of(',}', .false., ele%name, delim, delim_found)) return
+    if (nt > size(ph%init_energy_prob)) call reallocate_spline(ph%init_energy_prob, 2*nt)
+    if (.not. parser_fast_real_read(vec(:2), ele, ' ,}', delim, '', .true.)) return
+    ph%init_energy_prob(nt)%x0 = vec(1); ph%init_energy_prob(nt)%y0 = vec(2)
     if (delim == '}') exit
   enddo
 
-  call finalize_reflectivity_tables (ph%reflectivity_table, .false.)
+  call reallocate_spline(ph%init_energy_prob, nt)
+  call spline_akima(ph%init_energy_prob, ok)
+  call re_allocate(ph%integrated_init_energy_prob, nt)
+  ph%integrated_init_energy_prob(1) = 0
+  do i = 2, nt
+    ph%integrated_init_energy_prob(i) = ph%integrated_init_energy_prob(i-1) + &
+                      spline1(ph%init_energy_prob(i-1), ph%init_energy_prob(i-1)%x1, -1)
+  enddo
 
+  if (.not. expect_one_of(', ', .false., ele%name, delim, delim_found)) return
+  err_flag = .false.
+  return
+
+case ('REFLECTIVITY_TABLE')
+  ph => ele%photon
+  who = 'BOTH'
+  rt => ph%reflectivity_table_sigma
+
+  if (.not. expect_this ('={', .true., .true., 'AFTER ' // quote(attrib_word), ele, delim, delim_found)) return
+  call parser_call_check(word, ix_word, delim, delim_found, call_found)
+  do
+    call get_next_word (word, ix_word, '{}=,()', delim, delim_found, call_check = .true.)
+    if (word == 'ANGLES') then
+      if (.not. expect_this ('=(', .true., .false., 'AFTER ' // quote(attrib_word), ele, delim, delim_found)) return
+      if (.not. parser_fast_real_read(vec, ele, ' ,)', delim, 'REFLECTIVITY_TABLE ANGLES LIST', .false., na)) return
+      allocate(rt%angle(na))
+      rt%angle = vec(1:na)
+      if (.not. expect_this (',', .false., .false., 'AFTER ' // quote(attrib_word), ele, delim, delim_found)) return
+    elseif (word == 'POLARIZATION') then
+      call get_switch ('POLARIZATION', polarization_name, ix, err_flag2, ele, delim, delim_found)
+      if (err_flag2) return
+      who = polarization_name(ix)
+      if (who == 'PI') rt => ph%reflectivity_table_pi
+    elseif (word == 'P_REFLECT') then
+      exit
+    else
+      call parser_error ('EXPECTING "ANGLES" or "POLARIZATION" ATTRIBUTE IN REFLECTIVITY_TABLE CONSTRUCT FOR ELEMENT: ' // ele%name)
+      return
+    endif
+  enddo
+
+  if (.not. expect_this ('={', .true., .false., 'AFTER ' // quote(attrib_word), ele, delim, delim_found)) return
+  ne = 0
+  do
+    ne = ne + 1
+    call re_allocate(rt%energy, ne)
+    call re_allocate2d(rt%p_reflect, na, ne)
+    if (.not. parser_fast_real_read(vec(:na+1), ele, ' ,}', delim, 'REFLECTIVITY_TABLE P_REFLECT TABLE', .true.)) return
+    rt%energy(ne) = vec(1)
+    rt%max_energy = max(rt%max_energy, vec(1))
+    rt%p_reflect(:,ne) = vec(2:na+1)
+    if (.not. expect_one_of(',}', .true., ele%name, delim, delim_found)) return
+    bp_com%parse_line = adjustl(bp_com%parse_line)
+    if (delim == ',' .and. bp_com%parse_line(1:1) == '}') then
+      delim = '}'
+      bp_com%parse_line = adjustl(bp_com%parse_line(2:))
+    endif
+    if (delim == '}') exit
+  enddo
+
+  allocate(rt%bragg_angle(ne))
+
+  select case (who)
+  case ('BOTH');    ph%reflectivity_table_type = unpolarized$
+  case default;     ph%reflectivity_table_type = polarized$
+  end select
+
+  ! For now just use linear interpolation.
+  ! allocate(rt%int1(ne))
+  ! call finalize_reflectivity_table (ph%reflectivity_table_sigma, .false.)
+
+  if (.not. expect_one_of('}', .false., ele%name, delim, delim_found)) return
   if (.not. expect_one_of(', ', .false., ele%name, delim, delim_found)) return
   err_flag = .false.
   return
@@ -2432,6 +2472,64 @@ end subroutine add_this_taylor_term
 !-------------------------------------------------------------------------
 !-------------------------------------------------------------------------
 !+
+! Subroutine parser_call_check(word, ix_word, delim, delim_found, call_found, err_flag))
+!
+! Routine to check if there is a "call::XXX" construct in the input stream.
+!-
+
+subroutine parser_call_check(word, ix_word, delim, delim_found, call_found, err_flag)
+
+implicit none
+
+integer ix, ix_word
+
+logical delim_found, call_found
+logical, optional :: err_flag
+
+character(*) word, delim
+character(6) str
+character(20) suffix
+character(n_parse_line) line
+
+!
+
+word = ''
+call_found = .false.
+call string_trim(bp_com%parse_line, bp_com%parse_line, ix)
+call str_upcase (str, bp_com%parse_line(1:6))
+if (str /= 'CALL::') return
+
+call_found = .true.
+bp_com%parse_line = bp_com%parse_line(7:)
+call word_read (bp_com%parse_line, ',} ',  line, ix_word, delim, delim_found, bp_com%parse_line)    
+ix = str_last_in_set(line, '.')
+suffix = ''
+if (ix /= 0 .and. ix > len_trim(line)-10) suffix = line(ix:)
+
+if (suffix == '.h5' .or. suffix == '.hdf5') then
+  word = 'hdf5'
+  bp_com%parse_line = trim(line) // delim // bp_com%parse_line  ! Put line back on parse line.
+  return
+elseif (suffix == '.bin') then
+  word = 'binary'
+  bp_com%parse_line = trim(line) // delim // bp_com%parse_line  ! Put line back on parse line.
+  return
+else
+  bp_com%parse_line = delim // bp_com%parse_line  ! Put delim back on parse line.
+  call parser_file_stack ('push_inline', line)
+  if (bp_com%fatal_error_flag) then
+    if (present(err_flag)) err_flag = .true.
+    word = ''
+    return
+  endif
+endif
+
+end subroutine parser_call_check
+
+!-------------------------------------------------------------------------
+!-------------------------------------------------------------------------
+!-------------------------------------------------------------------------
+!+
 ! Subroutine get_next_word (word, ix_word, delim_list, delim, delim_found, upper_case_word, call_check, err_flag)
 !
 ! Subroutine to get the next word from the input stream.
@@ -2444,6 +2542,7 @@ end subroutine add_this_taylor_term
 !   upper_case_word -- Logical, optional: if True then convert word to 
 !                       upper case. Default is True.
 !   call_check      -- Logical, optional: If present and True then check for 'call::<filename>' construct.
+!                         Default is False.
 !
 ! Output
 !   ix_word     -- Integer: length of word argument
@@ -2461,47 +2560,21 @@ integer ix_a, ix_word
 
 character(*) word, delim_list, delim
 
-integer n, ix
+integer n, ix, i0
 
-logical delim_found, end_of_file
+logical delim_found, end_of_file, call_found
 logical, optional :: upper_case_word, call_check, err_flag
 
+character(2), parameter :: space = ' ' // achar(9)
 character(n_parse_line) line
-character(6) str
-character(20) suffix
 
 ! Possible inline call...
 
 if (present(err_flag)) err_flag = .false.
 
 if (logic_option(.false., call_check)) then
-  call string_trim(bp_com%parse_line, bp_com%parse_line, ix)
-  call str_upcase (str, bp_com%parse_line(1:6))
-  if (str == 'CALL::') then
-    bp_com%parse_line = bp_com%parse_line(7:)
-    call word_read (bp_com%parse_line, ',} ',  line, ix_word, delim, delim_found, bp_com%parse_line)    
-    ix = str_last_in_set(line, '.')
-    suffix = ''
-    if (ix /= 0 .and. ix > len_trim(line)-10) suffix = line(ix:)
-
-    if (suffix == '.h5' .or. suffix == '.hdf5') then
-      word = 'hdf5'
-      bp_com%parse_line = trim(line) // delim // bp_com%parse_line  ! Put line back on parse line.
-      return
-    elseif (suffix == '.bin') then
-      word = 'binary'
-      bp_com%parse_line = trim(line) // delim // bp_com%parse_line  ! Put line back on parse line.
-      return
-    else
-      bp_com%parse_line = delim // bp_com%parse_line  ! Put delim back on parse line.
-      call parser_file_stack ('push_inline', line)
-      if (bp_com%fatal_error_flag) then
-        if (present(err_flag)) err_flag = .true.
-        word = ''
-        return
-      endif
-    endif
-  endif
+  call parser_call_check(word, ix_word, delim, delim_found, call_found, err_flag)
+  if (logic_option(.false., err_flag) .or. (call_found .and. (word == 'hdf5' .or. word == 'binary'))) return
 endif
 
 ! Check for continuation character and, if found, then load more characters
@@ -2512,21 +2585,22 @@ if (bp_com%input_from_file) then
   do
     n = len_trim(bp_com%parse_line)
     if (n == 0 .or. n > 90) exit
+    i0 = max(str_first_not_in_set(bp_com%next_chunk, space), 1)
 
     if (bp_com%parse_line(n:n) == '&') then
+      bp_com%parse_line(n:n) = ''
       call load_parse_line('continue', n, end_of_file, err_flag = err_flag); if (logic_option(.false., err_flag)) return
 
-    else if (index(',({[=', bp_com%parse_line(n:n)) /= 0) then
-      call load_parse_line('continue', n+2, end_of_file, err_flag = err_flag); if (logic_option(.false., err_flag)) return
+    elseif (index(',({[=', bp_com%parse_line(n:n)) /= 0 .or. bp_com%ios_this_chunk == 0 .or. &
+                                                  index(',)}]=', bp_com%next_chunk(i0:i0)) /= 0) then
+      call load_parse_line('continue', n+1, end_of_file, err_flag = err_flag); if (logic_option(.false., err_flag)) return
 
-    elseif (index(',)}]=', bp_com%next_line_from_file(1:1)) /= 0) then
-      call load_parse_line('continue', n+2, end_of_file, err_flag = err_flag); if (logic_option(.false., err_flag)) return
 
     else
       if (.not. bp_com%inline_call_active) exit
       ! If in an inline called file then make sure the rest of the file is blank and
       ! return to the calling file
-      call load_parse_line('continue', n+2, end_of_file, err_flag = err_flag); if (logic_option(.false., err_flag)) return
+      call load_parse_line('continue', n+1, end_of_file, err_flag = err_flag); if (logic_option(.false., err_flag)) return
       if (bp_com%parse_line(n+1:) /= '') then
         call string_trim (bp_com%parse_line(n+1:), line, ix)
         call str_upcase (line(1:10), line(1:10))
@@ -2604,7 +2678,7 @@ if (how == 'init') then
   call fullfilename ('./', bp_com%file(0)%dir)
   if (present(err)) err = .false.
   if (.not. allocated(bp_com%lat_file_names)) allocate(bp_com%lat_file_names(100))
-  bp_com%next_line_from_file = str_garbage$
+  bp_com%next_chunk = str_garbage$
   bp_com%inline_call_active = .false.
   return
 endif
@@ -2629,12 +2703,15 @@ case ('push', 'push_inline')
   bp_com%input_line2  = ''
   bp_com%rest_of_line = ''
 
-  bp_com%file(i_level)%next_line_from_file_saved = bp_com%next_line_from_file
-  bp_com%file(i_level)%ios_next_line_from_file_saved = bp_com%ios_next_line_from_file
-  bp_com%next_line_from_file = str_garbage$
+  bp_com%file(i_level)%next_chunk_saved = bp_com%next_chunk
+  bp_com%file(i_level)%ios_next_chunk_saved = bp_com%ios_next_chunk
+  bp_com%file(i_level)%ios_this_chunk_saved = bp_com%ios_this_chunk
+  bp_com%next_chunk = str_garbage$
+  bp_com%ios_this_chunk = iostat_eor
 
   if (how == 'push_inline') then
     bp_com%file(i_level)%parse_line_saved = bp_com%parse_line
+    bp_com%file(i_level)%last_char_in_parse_line_saved = bp_com%last_char_in_parse_line
     bp_com%file(i_level)%inline_call_active = .true.    
     bp_com%parse_line = '&'
     bp_com%inline_call_active = .true.
@@ -2728,11 +2805,13 @@ case ('pop')
   bp_com%input_line1  = bp_com%file(i_level+1)%input_line1_saved
   bp_com%input_line2  = bp_com%file(i_level+1)%input_line2_saved
   bp_com%rest_of_line = bp_com%file(i_level+1)%rest_of_line_saved
-  bp_com%next_line_from_file = bp_com%file(i_level+1)%next_line_from_file_saved
-  bp_com%ios_next_line_from_file = bp_com%file(i_level+1)%ios_next_line_from_file_saved
+
+  bp_com%next_chunk     = bp_com%file(i_level+1)%next_chunk_saved
+  bp_com%ios_next_chunk = bp_com%file(i_level+1)%ios_next_chunk_saved
 
   if (bp_com%inline_call_active) then
     bp_com%parse_line = trim(bp_com%parse_line) // ' ' // bp_com%file(i_level+1)%parse_line_saved
+    bp_com%last_char_in_parse_line = bp_com%file(i_level+1)%last_char_in_parse_line_saved
     bp_com%inline_call_active = bp_com%file(i_level+1)%inline_call_active
   endif
 
@@ -2773,28 +2852,30 @@ recursive subroutine load_parse_line (action, ix_start, end_of_file, err_flag)
 
 implicit none
 
-integer ix_start, ix, n, ios
+integer ix_start, ix, n, ios, nn
 
 character(*) action
-character(n_parse_line+20) :: line
-character(1) quote_mark
+character(n_parse_line) :: line
+character(1) quote_mark, last_char
 character(1), parameter :: tab = achar(9)
 
-logical :: end_of_file, flush_this
+logical :: end_of_file, flush_this, has_blank
 logical, optional :: err_flag
 
 ! action = 'init'
 
 if (action == 'init') then
   bp_com%parse_line = ''
+  bp_com%last_char_in_parse_line = ''
   bp_com%rest_of_line = ''
-  bp_com%next_line_from_file = str_garbage$
-  bp_com%ios_next_line_from_file = 0  
+  bp_com%next_chunk = str_garbage$
+  bp_com%ios_next_chunk = iostat_eor
   return
 endif
 
 !
 
+ios = iostat_eor
 end_of_file = .false.
 flush_this = .false.
 if (present(err_flag)) err_flag = .false.
@@ -2818,37 +2899,40 @@ do
     bp_com%rest_of_line = ''
 
   else
-    if (bp_com%next_line_from_file == str_garbage$) then
-      read (bp_com%current_file%f_unit, '(a)', iostat = bp_com%ios_next_line_from_file) bp_com%next_line_from_file
-      if (bp_com%ios_next_line_from_file == 0) then
-        call string_trim(bp_com%next_line_from_file, bp_com%next_line_from_file, ix)
+    if (bp_com%next_chunk == str_garbage$) then
+      ! With advance = 'no' an ios = 0 means that a full line has *not* been read.
+      read (bp_com%current_file%f_unit, '(a)', iostat = bp_com%ios_next_chunk, &
+                                                            advance = 'no') bp_com%next_chunk
+      if (bp_com%ios_next_chunk == iostat_eor) then
+        ! Nothing to do
       else
-        bp_com%next_line_from_file = ''
+        bp_com%next_chunk = ''
       endif
     endif
 
-    line = bp_com%next_line_from_file
-    ios = bp_com%ios_next_line_from_file
+    line = bp_com%next_chunk
+    ios = bp_com%ios_next_chunk
 
-    if (ios < 0) then
+    if (ios /= 0 .and. ios /= iostat_eor) then
       end_of_file = .true.
       if (bp_com%parse_line /= '' .and. .not. bp_com%inline_call_active) then
         call parser_error ('FILE ENDED BEFORE PARSING FINISHED', stop_here = .true.)
         if (present(err_flag)) err_flag = .true.
       endif
-      bp_com%next_line_from_file = str_garbage$
-      bp_com%ios_next_line_from_file = 0  
+      bp_com%next_chunk = str_garbage$
+      bp_com%ios_next_chunk = iostat_eor
       return
     elseif (ios > 0) then
       call parser_error ('ERROR READING INPUT LINE.', '[PERHAPS THE LINE HAS TOO MANY CHARACTERS.]', line)
       if (present(err_flag)) err_flag = .true.
       return
     endif
-    read (bp_com%current_file%f_unit, '(a)', iostat = bp_com%ios_next_line_from_file) bp_com%next_line_from_file
-    if (bp_com%ios_next_line_from_file == 0) then
-      call string_trim(bp_com%next_line_from_file, bp_com%next_line_from_file, ix)
-    else
-      bp_com%next_line_from_file = ''
+    read (bp_com%current_file%f_unit, '(a)', iostat = bp_com%ios_next_chunk, &
+                                                    advance = 'no') bp_com%next_chunk
+    if (bp_com%ios_next_chunk == iostat_eor) then
+      ! Nothing to do
+    elseif (bp_com%ios_next_chunk /= 0) then
+      bp_com%next_chunk = ''
     endif
     bp_com%current_file%i_line = bp_com%current_file%i_line + 1
   endif
@@ -2921,21 +3005,32 @@ do
   enddo
 
   ! if the command line is blank then go back for more input
-  call string_trim (line, line, ix)
-  if (ix /= 0 .or. bp_com%rest_of_line /= '') exit
+  if (line /= '' .or. bp_com%rest_of_line /= '') exit
 enddo
 
 ! now simply append the line to %parse_line starting at ix_start
 
-call str_substitute (line)
+nn = len(line)
+last_char = line(nn:nn)
+has_blank = (bp_com%last_char_in_parse_line == '' .or. line(1:1) == '')
+
 line = adjustl(line)
-if (len_trim(line) + ix_start > n_parse_line) then
+call str_substitute (line)
+
+if (len_trim(line) + ix_start > n_parse_line_extended) then
   call parser_error ('INPUT LINE HAS TOO MANY CHARACTERS:', line)
   if (present(err_flag)) err_flag = .true.
   return
 endif
 
-bp_com%parse_line(ix_start:) = line
+if (has_blank) then
+  bp_com%parse_line(ix_start+1:) = line
+else
+  bp_com%parse_line(ix_start:) = line
+endif
+
+bp_com%last_char_in_parse_line = last_char
+bp_com%ios_this_chunk = ios
 
 ! Flush this line if needed
 
@@ -4891,10 +4986,16 @@ enddo
 
 ! Count slaves.
 ! If n_multi > lat%n_ele_track we are looking at cloning a super_lord which should not happen.
-! If n_multi = 1 then, to symplify the lattice, do not create a lord
 
 n_multipass = size(m_slaves)
-if (n_multipass == 1) return
+
+
+! Old: If n_multi = 1 then, to symplify the lattice, do not create a lord.
+! 7/2023: Ran into a problem where a multipass bend with 1 slave had p0c set but, since no lord was being created,
+! p0c was ignored and this throw off the calc for dg/db_field. So now always create a lord.
+! In the future, if wanted, can revise code to remove the lord but this must be done after all bookkeeping is finished.
+
+!!! if (n_multipass == 1) return
 
 ! setup multipass_lord
 
@@ -5119,6 +5220,8 @@ type (branch_struct), target :: branch
 type (branch_struct), pointer :: ref_branch
 type (lat_struct), pointer :: lat
 
+real(rp) len_tiny
+
 integer ix, i, j, k, it, nn, i_ele, ib, il
 integer n_con, ix_branch, n_loc, n_loc0, ix_insert, ix_pass
 
@@ -5138,6 +5241,7 @@ super_ele = super_ele_in
 super_ele%logic = .false.
 call settable_dep_var_bookkeeping (super_ele)
 
+len_tiny = 0.1_rp * bmad_com%significant_length
 super_ele_saved = super_ele     ! in case super_ele_in changes
 lat => branch%lat
 pele%ix_super_ref_multipass = 0
@@ -5190,7 +5294,6 @@ if (n_loc == 0 .and. n_loc0 > 0) then
   return
 endif
 
-
 ! Group and overlay elements may have not yet been transfered from in_lat to lat.
 ! So search in_lat for a match if there has not been a match using lat. 
 ! Note: Using a group or overlay as the reference element is only valid if there is only one slave element.
@@ -5236,12 +5339,23 @@ endif
 ! region, must add further superpositions to keep the multipass regions on separate passes looking the same.
 ! shift the ref element to the multipass region.
 
+! Note: Need to avoid problem where a patch with a negative length next to a multipass region coupled with
+! round-off error shifted ele_at_s into the multipass region by mistake. 
+
+
 if (n_loc == 1) then
   ref_ele => eles(1)%ele
   ref_branch => pointer_to_branch(ref_ele)
   if (ref_ele%iyy == 0 .and. ref_branch%ix_branch == branch%ix_branch) then
     call compute_super_lord_s (eles(1)%ele, super_ele, pele, ix_insert)
-    ele_at_s => pointer_to_element_at_s (branch, super_ele%s_start, .true., err_flag)
+
+    if (super_ele%s_start > ref_ele%s_start-len_tiny .and. super_ele%s_start < ref_ele%s+len_tiny) then
+      ele_at_s => ref_ele
+      err_flag = .false.
+    else
+      ele_at_s => pointer_to_element_at_s (branch, super_ele%s_start, .true., err_flag)
+    endif
+
     if (err_flag) then
       call parser_error ('PROBLEM SUPERIMPOSING: ' // super_ele%name)
     else
@@ -5659,7 +5773,7 @@ type (branch_struct), pointer :: branch
 
 integer i, ix, ix_insert, ele_pt, ref_pt
 
-real(rp) s_ref_begin, s_ref_end, s0
+real(rp) s_ref_begin, s_ref_end, s0, len_tiny
 logical reflected_or_reversed
 
 ! Find the reference point on the element being superimposed.
@@ -5668,6 +5782,7 @@ logical reflected_or_reversed
 
 ix_insert = -1
 reflected_or_reversed = ref_ele%select
+len_tiny = 0.1_rp * bmad_com%significant_length
 
 super_ele%orientation = ref_ele%orientation
 if (reflected_or_reversed) then
@@ -5743,14 +5858,14 @@ branch => pointer_to_branch(ref_ele)
 s0 = branch%ele(0)%s
 
 if (pele%wrap_superimpose) then
-  if (super_ele%s > branch%ele(branch%n_ele_track)%s) then
+  if (super_ele%s > branch%ele(branch%n_ele_track)%s + len_tiny) then
     super_ele%s = super_ele%s - branch%param%total_length
-  elseif (super_ele%s < s0) then
+  elseif (super_ele%s < s0 - len_tiny) then
     super_ele%s = super_ele%s + branch%param%total_length
   endif
 
   super_ele%s_start = super_ele%s - super_ele%value(l$)
-  if (super_ele%s_start < s0) then
+  if (super_ele%s_start < s0 - len_tiny) then
     super_ele%s_start = super_ele%s_start + branch%param%total_length
   endif
 endif
@@ -5947,7 +6062,6 @@ integer, save :: ix_internal = 0
 
 character(1) delim, c_delim
 character(40) str, word, word2
-character(n_parse_line) parse_line_saved
 
 logical delim_found, replacement_line_here, c_delim_found
 logical err_flag, top_level
@@ -6226,7 +6340,7 @@ end type
 
 type (lat_struct), target :: lord_lat, lat
 type (lat_struct), optional :: check_lat
-type (ele_struct), pointer :: lord, slave, ele, g_lord, g_slave0, g_slave1
+type (ele_struct), pointer :: lord, ele, g_lord, g_slave0, g_slave1
 type (parser_lat_struct), target :: plat
 type (parser_ele_struct), pointer :: pele
 type (control_struct), allocatable, target :: cs(:)
@@ -6616,6 +6730,7 @@ end function ix_far_index
 subroutine make_this_overlay_group_lord (ix_pick, lord, lat, n_slave, cs, err_flag, pele, m_eles)
 
 type (ele_struct) :: lord
+type (ele_struct), pointer :: slave
 type (lat_struct) lat
 type (control_struct), allocatable, target :: cs(:)
 type (parser_ele_struct), target :: pele
@@ -6660,6 +6775,13 @@ do ip = 1, size(pele%control)
     do k = 1, m_eles(ip)%n_loc
       if (ix_pick /= 0 .and. k /= ix_pick) cycle
       slave => pointer_to_ele (lat, m_eles(ip)%eles(k)%loc)
+      ! Slave can only be a null_ele if it was formally a drift that no longer exists.
+      if (slave%key == null_ele$) then
+        call parser_error ('IN OVERLAY OR GROUP ELEMENT: ' // lord%name, &
+                           'Slave element: ' // trim(slave%name) // ' no longer exists due to superposition!')
+        return
+      endif
+
       n_slave = n_slave + 1
       if (allocated(pc%y_knot)) then
         cs(n_slave)%y_knot = pc%y_knot
@@ -6681,7 +6803,7 @@ do ip = 1, size(pele%control)
       cs(n_slave)%attribute = attrib_name
       if (ix < 1 .and. .not. associated(a_ptr%r)) then
         call parser_error ('IN OVERLAY OR GROUP ELEMENT: ' // lord%name, 'ATTRIBUTE: ' // attrib_name, &
-                      'IS NOT A VALID ATTRIBUTE OF: ' // slave%name, pele = pele)
+                           'IS NOT A VALID ATTRIBUTE OF: ' // slave%name, pele = pele)
         return
       endif
       if (iv > 1) call parser_transfer_control_struct(cs(n_slave), cs(n_slave), lord, iv)
@@ -6915,6 +7037,8 @@ case (sbend$, rbend$, rf_bend$)
 
   b_field_set = (ele%value(b_field$) /= 0 .or. ele%value(db_field$) /= 0)
   g_set = (ele%value(g$) /= 0 .or. ele%value(dg$) /= 0)
+  if ((ele%value(angle$) /= 0 .or. ele%value(rho$) /= 0 .or. g_set) .and. &
+                                      .not. b_field_set) ele%value(b_field$) = real_garbage$
 
   if (ele%key /= rf_bend$) ele%sub_key = ele%key  ! Save sbend/rbend input type.
 
@@ -9275,7 +9399,7 @@ integer size2
 integer nn, num_found
 
 character(*) err_str
-character(1) delim
+character(*) delim
 
 logical is_ok, delim_found
 
@@ -9357,7 +9481,7 @@ integer, optional :: num_expected
 logical is_ok
 
 character(*) err_str
-character(1), optional :: open_delim, close_delim, separator
+character(*), optional :: open_delim, close_delim, separator
 
 ! Local
 
@@ -9386,8 +9510,13 @@ if (present(separator)) sep = separator
 
 ! Expect op_delim
 call get_next_word (word, ix_word, op_delim, delim, delim_found)
-if ((word /= '') .or. (delim /= op_delim)) then
-  call parser_error ('BAD OPENING DELIMITER IN: ' // err_str)
+if (word /= '') then
+  call parser_error ('EXPECTED OPENING DELIMITER ' // quote(op_delim) // ' FOR VECTOR FOR: ' // err_str, &
+                     'BUT GOT: ' // word)
+  return
+elseif (delim /= op_delim) then
+  call parser_error ('BAD OPENING DELIMITER FOR VECTOR FOR: ' // err_str, &
+                     'EXPECTED: ' // quote(op_delim) // ' BUT GOT: ' // delim)
   return
 end if
 
@@ -10250,17 +10379,20 @@ end function parser_fast_complex_read
 ! where <re1>, <re2>, etc. are real numbers (not expressions) and there are no commas except possibly, 
 ! at the end of the array.
 !
+! Note: if end_delim is "," and next character is a delim but not ",", the next character is taken as the delim.
+!
 ! Input:
 !   ele             -- ele_struct: Lattice element associated with the array. Used for error messages.
 !   end_delims      -- character(*): List of possible ending delimitors.
 !   err_str         -- character(*): String used when printing error messages identifying where in
 !                         the lattice file the error is occuring.
-!   exact_size      -- logical, optional: If True, 
+!   exact_size      -- logical, optional: If True (default), number of values must match real_vec size.
 !
 ! Output:
-!   cmplx_vec(:)    -- complex(rp): Complex vector.
+!   real_vec(:)     -- complex(rp): Real vector.
 !   delim           -- character(1): Delimitor at end of array.
 !   is_ok           -- logical: True if everything OK. False otherwise.
+!   n_real          -- integer, optional: Number of elements found.
 !-
 
 function parser_fast_real_read (real_vec, ele, end_delims, delim, err_str, exact_size, n_real) result (is_ok)
@@ -10308,6 +10440,11 @@ do i = 1, n
   if (delim /= ' ' .and. (.not. exact .or. i == n)) then
     is_ok = .true.
     if (present(n_real)) n_real = i
+    call string_trim(bp_com%parse_line, bp_com%parse_line, ix)
+    if (delim == ',' .and. index(end_delims, bp_com%parse_line(1:1)) /= 0 .and. bp_com%parse_line(1:1) /= ',') then
+      delim = bp_com%parse_line(1:1)
+      bp_com%parse_line = bp_com%parse_line(2:)
+    endif
     return
   endif
 

@@ -2130,7 +2130,10 @@ public:
   CPP_photon_material material;
   CPP_surface_grid grid;
   CPP_pixel_detec pixel;
-  CPP_photon_reflect_table_ARRAY reflectivity_table;
+  CPP_photon_reflect_table reflectivity_table_sigma;
+  CPP_photon_reflect_table reflectivity_table_pi;
+  CPP_spline_ARRAY init_energy_prob;
+  Real_ARRAY integrated_init_energy_prob;
 
   CPP_photon_element() :
     curvature(),
@@ -2138,7 +2141,10 @@ public:
     material(),
     grid(),
     pixel(),
-    reflectivity_table(CPP_photon_reflect_table_ARRAY(CPP_photon_reflect_table(), 0))
+    reflectivity_table_sigma(),
+    reflectivity_table_pi(),
+    init_energy_prob(CPP_spline_ARRAY(CPP_spline(), 0)),
+    integrated_init_energy_prob(0.0, 0)
     {}
 
   ~CPP_photon_element() {
@@ -3697,11 +3703,14 @@ public:
   Real_ARRAY rel_min;
   Real s;
   Real t;
+  Real sigma_t;
   Real charge_live;
   Real charge_tot;
   Int n_particle_tot;
   Int n_particle_live;
   Int n_particle_lost_in_ele;
+  Int n_good_steps;
+  Int n_bad_steps;
   Int ix_ele;
   Int location;
   Bool twiss_valid;
@@ -3715,15 +3724,18 @@ public:
     b(),
     c(),
     sigma(Real_ARRAY(0.0, 6), 6),
-    rel_max(0.0, 6),
-    rel_min(0.0, 6),
+    rel_max(0.0, 7),
+    rel_min(0.0, 7),
     s(-1),
     t(-1),
+    sigma_t(0.0),
     charge_live(0.0),
     charge_tot(0.0),
     n_particle_tot(0),
     n_particle_live(0),
     n_particle_lost_in_ele(0),
+    n_good_steps(0),
+    n_bad_steps(0),
     ix_ele(-1),
     location(Bmad::NOT_SET),
     twiss_valid(false)

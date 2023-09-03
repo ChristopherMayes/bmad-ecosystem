@@ -307,7 +307,9 @@ do ib = 0, ubound(lat%branch, 1)
     ! that the "zero" orbit is not truely zero is not taken into account, splitting 
     ! wigglers would result in z-position shifts when tracking particles.
 
-    if (ix_super_end < ie) then       ! If not in super_lord region...
+    if (ele0%key == photon_init$) then
+      ele%time_ref_orb_in = ele0%time_ref_orb_out
+    elseif (ix_super_end < ie) then       ! If not in super_lord region...
       call init_coord (ele%time_ref_orb_in, zero6, ele0, downstream_end$) ! Note: wrt ele0.
       ele%time_ref_orb_in%location = upstream_end$
     else                              ! In super_lord region
@@ -907,7 +909,8 @@ end select
 ! map is not valid for the element with kicks and offsets removed.
 
 changed = has_changed
-if (ele%tracking_method == taylor$ .and. .not. associated (ele%taylor(1)%term)) ele%tracking_method = symp_lie_ptc$
+if (ele%tracking_method == taylor$ .and. (.not. associated (ele%taylor(1)%term) .or. &
+                  .not. ele_has_constant_ds_dt_ref(ele))) ele%tracking_method = symp_lie_ptc$
 
 end subroutine zero_errors_in_ele
 

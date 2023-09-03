@@ -32,6 +32,18 @@ real(rp) an(0:n_pole_maxx), bn(0:n_pole_maxx), amp
 integer ix_pole_max
 logical err_flag
 
+!
+
+if (ele%key == gkicker$) then
+  call track_a_gkicker(orbit, ele, param)
+  return
+endif
+
+if (ele%key == rfcavity$ .or. ele%key == lcavity$) then
+  call track1_bmad(orbit, ele, param, err_flag, track)
+  return
+endif
+
 ! Since Bmad always uses electric field parameters and never integrated electric field parameters,
 ! the kick due to any electric field over zero length must be zero.
 

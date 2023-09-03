@@ -60,10 +60,10 @@ type (em_field_struct), optional :: extra_field
 type (fringe_field_info_struct) fringe_info
 
 real(rp), optional :: t_end, dt_step
-real(rp), target :: old_t, dt_tol, s_fringe_edge
+real(rp), target :: old_t, dt_tol, s_fringe_edge, t0
 real(rp) :: dt, dt_did, dt_next, ds_safe, t_save, dt_save, s_save, dummy, rf_time
 real(rp), target  :: dvec_dt(10), vec_err(10), s_target, dt_next_save
-real(rp) :: stop_time, s_stop_fwd, s_body_old
+real(rp) :: stop_time, s_stop_fwd, s_body_old, ds
 real(rp), pointer :: s_body, s_fringe_ptr
 
 integer :: t_dir, n_step, n_pt, old_direction, status
@@ -93,7 +93,8 @@ if (ele%tracking_method == fixed_step_time_runge_kutta$) then
     call out_io (s_error$, r_name, 'FIXED_STEP_TIME_RUNGE_KUTTA TRACKING USED WITHOUT DS_STEP BEING SET!', &
                                    'WILL USE BMAD_COM%INIT_DS_ADAPTIVE_TRACKING AS A FALLBACK FOR ELEMENT: ' // ele%name)
   else
-    dt_next = abs(ele%value(ds_step$) / c_light) * t_dir
+    ds = min(abs(ele%value(ds_step$)), abs(ele%value(l$)))
+    dt_next = t_dir * ds / c_light
   endif
 endif
 
@@ -151,7 +152,12 @@ do n_step = 1, bmad_com%max_num_runge_kutta_step
 
     if (zbrent_needed) then
       dt_tol = ds_safe / (orb%beta * c_light)
-      dt = super_zbrent (delta_s_target, 0.0_rp, dt_did, 1e-15_rp, dt_tol, status)
+      ! The reason for a non-zero t0 is to prevent the situation where a particle starts at the boundary,
+      ! gets immediatly turned around, and then super_zbrent chooses the t = 0 solution. 
+      ! This happened with an e_gun with particles pushed back to the cathode.
+      t0 = 0
+      if (old_orb%vec(6)*orb%vec(6) < 0) t0 = min(10.0_rp*dt_tol, 0.1_rp*dt_did)  ! If reflection has happened
+      dt = super_zbrent (delta_s_target, t0, dt_did, 1e-15_rp, dt_tol, status)
       dummy = delta_s_target(dt, status) ! Final call to set orb
       dt_did = dt
     endif
@@ -751,7 +757,7 @@ else
   ! There is a further potential problem in that a pipe with a lcavity superimposed on it will not have a 
   ! constant reference energy
 
-  if (ele%slave_status == slice_slave$ .or. (ele%slave_status == super_slave$ .and. ele%key /= pipe$)) then
+  if ((ele%slave_status == slice_slave$ .or. ele%slave_status == super_slave$) .and. ele%key /= pipe$) then
     do ie = 1, ele%n_lord
       ele0 => pointer_to_lord(ele, ie)
       if (ele0%key /= pipe$) exit

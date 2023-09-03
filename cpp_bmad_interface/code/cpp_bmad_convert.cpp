@@ -2076,31 +2076,41 @@ extern "C" void photon_element_to_c (const Opaque_photon_element_class*, CPP_pho
 // c_side.to_f2_arg
 extern "C" void photon_element_to_f2 (Opaque_photon_element_class*, const
     CPP_surface_curvature&, const CPP_photon_target&, const CPP_photon_material&, const
-    CPP_surface_grid&, const CPP_pixel_detec&, const CPP_photon_reflect_table**, Int);
+    CPP_surface_grid&, const CPP_pixel_detec&, const CPP_photon_reflect_table&, const
+    CPP_photon_reflect_table&, const CPP_spline**, Int, c_RealArr, Int);
 
 extern "C" void photon_element_to_f (const CPP_photon_element& C, Opaque_photon_element_class* F) {
   // c_side.to_f_setup[type, 1, ALLOC]
-  int n1_reflectivity_table = C.reflectivity_table.size();
-  const CPP_photon_reflect_table** z_reflectivity_table = NULL;
-  if (n1_reflectivity_table != 0) {
-    z_reflectivity_table = new const CPP_photon_reflect_table*[n1_reflectivity_table];
-    for (int i = 0; i < n1_reflectivity_table; i++) z_reflectivity_table[i] = &C.reflectivity_table[i];
+  int n1_init_energy_prob = C.init_energy_prob.size();
+  const CPP_spline** z_init_energy_prob = NULL;
+  if (n1_init_energy_prob != 0) {
+    z_init_energy_prob = new const CPP_spline*[n1_init_energy_prob];
+    for (int i = 0; i < n1_init_energy_prob; i++) z_init_energy_prob[i] = &C.init_energy_prob[i];
+  }
+  // c_side.to_f_setup[real, 1, ALLOC]
+  int n1_integrated_init_energy_prob = C.integrated_init_energy_prob.size();
+  c_RealArr z_integrated_init_energy_prob = NULL;
+  if (n1_integrated_init_energy_prob > 0) {
+    z_integrated_init_energy_prob = &C.integrated_init_energy_prob[0];
   }
 
   // c_side.to_f2_call
   photon_element_to_f2 (F, C.curvature, C.target, C.material, C.grid, C.pixel,
-      z_reflectivity_table, n1_reflectivity_table);
+      C.reflectivity_table_sigma, C.reflectivity_table_pi, z_init_energy_prob,
+      n1_init_energy_prob, z_integrated_init_energy_prob, n1_integrated_init_energy_prob);
 
   // c_side.to_f_cleanup[type, 1, ALLOC]
- delete[] z_reflectivity_table;
+ delete[] z_init_energy_prob;
 }
 
 // c_side.to_c2_arg
 extern "C" void photon_element_to_c2 (CPP_photon_element& C, const
     Opaque_surface_curvature_class* z_curvature, const Opaque_photon_target_class* z_target,
     const Opaque_photon_material_class* z_material, const Opaque_surface_grid_class* z_grid,
-    const Opaque_pixel_detec_class* z_pixel, Opaque_photon_reflect_table_class**
-    z_reflectivity_table, Int n1_reflectivity_table) {
+    const Opaque_pixel_detec_class* z_pixel, const Opaque_photon_reflect_table_class*
+    z_reflectivity_table_sigma, const Opaque_photon_reflect_table_class*
+    z_reflectivity_table_pi, Opaque_spline_class** z_init_energy_prob, Int n1_init_energy_prob,
+    c_RealArr z_integrated_init_energy_prob, Int n1_integrated_init_energy_prob) {
 
   // c_side.to_c2_set[type, 0, NOT]
   surface_curvature_to_c(z_curvature, C.curvature);
@@ -2112,9 +2122,18 @@ extern "C" void photon_element_to_c2 (CPP_photon_element& C, const
   surface_grid_to_c(z_grid, C.grid);
   // c_side.to_c2_set[type, 0, NOT]
   pixel_detec_to_c(z_pixel, C.pixel);
+  // c_side.to_c2_set[type, 0, NOT]
+  photon_reflect_table_to_c(z_reflectivity_table_sigma, C.reflectivity_table_sigma);
+  // c_side.to_c2_set[type, 0, NOT]
+  photon_reflect_table_to_c(z_reflectivity_table_pi, C.reflectivity_table_pi);
   // c_side.to_c2_set[type, 1, ALLOC]
-  C.reflectivity_table.resize(n1_reflectivity_table);
-  for (int i = 0; i < n1_reflectivity_table; i++) photon_reflect_table_to_c(z_reflectivity_table[i], C.reflectivity_table[i]);
+  C.init_energy_prob.resize(n1_init_energy_prob);
+  for (int i = 0; i < n1_init_energy_prob; i++) spline_to_c(z_init_energy_prob[i], C.init_energy_prob[i]);
+
+  // c_side.to_c2_set[real, 1, ALLOC]
+
+  C.integrated_init_energy_prob.resize(n1_integrated_init_energy_prob);
+  C.integrated_init_energy_prob << z_integrated_init_energy_prob;
 
 }
 
@@ -4345,8 +4364,8 @@ extern "C" void bunch_params_to_c (const Opaque_bunch_params_class*, CPP_bunch_p
 // c_side.to_f2_arg
 extern "C" void bunch_params_to_f2 (Opaque_bunch_params_class*, const CPP_coord&, const
     CPP_twiss&, const CPP_twiss&, const CPP_twiss&, const CPP_twiss&, const CPP_twiss&, const
-    CPP_twiss&, c_RealArr, c_RealArr, c_RealArr, c_Real&, c_Real&, c_Real&, c_Real&, c_Int&,
-    c_Int&, c_Int&, c_Int&, c_Int&, c_Bool&);
+    CPP_twiss&, c_RealArr, c_RealArr, c_RealArr, c_Real&, c_Real&, c_Real&, c_Real&, c_Real&,
+    c_Int&, c_Int&, c_Int&, c_Int&, c_Int&, c_Int&, c_Int&, c_Bool&);
 
 extern "C" void bunch_params_to_f (const CPP_bunch_params& C, Opaque_bunch_params_class* F) {
   // c_side.to_f_setup[real, 2, NOT]
@@ -4354,8 +4373,9 @@ extern "C" void bunch_params_to_f (const CPP_bunch_params& C, Opaque_bunch_param
 
   // c_side.to_f2_call
   bunch_params_to_f2 (F, C.centroid, C.x, C.y, C.z, C.a, C.b, C.c, z_sigma, &C.rel_max[0],
-      &C.rel_min[0], C.s, C.t, C.charge_live, C.charge_tot, C.n_particle_tot,
-      C.n_particle_live, C.n_particle_lost_in_ele, C.ix_ele, C.location, C.twiss_valid);
+      &C.rel_min[0], C.s, C.t, C.sigma_t, C.charge_live, C.charge_tot, C.n_particle_tot,
+      C.n_particle_live, C.n_particle_lost_in_ele, C.n_good_steps, C.n_bad_steps, C.ix_ele,
+      C.location, C.twiss_valid);
 
 }
 
@@ -4364,9 +4384,10 @@ extern "C" void bunch_params_to_c2 (CPP_bunch_params& C, const Opaque_coord_clas
     const Opaque_twiss_class* z_x, const Opaque_twiss_class* z_y, const Opaque_twiss_class*
     z_z, const Opaque_twiss_class* z_a, const Opaque_twiss_class* z_b, const
     Opaque_twiss_class* z_c, c_RealArr z_sigma, c_RealArr z_rel_max, c_RealArr z_rel_min,
-    c_Real& z_s, c_Real& z_t, c_Real& z_charge_live, c_Real& z_charge_tot, c_Int&
-    z_n_particle_tot, c_Int& z_n_particle_live, c_Int& z_n_particle_lost_in_ele, c_Int&
-    z_ix_ele, c_Int& z_location, c_Bool& z_twiss_valid) {
+    c_Real& z_s, c_Real& z_t, c_Real& z_sigma_t, c_Real& z_charge_live, c_Real& z_charge_tot,
+    c_Int& z_n_particle_tot, c_Int& z_n_particle_live, c_Int& z_n_particle_lost_in_ele, c_Int&
+    z_n_good_steps, c_Int& z_n_bad_steps, c_Int& z_ix_ele, c_Int& z_location, c_Bool&
+    z_twiss_valid) {
 
   // c_side.to_c2_set[type, 0, NOT]
   coord_to_c(z_centroid, C.centroid);
@@ -4393,6 +4414,8 @@ extern "C" void bunch_params_to_c2 (CPP_bunch_params& C, const Opaque_coord_clas
   // c_side.to_c2_set[real, 0, NOT]
   C.t = z_t;
   // c_side.to_c2_set[real, 0, NOT]
+  C.sigma_t = z_sigma_t;
+  // c_side.to_c2_set[real, 0, NOT]
   C.charge_live = z_charge_live;
   // c_side.to_c2_set[real, 0, NOT]
   C.charge_tot = z_charge_tot;
@@ -4402,6 +4425,10 @@ extern "C" void bunch_params_to_c2 (CPP_bunch_params& C, const Opaque_coord_clas
   C.n_particle_live = z_n_particle_live;
   // c_side.to_c2_set[integer, 0, NOT]
   C.n_particle_lost_in_ele = z_n_particle_lost_in_ele;
+  // c_side.to_c2_set[integer, 0, NOT]
+  C.n_good_steps = z_n_good_steps;
+  // c_side.to_c2_set[integer, 0, NOT]
+  C.n_bad_steps = z_n_bad_steps;
   // c_side.to_c2_set[integer, 0, NOT]
   C.ix_ele = z_ix_ele;
   // c_side.to_c2_set[integer, 0, NOT]

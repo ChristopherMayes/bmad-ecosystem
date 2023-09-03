@@ -1,3 +1,16 @@
+% Etienne stuff
+
+\newcommand{\RR}{\textrm{I\kern-0.19emR}}
+\newcommand{\CC}{\textrm{I\kern-0.5emC}}
+\newcommand{\dragt}{\mbox{\scriptsize $\begin{matrix}\# \\
+\# \end{matrix}$}}
+\newcommand{\cook}{cookbook}  %future location
+\newcommand{\forestj}{Forest}
+\definecolor{mucol}{rgb}{0.7,0.1,0.1}
+\newcommand{\etex}{{\color{mucol} \Huge $\bullet $} }
+
+% End Etienne stuff
+
 \newcommand{\cosc}{\text{cosc}}
 \newcommand{\atantwo}{\text{atan2}}
 \newcommand{\sinc}{\text{sinc}}
@@ -252,3 +265,12 @@
 
 \newcommand{\DAG}{$^\dagger$}
 \newcommand{\DDAG}{$^\ddagger$}
+
+%%% Table of Contents spacing.
+\makeatletter   % So can use @ sign in \renewcommand
+\renewcommand{\l@section}{\@dottedtocline{1}{1.5em}{3.3em}}
+\renewcommand{\l@subsection}{\@dottedtocline{2}{3.8em}{4.2em}}
+\renewcommand{\l@figure}{\@dottedtocline{1}{1.5em}{3.3em}}
+\renewcommand{\l@table}{\@dottedtocline{1}{1.5em}{3.3em}}
+\renewcommand{\l@subsection}{\@dottedtocline{2}{1.5em}{3.5em}}
+\makeatother    % Reset 

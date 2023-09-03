@@ -1516,12 +1516,22 @@ is_eq = is_eq .and. (f1%material == f2%material)
 is_eq = is_eq .and. (f1%grid == f2%grid)
 !! f_side.equality_test[type, 0, NOT]
 is_eq = is_eq .and. (f1%pixel == f2%pixel)
+!! f_side.equality_test[type, 0, NOT]
+is_eq = is_eq .and. (f1%reflectivity_table_sigma == f2%reflectivity_table_sigma)
+!! f_side.equality_test[type, 0, NOT]
+is_eq = is_eq .and. (f1%reflectivity_table_pi == f2%reflectivity_table_pi)
 !! f_side.equality_test[type, 1, ALLOC]
-is_eq = is_eq .and. (allocated(f1%reflectivity_table) .eqv. allocated(f2%reflectivity_table))
+is_eq = is_eq .and. (allocated(f1%init_energy_prob) .eqv. allocated(f2%init_energy_prob))
 if (.not. is_eq) return
-if (allocated(f1%reflectivity_table)) is_eq = all(shape(f1%reflectivity_table) == shape(f2%reflectivity_table))
+if (allocated(f1%init_energy_prob)) is_eq = all(shape(f1%init_energy_prob) == shape(f2%init_energy_prob))
 if (.not. is_eq) return
-if (allocated(f1%reflectivity_table)) is_eq = all(f1%reflectivity_table == f2%reflectivity_table)
+if (allocated(f1%init_energy_prob)) is_eq = all(f1%init_energy_prob == f2%init_energy_prob)
+!! f_side.equality_test[real, 1, ALLOC]
+is_eq = is_eq .and. (allocated(f1%integrated_init_energy_prob) .eqv. allocated(f2%integrated_init_energy_prob))
+if (.not. is_eq) return
+if (allocated(f1%integrated_init_energy_prob)) is_eq = all(shape(f1%integrated_init_energy_prob) == shape(f2%integrated_init_energy_prob))
+if (.not. is_eq) return
+if (allocated(f1%integrated_init_energy_prob)) is_eq = all(f1%integrated_init_energy_prob == f2%integrated_init_energy_prob)
 
 end function eq_photon_element
 
@@ -3040,6 +3050,8 @@ is_eq = is_eq .and. (f1%s == f2%s)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%t == f2%t)
 !! f_side.equality_test[real, 0, NOT]
+is_eq = is_eq .and. (f1%sigma_t == f2%sigma_t)
+!! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%charge_live == f2%charge_live)
 !! f_side.equality_test[real, 0, NOT]
 is_eq = is_eq .and. (f1%charge_tot == f2%charge_tot)
@@ -3049,6 +3061,10 @@ is_eq = is_eq .and. (f1%n_particle_tot == f2%n_particle_tot)
 is_eq = is_eq .and. (f1%n_particle_live == f2%n_particle_live)
 !! f_side.equality_test[integer, 0, NOT]
 is_eq = is_eq .and. (f1%n_particle_lost_in_ele == f2%n_particle_lost_in_ele)
+!! f_side.equality_test[integer, 0, NOT]
+is_eq = is_eq .and. (f1%n_good_steps == f2%n_good_steps)
+!! f_side.equality_test[integer, 0, NOT]
+is_eq = is_eq .and. (f1%n_bad_steps == f2%n_bad_steps)
 !! f_side.equality_test[integer, 0, NOT]
 is_eq = is_eq .and. (f1%ix_ele == f2%ix_ele)
 !! f_side.equality_test[integer, 0, NOT]

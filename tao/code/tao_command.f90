@@ -20,7 +20,6 @@ use tao_set_mod, dummy2 => tao_command
 use tao_change_mod, only: tao_change_var, tao_change_ele, tao_dmodel_dvar_calc, tao_change_tune, tao_change_z_tune
 use tao_command_mod, only: tao_cmd_split, tao_re_execute, tao_next_switch
 use tao_data_and_eval_mod, only: tao_to_real
-use tao_misalign_mod, only: tao_misalign
 use tao_scale_mod, only: tao_scale_cmd
 use tao_wave_mod, only: tao_wave_cmd
 use tao_x_scale_mod, only: tao_x_scale_cmd
@@ -47,8 +46,8 @@ character(200) list, mask
 character(40) gang_str, switch, word, except, branch_str
 character(16) cmd_name, set_word, axis_name
 
-character(16) :: cmd_names(42) = [character(16):: &
-                      'alias', 'call', 'change', 'clear', 'clip', 'continue', 'cut_ring', 'derivative', &
+character(16) :: cmd_names(43) = [character(16):: &
+                      'alias', 'call', 'change', 'clear', 'clip', 'continue', 'create', 'cut_ring', 'derivative', &
                       'end_file', 'exit', 'flatten', 'help', 'json', 'ls', 'misalign', 'pause', 'place', &
                       'plot', 'ptc', 'python', 'quit', 're_execute', 'read', 'reinitialize', 'reset', &
                       'restore', 'run_optimizer', 'scale', 'set', 'show', 'single_mode', 'spawn', 'taper', &
@@ -250,6 +249,82 @@ case ('continue')
   return
 
 !--------------------------------
+! CREATE
+
+case ('create')
+  call tao_cmd_split(cmd_line, 3, cmd_word, .false., err_flag)
+
+  if (err_flag) then
+     call out_io (s_error$, r_name, 'Error in the create command')
+     return
+  end if
+
+  select case (trim(downcase(cmd_word(1))))
+  case ('data')
+    block
+      integer, dimension(4) :: id
+      integer :: jd,nd,ns
+      character(:), allocatable :: ds
+      character((len_trim(cmd_word(3))*11)/7+21+len_trim(cmd_word(2))) :: py_cmd
+      type (tao_d2_data_array_struct), dimension(:), allocatable :: d2_array
+
+      ! Check if the data exists
+      call tao_find_data(err, cmd_word(2), d2_array, print_err=.false.)
+      if (size(d2_array).ne.0) then
+         call out_io (s_error$, r_name, 'data already exists, will not replace')
+         return
+      end if
+      ! Count the number of d1_data
+      id(1)=1
+      nd = 0
+      ds = trim(cmd_word(3))
+      ns = len(ds)
+      id(2:4) = 0
+      do jd=1,ns
+         select case (ds(jd:jd))
+         case('[')
+            id(2) = id(2)+1
+         case(':')
+            id(3) = id(3)+1
+         case(']')
+            id(4) = id(4)+1
+         end select
+      end do
+      if (id(2).eq.0.or.id(2).ne.id(3).or.id(3).ne.id(4)) go to 70000
+      nd = id(2)
+      ! Start constructing the python command
+      write(py_cmd,'(a,i0)') 'data_d2_create '//trim(cmd_word(2))//'^^', nd
+      ! Parse the arrays
+      id(1)=1
+      jd = 1
+      do jd=1,nd
+         id(2) = index(ds(id(1):),'[') + id(1) - 1
+         if (id(2).le.id(1).or.id(2).eq.ns) go to 70000
+         py_cmd = trim(py_cmd)//'^^'//trim(adjustl(ds(id(1):id(2)-1)))
+         id(3) = scan(ds(id(2)+1:),':') + id(2)
+         if (id(3).le.id(2)+1.or.id(3).eq.ns) go to 70000
+         if (.not.is_integer(ds(id(2)+1:id(3)-1))) go to 70000
+         py_cmd = trim(py_cmd)//'^^'//trim(adjustl(ds(id(2)+1:id(3)-1)))
+         id(4) = scan(ds(id(3)+1:),']') + id(3)
+         if (id(4).le.id(3)+1) go to 70000
+         if (.not.is_integer(ds(id(3)+1:id(4)-1))) go to 70000
+         py_cmd = trim(py_cmd)//'^^'//trim(adjustl(ds(id(3)+1:id(4)-1)))
+         if (id(4).eq.ns) exit
+         if (ds(id(4)+1:id(4)+1).ne.' ') go to 70000
+         id(1) = verify(ds(id(4)+1:),' ') + id(4)
+      end do
+      call tao_python_cmd(py_cmd)
+    end block
+    return
+    70000 call out_io(s_error$, r_name, 'Correct form is "create data d2_name x[i:j] ..."')
+
+  case default
+     call out_io (s_error$, r_name, 'I can only create data')
+  end select
+
+  return
+
+!--------------------------------
 ! CUT_RING
 
 case ('cut_ring')
@@ -329,15 +404,6 @@ case ('help')
   return
 
 !--------------------------------
-! LS
-
-case ('ls')
-  call system_command ('ls ' // cmd_line, err)
-  return
-
-
-
-!--------------------------------
 ! JSON
 ! This is experimental. Removal is a possibility if not developed.
 
@@ -347,12 +413,11 @@ case ('json')
   return
 
 !--------------------------------
-! MISALIGN
+! LS
 
-case ('misalign')
-
-  call tao_cmd_split (cmd_line, 5, cmd_word, .true., err_flag); if (err_flag) goto 9000
-  call tao_misalign (cmd_word(1), cmd_word(2), cmd_word(3), cmd_word(4), cmd_word(5))
+case ('ls')
+  call system_command ('ls ' // cmd_line, err)
+  return
 
 !--------------------------------
 ! PAUSE
@@ -566,12 +631,13 @@ case ('set')
   branch_str = ''
   mask = ''
   listing = .false.
+  silent = .false.
 
   do
     ! "-1" is a universe index and not a switch.
     if (cmd_line(1:1) == '-' .and. cmd_line(1:2) /= '-1') then
-      call tao_next_switch (cmd_line, [character(20) :: '-update', '-lord_no_set', '-mask', '-branch', '-listing'], &
-                                                                                              .true., switch, err_flag, ix)
+      call tao_next_switch (cmd_line, [character(20) :: '-update', '-lord_no_set', '-mask', &
+                                    '-branch', '-listing', '-silent'], .true., switch, err_flag, ix)
       if (err_flag) return
       select case (switch)
       case ('-update')
@@ -586,6 +652,8 @@ case ('set')
       case ('-mask')
         mask = cmd_line(:ix)
         call string_trim(cmd_line(ix+1:), cmd_line, ix)
+      case ('-silent')
+        silent = .true.
       end select
       cycle
     endif
@@ -692,7 +760,7 @@ case ('set')
   case ('curve')
     call tao_set_curve_cmd (cmd_word(1), cmd_word(2), cmd_word(4)) 
   case ('data')
-    call tao_set_data_cmd (cmd_word(1), cmd_word(3))
+    call tao_set_data_cmd (cmd_word(1), cmd_word(3), silent)
   case ('default')
     call tao_set_default_cmd (cmd_word(1), cmd_word(3))
   case ('dynamic_aperture')

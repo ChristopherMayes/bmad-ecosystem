@@ -154,7 +154,7 @@ end subroutine track1_bunch_hom
 !--------------------------------------------------------------------------
 !--------------------------------------------------------------------------
 !+
-! Subroutine init_beam_distribution (ele, param, beam_init, beam, err_flag, modes)
+! Subroutine init_beam_distribution (ele, param, beam_init, beam, err_flag, modes, print_p0c_shift_warning, conserve_momentum)
 !
 ! Subroutine to initialize a beam of particles. 
 ! Initialization uses the downstream parameters of ele.
@@ -177,13 +177,15 @@ end subroutine track1_bunch_hom
 !     %particle      -- Type of particle.
 !   beam_init   -- beam_init_struct: Use "getf beam_init_struct" for more details.
 !   modes       -- normal_modes_struct, optional: Normal mode parameters. See above.
+!   print_p0c_shift_warning   -- logical, optional: Default is True. See hdf5_read_beam doc. Only used when reading hdf5 file.
+!   shift_momentum            -- logical, optional: Default is True. See hdf5_read_beam doc. Only used when reading hdf5 file.
 !
 ! Output:
 !   beam        -- Beam_struct: Structure with initialized particles.
 !   err_flag    -- logical, optional: Set true if there is an error, false otherwise.
 !-
 
-subroutine init_beam_distribution (ele, param, beam_init, beam, err_flag, modes)
+subroutine init_beam_distribution (ele, param, beam_init, beam, err_flag, modes, print_p0c_shift_warning, conserve_momentum)
  
 use random_mod
 
@@ -199,6 +201,7 @@ type (coord_struct), pointer :: p
 
 integer i_bunch, i, n, n_kv
 logical, optional :: err_flag
+logical, optional :: print_p0c_shift_warning, conserve_momentum
 logical err_here
 
 character(22) :: r_name = "init_beam_distribution"
@@ -216,7 +219,7 @@ if (beam_init%file_name /= '') then   ! Old name
 endif
 
 if (beam_init%position_file /= '') then
-  call read_beam_file (beam_init%position_file, beam, beam_init, err_here, ele)
+  call read_beam_file (beam_init%position_file, beam, beam_init, err_here, ele, print_p0c_shift_warning, conserve_momentum)
   if (err_here) then
     call out_io (s_abort$, r_name, "PROBLEM READING BEAM POSITION FILE: "// quote(beam_init%position_file))
     return
@@ -248,7 +251,7 @@ end subroutine init_beam_distribution
 !--------------------------------------------------------------------------
 !--------------------------------------------------------------------------
 !+
-! Subroutine init_bunch_distribution (ele, param, beam_init, ix_bunch, bunch, err_flag, modes)
+! Subroutine init_bunch_distribution (ele, param, beam_init, ix_bunch, bunch, err_flag, modes, print_p0c_shift_warning, conserve_momentum)
 !
 ! Subroutine to initialize a distribution of particles of a bunch.
 ! Initialization uses the downstream parameters of ele.
@@ -285,13 +288,15 @@ end subroutine init_beam_distribution
 !   beam_init   -- beam_init_struct: Use "getf beam_init_struct" for more details.
 !   ix_bunch    -- integer: Bunch index. 0 = bunch generated at time = 0.
 !   modes       -- normal_modes_struct, optional: Normal mode parameters. See above.
+!   print_p0c_shift_warning   -- logical, optional: Default is True. See hdf5_read_beam doc. Only used when reading hdf5 file.
+!   shift_momentum            -- logical, optional: Default is True. See hdf5_read_beam doc. Only used when reading hdf5 file.
 !
 ! Output:
 !   bunch        -- bunch_struct: Structure with initialized particles.
 !   err_flag     -- logical, optional: Set True if there is an error. False otherwise.
 !-
 
-subroutine init_bunch_distribution (ele, param, beam_init, ix_bunch, bunch, err_flag, modes)
+subroutine init_bunch_distribution (ele, param, beam_init, ix_bunch, bunch, err_flag, modes, print_p0c_shift_warning, conserve_momentum)
 
 use mode3_mod
 use random_mod
@@ -323,6 +328,7 @@ character(16) old_engine, old_converter
 character(*), parameter :: r_name = "init_bunch_distribution"
 
 logical, optional :: err_flag
+logical, optional :: print_p0c_shift_warning, conserve_momentum
 logical ok, correct_for_coupling(6)
 logical ran_gauss_here, err
 
@@ -355,12 +361,14 @@ if (beam_init%file_name /= '') then   ! Old name
 endif
 
 if (beam_init%position_file /= '') then
-  call read_beam_file (beam_init%position_file, beam, beam_init, err)
+  call read_beam_file (beam_init%position_file, beam, beam_init, err, ele, print_p0c_shift_warning, conserve_momentum)
   if (err) then
     call out_io (s_error$, r_name, "PROBLEM READING BEAM POSITION FILE: " // beam_init%position_file)
     return
   endif
   bunch = beam%bunch(1)
+  bunch%n_good = 0
+  bunch%n_bad = 0
 
   call bunch_init_end_calc (bunch, beam_init, ix_bunch, ele)
 
@@ -480,6 +488,9 @@ else
 endif
 
 ! Init
+
+bunch%n_good = 0
+bunch%n_bad = 0
 
 n_kv = 0
 ix_kv = 0
@@ -1227,13 +1238,13 @@ end subroutine init_spin_distribution
 !+
 ! subroutine calc_bunch_params_slice (bunch, bunch_params, plane, slice_center, slice_spread, err, print_err, is_time_coords, ele)
 !
-! Finds all bunch parameters for a slice through the beam distribution.
+! Finds bunch parameters for a slice of the beam.
 !
 ! Input:
 !   bunch           -- bunch_struct
 !   plane           -- Integer: plane to slice through (x$, px$, & etc...)
 !   slice_center    -- real(rp): Center to take slice about
-!   slice_spread    -- real(rp): hard-wall spread in slice about center
+!   slice_spread    -- real(rp): +/- spread in slice about center.
 !   print_err       -- logical, optional: If present and False then suppress 
 !                       "no eigen-system found" messages.
 !   is_time_coords  -- logical, optional: Default is False. If True, input bunch is using time coordinates in which
@@ -1249,7 +1260,7 @@ subroutine calc_bunch_params_slice (bunch, bunch_params, plane, slice_center, sl
 
 implicit none
 
-type (bunch_struct), intent(in) :: bunch
+type (bunch_struct) :: bunch
 type (bunch_struct) :: sliced_bunch
 type (bunch_params_struct) bunch_params
 type (ele_struct), optional :: ele
@@ -1265,13 +1276,11 @@ logical err
 !
 
 n_part = 0
-sliced_bunch%charge_tot = 0
 
 do i = 1, size(bunch%particle)
   if (bunch%particle(i)%vec(plane) > slice_center + abs(slice_spread) .or. &
       bunch%particle(i)%vec(plane) < slice_center - abs(slice_spread)) cycle
   n_part = n_part + 1
-  sliced_bunch%charge_tot = sliced_bunch%charge_tot + bunch%particle(i)%charge
 enddo
 
 call reallocate_bunch (sliced_bunch, n_part)
@@ -1290,6 +1299,60 @@ enddo
 call calc_bunch_params (sliced_bunch, bunch_params, err, print_err, is_time_coords = is_time_coords, ele = ele)
 
 end subroutine calc_bunch_params_slice
+
+!--------------------------------------------------------------------------
+!--------------------------------------------------------------------------
+!--------------------------------------------------------------------------
+!+
+! subroutine calc_bunch_params_z_slice (bunch, bunch_params, slice_bounds, err, print_err, is_time_coords, ele)
+!
+! Finds bunch parameters for a slice of the beam.
+!
+! The slice is specified in terms of percentage of particles ordered by z-position.
+! For example, slice_bounds = [0.0, 0.5] specifies the trailing half of the bunch
+!
+! Input:
+!   bunch           -- bunch_struct
+!   slice_bounds(2) -- real(rp): Slice bounds in percentage of particles ordered by z-position.
+!                         0.0 is the back of the bunch and 1.0 is the front of the bunch.
+!   print_err       -- logical, optional: If present and False then suppress 
+!                       "no eigen-system found" messages.
+!   is_time_coords  -- logical, optional: Default is False. If True, input bunch is using time coordinates in which
+!                       case there will be a conversion to s-coords before bunch_params are computed.
+!   ele             -- ele_struct, optional: Element being tracked through. Must be present if is_time_coords = True.
+!
+! Output     
+!   params -- bunch_params_struct:
+!   err    -- Logical: Set True if there is an error.
+!-
+
+subroutine calc_bunch_params_z_slice (bunch, bunch_params, slice_bounds, err, print_err, is_time_coords, ele)
+
+type (bunch_struct) :: bunch
+type (bunch_struct) :: sliced_bunch
+type (bunch_params_struct) bunch_params
+type (ele_struct), optional :: ele
+
+real(rp) slice_bounds(2)
+integer i, j, n_part, n0
+logical err
+logical, optional :: print_err, is_time_coords
+
+!
+
+n0 = nint(slice_bounds(1)*size(bunch%particle))
+n_part = nint((slice_bounds(2)-slice_bounds(1))*size(bunch%particle))
+call reallocate_bunch(sliced_bunch, n_part)
+
+call indexer (bunch%particle%vec(5), bunch%ix_z)
+do i = 1, n_part
+  j = bunch%ix_z(i+n0)
+  sliced_bunch%particle(i) = bunch%particle(j)
+enddo
+
+call calc_bunch_params (sliced_bunch, bunch_params, err, print_err, is_time_coords = is_time_coords, ele = ele)
+
+end subroutine calc_bunch_params_z_slice 
 
 !--------------------------------------------------------------------------
 !--------------------------------------------------------------------------
@@ -1317,8 +1380,8 @@ end subroutine calc_bunch_params_slice
 ! Output     
 !   bunch_params -- bunch_params_struct:
 !   error        -- Logical: Set True if there is an error.
-!   n_mat(6,6)      -- real(rp), optional: N matrix defined in Wolski Eq 44 and used to convert 
-!                       from action-angle coords to lab coords (Wolski Eq 51.).
+!   n_mat(6,6)   -- real(rp), optional: N matrix defined in Wolski Eq 44 and used to convert 
+!                     from action-angle coords to lab coords (Wolski Eq 51.).
 !-
 
 subroutine calc_bunch_params (bunch, bunch_params, error, print_err, n_mat, is_time_coords, ele)
@@ -1363,6 +1426,9 @@ enddo
 
 ! n_particle and centroid
 
+bunch_params%n_good_steps = bunch%n_good
+bunch_params%n_bad_steps = bunch%n_bad
+
 bunch_params%n_particle_tot = size(bunch%particle)
 bunch_params%n_particle_live = count(bunch%particle%state == alive$)
 bunch_params%charge_live = sum(bunch%particle%charge, mask = (bunch%particle%state == alive$))
@@ -1400,6 +1466,8 @@ bunch_params%centroid%s = sum(bunch%particle%s * charge, mask = (bunch%particle%
 bunch_params%centroid%t = sum(bunch%particle%t * charge, mask = (bunch%particle%state == alive$)) / charge_live
 bunch_params%s = bunch_params%centroid%s
 bunch_params%t = bunch_params%centroid%t
+bunch_params%sigma_t = sum(bunch%particle%t**2 * charge, mask = (bunch%particle%state == alive$)) / charge_live
+bunch_params%sigma_t = sqrt(max(0.0_rp, bunch_params%sigma_t - bunch_params%t**2))
 
 if (bmad_com%spin_tracking_on) call calc_spin_params (bunch, bunch_params)
   
@@ -1749,9 +1817,9 @@ type (coord_struct) :: particle(:)
 type (bunch_params_struct), target :: bunch_params
 type (ele_struct), optional :: ele
 
-real(rp) charge_live, p0c_avg, vec(6)
+real(rp) charge_live, p0c_avg, vec(7)
 real(rp) charge(:)
-real(rp) :: avg(6)
+real(rp) :: avg(7)
 
 integer i, j2
 logical, optional :: is_time_coords
@@ -1795,14 +1863,14 @@ do i = 1, size(particle)
   vec = to_basis_coords(particle(i), ele, is_time) - avg
   
   forall (j2 = 1:6)
-    bunch_params%sigma(:,j2) = bunch_params%sigma(:,j2) + vec(:)*vec(j2)*charge(i)
+    bunch_params%sigma(:,j2) = bunch_params%sigma(:,j2) + vec(1:6)*vec(j2)*charge(i)
   end forall
 enddo
 
 bunch_params%sigma        = bunch_params%sigma / charge_live
 bunch_params%rel_max      = bunch_params%rel_max - avg
 bunch_params%rel_min      = bunch_params%rel_min - avg
-bunch_params%centroid%vec = avg
+bunch_params%centroid%vec = avg(1:6)
 
 !------------------------
 contains
@@ -1811,20 +1879,20 @@ function to_basis_coords (particle, ele, is_time) result (vec)
 
 type (coord_struct) particle, p
 type (ele_struct) ele
-real(rp) vec(6)
+real(rp) vec(7)
 logical is_time
 
 ! Time coords uses a different basis for the sigma matrix.
 
 if (.not. is_time) then
-  vec = particle%vec
+  vec = [particle%vec, particle%t]
   return
 endif
 
 p = particle
 call convert_particle_coordinates_t_to_s(p, ele)
 vec = [p%vec(1), p%vec(2) * p%p0c / p0c_avg, p%vec(3), p%vec(4) * p%p0c / p0c_avg, &
-         p%s, (p%vec(6)*p%p0c + p%p0c - p0c_avg) / p0c_avg]
+                                      p%s, (p%vec(6)*p%p0c + p%p0c - p0c_avg) / p0c_avg, p%t]
 
 end function to_basis_coords
 
@@ -1857,8 +1925,9 @@ type (bunch_struct), target :: bunch
 type (beam_init_struct) beam_init
 type (ele_struct) ele
 type (coord_struct), pointer :: p
+type (branch_struct), pointer :: branch
 
-real(rp) center(6), ran_vec(6), old_charge, pz_min
+real(rp) center(6), ran_vec(6), old_charge, pz_min, ref_time
 integer ix_bunch, i, n
 character(*), parameter :: r_name = 'bunch_init_end_calc'
 logical from_file, h5_file
@@ -1891,6 +1960,12 @@ n = len_trim(beam_init%position_file)
 h5_file = (beam_init%position_file(max(1,n-4):n) == '.hdf5' .or. beam_init%position_file(max(1,n-2):n) == '.h5')
 
 if (.not. h5_file) then
+  ref_time = ele%ref_time
+  if (associated(ele%branch)) then
+    branch => ele%branch
+    ref_time = ref_time + beam_init%ix_turn * branch%ele(branch%n_ele_track)%ref_time
+  endif
+
   do i = 1, size(bunch%particle)
     p => bunch%particle(i)
     p%vec = p%vec + center
@@ -1909,14 +1984,14 @@ if (.not. h5_file) then
       else
         ! Fixed time, particles distributed in space using vec(5)
         p%s = p%vec(5)
-        p%t = ele%ref_time + bunch%t_center
+        p%t = ref_time + bunch%t_center
         p%location = inside$
       endif
 
       ! Convert to s coordinates
       p%p0c = ele%value(p0c$)
       call convert_pc_to (sqrt(p%vec(2)**2 + p%vec(4)**2 + p%vec(6)**2), p%species, beta = p%beta)
-      p%dt_ref = p%t-ele%ref_time
+      p%dt_ref = p%t-ref_time
       call convert_particle_coordinates_t_to_s (p, ele)
       if (.not. from_file) p%state = alive$
       p%ix_ele    = ele%ix_ele
@@ -1925,7 +2000,7 @@ if (.not. h5_file) then
     ! Usual s-coordinates
     else
       call convert_pc_to (ele%value(p0c$) * (1 + p%vec(6)), p%species, beta = p%beta)
-      p%t = ele%ref_time - p%vec(5) / (p%beta * c_light)
+      p%t = ref_time - p%vec(5) / (p%beta * c_light)
       if (from_file .and. p%state /= alive$) cycle  ! Don't want init_coord to raise the dead.
       ! If from a file then no vec6 shift needed.
       call init_coord (p, p, ele, downstream_end$, p%species, shift_vec6 = .not. from_file)

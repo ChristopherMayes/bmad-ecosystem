@@ -31,6 +31,7 @@ use ptc_layout_mod, only: ptc_emit_calc, lat_to_ptc_layout, type_ptc_fibre, assi
 use ptc_map_with_radiation_mod, only: ptc_rad_map_struct, ptc_setup_map_with_radiation, tree_element_zhe
 use photon_target_mod, only: to_surface_coords
 use expression_mod, only: expression_stack_to_string
+use beam_utils, only: calc_bunch_params_z_slice
 
 implicit none
 
@@ -74,7 +75,7 @@ type (bunch_struct), pointer :: bunch
 type (wake_struct), pointer :: wake
 type (wake_lr_mode_struct), pointer :: lr_mode
 type (coord_struct), target :: orb, orb0, orb2, orbit
-type (bunch_params_struct) bunch_params
+type (bunch_params_struct), target :: bunch_params
 type (bunch_params_struct), pointer :: bunch_p
 type (taylor_struct) taylor(6)
 type (ele_pointer_struct), allocatable :: eles(:)
@@ -141,7 +142,7 @@ type (show_lat_column_info_struct) col_info(60)
 
 real(rp) phase_units, gam, s_ele, s0, s1, s2, s3, val, z, z1, z2, z_in, s_pos, dt, angle, r
 real(rp) sig_mat(6,6), sig0_mat(6,6), mat6(6,6), vec0(6), vec_in(6), vec3(3), l_lat
-real(rp) pc, e_tot, value_min, value_here, pz1, phase
+real(rp) pc, e_tot, value_min, value_here, pz1, phase, zb(2)
 real(rp) g_vec(3), dr(3), v0(3), v2(3), g_bend, c_const, mc2, del, time1, ds, ref_vec(6), beta
 real(rp) gamma, E_crit, E_ave, c_gamma, P_gam, N_gam, N_E2, H_a, H_b, rms, mean, s_last, s_now, n0(3)
 real(rp) pz2, qs, q, x, xi_sum, xi_diff, dn_dpz(3), dn_partial(3,3), dn_partial2(3,3)
@@ -188,7 +189,7 @@ integer, allocatable :: ix_c(:), ix_remove(:)
 logical bmad_format, good_opt_only, print_wall, show_lost, logic, aligned, undef_uses_column_format, print_debug
 logical err, found, first_time, by_s, print_header_lines, all_lat, limited, show_labels, do_calc, flip
 logical show_sym, show_line, show_shape, print_data, ok, print_tail_lines, print_slaves, print_super_slaves
-logical show_all, name_found, print_taylor, print_rad, print_attributes, err_flag, angle_units
+logical show_all, name_found, print_taylor, print_rad, print_attributes, err_flag, angle_units, map_calc
 logical print_ptc, print_position, called_from_python_cmd, print_eigen, show_mat, show_q, print_rms
 logical valid_value, print_floor, show_section, is_complex, print_header, print_by_uni, do_field, delim_found
 logical, allocatable :: picked_uni(:), valid(:), picked2(:)
@@ -283,9 +284,10 @@ case ('beam')
 
   ele_name = ''
   what_to_show = ''
+  zb = -1
 
   do 
-    call tao_next_switch (what2, [character(16):: '-universe', '-lattice', '-comb'], .true., switch, err, ix_s2)
+    call tao_next_switch (what2, [character(16):: '-universe', '-lattice', '-comb', '-z'], .true., switch, err, ix_s2)
     if (err) return
     if (switch == '') exit
 
@@ -303,6 +305,24 @@ case ('beam')
     case ('-lattice', '-comb')
       what_to_show = switch
 
+    case ('-z')
+      read (what2(1:ix_s2), *, iostat = ios1) zb(1)
+      call string_trim(what2(ix_s2+1:), what2, ix_s2)
+      read (what2(1:ix_s2), *, iostat = ios2) zb(2)
+      call string_trim(what2(ix_s2+1:), what2, ix_s2)
+      if (ios1 /= 0 .or. ios2 /= 0) then
+        nl=1; lines(1) = 'CANNOT READ Z VALUES.'
+        return
+      endif
+      if (any(zb < 0) .or. any(zb > 1)) then
+        nl=1; lines(1) = 'Z VALUES MUST BE IN RANGE [0, 1].'
+        return
+      endif
+      if (zb(1) >= zb(2)) then
+        nl=1; lines(1) = 'Z(2) MUST BE GREATER THAN Z(1).'
+        return
+      endif
+  
     case default
       if (ele_name /= '') then
         nl=1; lines(1) = 'EXTRA STUFF ON THE COMMAND LINE: ' // switch
@@ -319,6 +339,16 @@ case ('beam')
   bb => u%model_branch(0)%beam
 
   !
+
+  if (what_to_show == '-comb' .and. zb(1) >= 0) then
+    nl=nl+1; lines(nl) = '"-comb" and "-z" cannot both be used at the same time'
+    return
+  endif
+
+  if (zb(1) >= 0 .and. ele_name == '') then
+    nl=nl+1; lines(nl) = 'Lattice element must be specified when using "-z" option.'
+    return
+  endif
 
   if (what_to_show == '-comb' .and. ele_name == '') then
     if (.not. allocated(tao_branch%bunch_params_comb)) then
@@ -557,7 +587,19 @@ case ('beam')
       nl=nl+1; lines(nl) = 'Bunch parameters at comb index: ' // int_str(ix_s2)
 
     else
-      bunch_p => tao_branch%bunch_params(ele%ix_ele)
+      if (zb(1) >= 0) then
+        beam => u%model_branch(0)%ele(ele%ix_ele)%beam
+        if (.not. allocated(beam%bunch)) then
+          nl=nl+1; lines(nl) = 'Bunch parameters at: ' // trim(ele%name) // ' ' //  ele_loc_name(ele, .false., '()')
+          return
+        endif
+        call calc_bunch_params_z_slice(beam%bunch(s%global%bunch_to_plot), bunch_params, zb, err, .true., ele = ele)
+        if (err) return
+        bunch_p => bunch_params
+      else
+        bunch_p => tao_branch%bunch_params(ele%ix_ele)
+      endif
+
       nl=nl+1; lines(nl) = 'Bunch parameters at: ' // trim(ele%name) // ' ' //  ele_loc_name(ele, .false., '()')
       found = (allocated(u%model_branch(ele%ix_branch)%ele(ele%ix_ele)%beam%bunch))
     endif
@@ -578,24 +620,30 @@ case ('beam')
       return
     endif
 
-
-
     nl=nl+1; write(lines(nl), imt)  '  Parameters for bunch:       ', n
     nl=nl+1; write(lines(nl), rmt)  '  S-position:                 ', bunch_p%s
     nl=nl+1; write(lines(nl), imt)  '  In branch:                  ', ix_branch
     nl=nl+1; write(lines(nl), imt)  '  Particles surviving:        ', n_live
     nl=nl+1; write(lines(nl), imt)  '  Particles lost:             ', n_tot - n_live
     nl=nl+1; write(lines(nl), f3mt) '  Particles lost (%):         ', 100 * real(n_tot - n_live) / n_tot
+    nl=nl+1; write(lines(nl), iimt) '  Good steps:                 ', bunch_p%n_good_steps, '    ! Set when tracking with space charge.'
+    nl=nl+1; write(lines(nl), iimt) '  Bad steps:                  ', bunch_p%n_bad_steps,  '    ! Set when tracking with space charge.'
+
     if (branch%param%particle == photon$) then
       nl=nl+1; write(lines(nl), rmt)  '  Intensity:                  ', &
                         bunch_p%centroid%field(1)**2 + bunch_p%centroid%field(2)**2
     else
       nl=nl+1; write(lines(nl), rmt) '  Charge live (C):            ', bunch_p%charge_live
     endif
-    nl=nl+1; write(lines(nl), rmt) '  Centroid:', bunch_p%centroid%vec
-    nl=nl+1; write(lines(nl), rmt) '  RMS:     ', &
-                      sqrt(bunch_p%sigma(1,1)), sqrt(bunch_p%sigma(2,2)), sqrt(bunch_p%sigma(3,3)), &
-                      sqrt(bunch_p%sigma(4,4)), sqrt(bunch_p%sigma(5,5)), sqrt(bunch_p%sigma(6,6))
+
+    nl=nl+1; lines(nl) = ''
+    nl=nl+1; write(lines(nl), '(24x,a)') 'x               px               y              py                z               pz          time'
+    nl=nl+1; write(lines(nl), rmt) '  Centroid:    ', bunch_p%centroid%vec, bunch_p%t
+    nl=nl+1; write(lines(nl), rmt) '  RMS:         ', sqrt(bunch_p%sigma(1,1)), sqrt(bunch_p%sigma(2,2)), sqrt(bunch_p%sigma(3,3)), &
+                                                      sqrt(bunch_p%sigma(4,4)), sqrt(bunch_p%sigma(5,5)), sqrt(bunch_p%sigma(6,6)), bunch_p%sigma_t
+    nl=nl+1; write(lines(nl), rmt) '  Max-Centroid:', bunch_p%rel_max
+    nl=nl+1; write(lines(nl), rmt) '  Min-Centroid:', bunch_p%rel_min
+
     if (u%model%lat%branch(ix_branch)%param%particle /= photon$) then
       nl=nl+1; lines(nl) = ''
       nl=nl+1; write(lines(nl), rmt) '               norm_emitt            emit            beta           alpha'
@@ -2356,8 +2404,8 @@ case ('graph')
   nl=nl+1; write(lines(nl), rmt)  'x%tick_max                       = ', g%x%tick_max
   nl=nl+1; write(lines(nl), rmt)  'x%tick_min                       = ', g%x%tick_min
   nl=nl+1; write(lines(nl), rmt)  'x%dtick                          = ', g%x%dtick
-  nl=nl+1; write(lines(nl), rmt)  'x%eval_range_max                 = ', g%x%eval_max
-  nl=nl+1; write(lines(nl), rmt)  'x%eval_range_min                 = ', g%x%eval_min
+  nl=nl+1; write(lines(nl), rmt)  'x%eval_max                       = ', g%x%eval_max
+  nl=nl+1; write(lines(nl), rmt)  'x%eval_min                       = ', g%x%eval_min
 
   nl=nl+1; write(lines(nl), lmt)  'y2_mirrors_y                     = ', g%y2_mirrors_y
   nl=nl+1; write(lines(nl), amt)  'y%label                          = ', quote(g%y%label)
@@ -2659,7 +2707,8 @@ case ('lattice')
 
   do
     call tao_next_switch (what2, [character(32):: &
-        '-branch', '-blank_replacement', '-lords', '-middle', '-tracking_elements', '-0undef', '-beginning', &
+        '-branch', '-blank_replacement', '-lords', '-center', '-middle', &
+        '-tracking_elements', '-0undef', '-beginning', &
         '-no_label_lines', '-no_tail_lines', '-custom', '-s', '-radiation_integrals', '-remove_line_if_zero', &
         '-base', '-design', '-floor_coords', '-orbit', '-attribute', '-all', '-no_slaves', '-energy', &
         '-spin', '-undef0', '-no_super_slaves', '-sum_radiation_integrals', '-python', '-universe', '-rms'], &
@@ -2724,9 +2773,12 @@ case ('lattice')
 
       if (column(1)%name /= '') then ! Old style
         do i = 1, size(column)
-          col(i) = setup_lat_column(column(i)%name, column(i)%format, column(i)%label, &
-                                                       column(i)%remove_line_if_zero, column(i)%scale_factor)
-          col(i)%width = column(i)%width
+          col(i) = show_lat_column_struct(column(i)%name, column(i)%format, column(i)%label, column(i)%remove_line_if_zero, &
+                                                          column(i)%scale_factor, column(i)%width)
+        enddo
+      else
+        do i = 1, size(column)
+          col(i) = setup_lat_column(col(i)%name, col(i)%format, col(i)%label, col(i)%remove_line_if_zero, col(i)%scale_factor)
         enddo
       endif
 
@@ -2748,7 +2800,7 @@ case ('lattice')
     case ('-beginning')
       where = 'beginning'
 
-    case ('-middle')
+    case ('-center', '-middle')
       where = 'middle'
 
     case ('-no_label_lines')
@@ -4243,6 +4295,8 @@ case ('radiation_integrals')
     nl=nl+1; write(lines(nl), fmt) 'Eta_p:', mode_m%momentum_compaction - 1.0_rp/gamma**2, mode_d%momentum_compaction - 1.0_rp/gamma**2, '! Slip factor'
     if (mode_m%momentum_compaction > 0) then
       nl=nl+1; write(lines(nl), fmt) 'gamma_trans:', sqrt(1.0_rp/mode_m%momentum_compaction), sqrt(1.0_rp/mode_d%momentum_compaction), '! Gamma at transition'
+    else
+      nl=nl+1; write(lines(nl), amt) 'gamma_trans:  No transition since momentum compaction is negative.'
     endif
 
     nl=nl+1; write(lines(nl), fmt) 'I0:', mode_m%synch_int(0), mode_d%synch_int(0), '! Radiation Integral'
@@ -4439,6 +4493,7 @@ case ('spin')
       do i = 1, u%n_data_used
         d_ptr => u%data(i)
         if (.not. d_ptr%spin_map%valid) cycle
+        if (nl+100 > size(lines)) call re_allocate(lines, nl+200, .false.)
         if (j == 0) then
           nl=nl+1; lines(nl) = ''
           nl=nl+1; lines(nl) = 'Spin G-matrices used in data:'
@@ -4586,10 +4641,12 @@ case ('spin')
 case ('string')
 
   nc = 0
+  map_calc = u%calc%one_turn_map
 
   if (index(what2, 'chrom') /= 0) then
     s%com%force_chrom_calc = .true.
     s%u%calc%lattice = .true.
+    if (index(what2, 'ptc') /= 0) u%calc%one_turn_map = .true.
     call tao_lattice_calc(ok)
   endif
 
@@ -4606,6 +4663,7 @@ case ('string')
     ix = index(what2, '`')
     if (ix == 0) then
       nl=nl+1; lines(nl) = 'UNMATCHED BACKTICK.'
+      u%calc%one_turn_map = map_calc
       return
     endif
 
@@ -4617,7 +4675,8 @@ case ('string')
     n = index(str, '@@')
     if (n /= 0) then
       if (.not. is_integer(str(n+2:), n_order)) then
-         nl=nl+1; lines(nl) = 'Not an integer after "@@": ' // str(n+2:)
+        nl=nl+1; lines(nl) = 'Not an integer after "@@": ' // str(n+2:)
+        u%calc%one_turn_map = map_calc
         return
       endif
       str = str(:n-1)
@@ -4665,6 +4724,8 @@ case ('string')
 
     nc = len_trim(line)
   enddo
+
+  u%calc%one_turn_map = map_calc
 
   do
     ix = index(line, '\n')
@@ -5573,7 +5634,13 @@ case ('universe')
     ele2 => u%model%high_e_lat%branch(ix_branch)%ele(0)
     call emit_6d (ele2, .false., tao_branch%modes_6d, sig_mat)
     call emit_6d (ele2, .true., tao_branch%modes_6d, sig_mat)
-
+    if (tao_branch%modes_6d%a%j_damp < 0 .or. tao_branch%modes_6d%b%j_damp < 0 .or. &
+                                           (tao_branch%modes_6d%z%j_damp < 0 .and. rf_is_on(branch))) then
+      call out_io (s_info$, r_name, &
+        'Negative damping partition number detected therefore the lattice is unstable with radiation excitations.', &
+        'Note1: This may not be a problem if the amount of radiation generated is low (like for protons).', &
+        'Note2: Instability with respect to radiation excitations does not affect such things as the closed orbit calculation.')
+    endif
     call chrom_calc (lat, s%global%delta_e_chrom, tao_branch%a%chrom, tao_branch%b%chrom, &
                           pz = tao_branch%orbit(0)%vec(6), ix_branch = ix_branch)
 
@@ -5708,28 +5775,40 @@ case ('use')
 
 case ('value')
 
-
   s_fmt = 'es24.16'
-  ix = index(what2, '-f')
+  line = ''
 
-  if (ix /= 0) then
-    ix2 = index(what2(ix:), ' ')
-    if (index('-format', what2(ix:ix+ix2-2)) == 1) then
-      str = what2(1:ix-1)
-      call string_trim(what2(ix+ix2-1:), what2, ix)
-      s_fmt = what2(1:ix)
-      what2 = trim(str) // what2(ix+1:)
-    endif
-  endif
+  do
+    call tao_next_switch (what2, [character(20):: '#format'], .true., switch, err, ix, print_err = .false.)
+    if (err) return
+    select case (switch)
+    case ('#format')
+      s_fmt = unquote(what2(1:ix))
+      call string_trim(what2(ix+1:), what2, ix)
+    case default
+      line = trim(line) // trim(switch)
+      if (what2 == '') exit
+    end select
+  enddo
 
-  if (index(what2, 'chrom') /= 0) then
-    s%com%force_chrom_calc = .true.
+
+  map_calc = u%calc%one_turn_map
+
+  if (index(line, 'chrom') /= 0 .or. index(line, 'rad') /= 0) then
+    if (index(line, 'chrom') /= 0) s%com%force_chrom_calc = .true.
+    if (index(line, 'rad') /= 0) s%com%force_rad_int_calc = .true.
     s%u%calc%lattice = .true.
+    if (index(line, 'ptc') /= 0) u%calc%one_turn_map = .true.
     call tao_lattice_calc(ok)
   endif
 
-  call tao_evaluate_expression (what2, 0, .false., value, err, .true., info)
-  if (err) return
+  call tao_evaluate_expression (line, 0, .false., value, err, .true., info)
+  u%calc%one_turn_map = map_calc
+  if (err) then
+    if (index(what, '-f') /= 0) call out_io (s_warn$, r_name, &
+                '"Note: -format" has been changed to "#format" to avoid confusion with any negative signs.')
+    return
+  endif
 
   if (size(value) == 1) then
     s_fmt = '(3x, ' // trim(s_fmt) // ')'
@@ -5879,8 +5958,11 @@ case ('variables')
   ! v_ptr is valid then show the variable info.
 
   if (n_size == 1) then
-
     v_ptr => v_array(1)%v
+    if (.not. v_ptr%exists) then
+      nl=nl+1; write(lines(nl), *) 'Variable does not exist: ' // tao_var1_name(v_ptr)
+      return
+    endif
 
     nl=nl+1; write(lines(nl), amt)  '%ele_name         = ', quote(v_ptr%ele_name)
     nl=nl+1; write(lines(nl), amt)  '%attrib_name      = ', quote(v_ptr%attrib_name)

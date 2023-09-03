@@ -658,6 +658,10 @@ rotation axis of the reference orbit along with the physical element. A \vn{bend
 \vn{ref_tilt} of $\pi/2$ will bend a beam vertically downward (\sref{s:global}). Note that the
 \vn{ref_tilt} attribute of \bmad is the same as the MAD \vn{tilt} attribute.
 
+Important! Do not use \vn{ref_tilt} when doing misalignment studies for a machine. Trying to misalign
+a dipole by setting \vn{ref_tilt} will affect the positions of all downstream elements! Rather, use the
+\vn{roll} parameter.
+
 %-----------------------------------------------------------------
 \subsection{Photon Reflecting Element Orientation}
 \label{s:photon.orient}
@@ -1185,25 +1189,32 @@ The general syntax is:
   m: mirror, reflectivity_table = \{
     ! A reflection table
     \{
-      angles = (<ang1, <ang2, ... <angN>), 
-      p_reflect = <energy1>, (<P_11>, <P_12>, <P_13>, ..., <P_1N>), 
-      p_reflect = <energy2>, (<P_21>, <P_22>, <P_23>, ..., <P_2N>), 
-      ...
-      p_reflect = ...,
-    \}
-    ! Another reflection table
-    \{
-      angles = (...), 
-      p_reflect = ...,
-      ...
+      polarization = <name>
+      angles = (<ang1 <ang2 ... <angN>),
+      p_reflect = \{
+        <energy1> <P_11> <P_12> <P_13> ... <P_1N>,
+        <energy2> <P_21> <P_22> <P_23> ... <P_2N>, 
+        ...
+      \}
     \}
   \}
 \end{example}
-Multiple tables are used in case
-angles array must be first in table. angles in radians, energy in eV, angle and energy points do not need to be evenly spaced. probabilities between 0 and 1. For particles outside the range of angles, the probability is taken to be zero. 
+The \vn{angles} array must be before the \vn{p_reflect} table. Angles are in radians and energy is
+in eV. Angle and energy points do not need to be evenly spaced. Probabilities \vn{P_ij} are between
+0 and 1. For particles outside the range of angles, the probability is taken to be zero. The
+\vn{p_reflect} portion of the reflectivity table must come last.
 
+Possible \vn{polarization} names are:
+\begin{example}
+  pi        ! Table is for pi mode
+  sigma     ! Table is for sigma mode
+  both      ! Table is for both polarizations. Defalut.
+\end{example}
+An element needs a single table with \vn{polarization} marked as \vn{both} or two tables,
+one for \vn{sigma} and the other for \vn{pi}.
 
-For \vn{crystal} elements, angles are always with respect to the Bragg angle for the energy.
+For \vn{crystal} elements, angles are always with respect to the Bragg angle for the energy where
+the Bragg angle is calculated without any refraction corrections.
 
 %-----------------------------------------------------------------
 \section{Surface Properties for X-Ray elements}
@@ -1976,7 +1987,8 @@ Example
 \index{reference orbit}
 \index{reference energy}
 \vn{is_on} does not affect any apertures that are set. Additionally, \vn{is_on} does not affect the
-reference orbit. Therefore, turning off an \vn{lcavity} will not affect the reference energy.
+reference orbit (\sref{s:ref}) or reference energy (\sref{s:ref.energy}). For example, turning off an
+\vn{lcavity} will not affect the reference energy.
 
 The following elements cannot be ``turned off:''
 \begin{example}

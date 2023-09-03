@@ -176,4 +176,36 @@ else
   ele%value(dbragg_angle_de$) = -lambda / (2 * d * ele%value(e_tot$) * cos(abs(ang_tot)/2))
 endif
 
+! Reflectivity table
+
+call setup_reflect_table(ele%photon%reflectivity_table_sigma)
+call setup_reflect_table(ele%photon%reflectivity_table_pi)
+
+!------------------------------------------------------------------------
+contains
+
+subroutine setup_reflect_table(rt)
+
+type (photon_reflect_table_struct) :: rt
+real(rp) lambda, beta
+integer i, ne
+
+!
+
+if (allocated(rt%p_reflect)) then
+  ne = size(rt%energy)
+  call re_allocate (rt%bragg_angle, ne)
+  do i = 1, ne
+    lambda = c_light * h_planck / rt%energy(i)
+    beta = lambda / (2 * ele%value(d_spacing$))
+    if (b_param < 0) then ! Bragg
+      rt%bragg_angle(i) = asin((-beta * h_z_norm - h_x_norm * sqrt(h_x_norm**2 + h_z_norm**2 - beta**2)) / (h_x_norm**2 + h_z_norm**2))
+    else
+      rt%bragg_angle(i) = asin((-beta * h_x_norm + h_z_norm * sqrt(h_x_norm**2 + h_z_norm**2 - beta**2)) / (h_x_norm**2 + h_z_norm**2))
+    endif
+  enddo
+endif
+
+end subroutine setup_reflect_table
+
 end subroutine
