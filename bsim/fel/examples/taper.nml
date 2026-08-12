@@ -1,18 +1,18 @@
-! Steady-state FEL example: one command, no Genesis anywhere.
+! Tapered steady-state FEL example: steady_state.nml, but over taper.bmad, whose last
+! two FODO cells use a second undulator definition with b_max 0.4% lower.
 !
-!   fel_track_test steady_state.nml
+!   fel_track_test taper.nml
 !
-! The program generates its own starting condition -- a quiet-start beam slice and a
-! Gaussian seed field -- and tracks it through the 6-FODO helical undulator line of
-! aramis.bmad (the Benchmark1-SASE configuration: 5.8 GeV, 1 Angstrom, aw = 0.85 rms).
-! See the README here for what to expect and how to plot the gain curve.
+! Same generated starting condition as steady_state.nml, so the two gain curves are
+! directly comparable: they separate where the taper begins (z = 31.92 m) and this one
+! ends higher. See the README for measured numbers and plotting.
 !
 ! The Twiss values are the matched periodic solution of this FODO cell at this energy
 ! (computed by Genesis's zmatch for the benchmark; any sensible near-matched values work).
 
 &fel_track_params
-  lat_file = "aramis.bmad"
-  out_root = "steady_state"
+  lat_file = "taper.bmad"
+  out_root = "taper"
 
   gamma0 = 11357.82            ! 5.8 GeV.
   lambda0 = 1e-10              ! 1 Angstrom, resonant with the lattice undulator at 5.8 GeV.
