@@ -1,0 +1,15 @@
+set (EXENAME lucifer_smoke_test)
+
+set (SRC_FILES
+  tests/lucifer_smoke_test.f90
+)
+
+set (INC_DIRS
+)
+
+set (LINK_LIBS
+  lucifer
+  bmad
+  sim_utils
+  ${ACC_BMAD_LINK_LIBS}
+)

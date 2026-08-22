@@ -110,10 +110,11 @@ def print_help_message ():
   is used, getf/listf will only look at the subdirectories of <r_dir> for the search directories.
 
   Standard Search directories:
-      bmad                recipes_f-90_LEPP      
-      bsim                sim_utils         
-      code_examples       tao
-      forest              util_programs
+      bmad                lucifer
+      bsim                recipes_f-90_LEPP
+      code_examples       sim_utils
+      forest              tao
+                          util_programs
 
 ''')
   sys.exit()
@@ -628,6 +629,7 @@ def search_all (doc_type):
     choose_path (dir_list, root_dir, r'util_programs', '/mad_to_bmad/madx_to_bmad.py', '')
     choose_path (dir_list, root_dir, r'forest', '/code/i_tpsa.f90', '')
     choose_path (dir_list, root_dir, r'bsim', '/code/bsim_interface.f90', '')
+    choose_path (dir_list, root_dir, r'lucifer', '/code/fel_struct.f90', '')
     choose_path (dir_list, root_dir, r'code_examples', '/simple_bmad_program/simple_bmad_program.f90', '')
     choose_path (dir_list, root_dir, r'sim_utils', '/interfaces/sim_utils.f90', '')
     choose_path (dir_list, root_dir, r'tao', '/code/tao_struct.f90', '')

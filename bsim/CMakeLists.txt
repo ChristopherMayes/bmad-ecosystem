@@ -20,13 +20,6 @@ set (SRC_DIRS
   modules
 )
 
-# The FEL step's particle path is transcendental-bound (perf goal 2026-08-21):
-# -O3 + the paired-sincos shim together take the per-particle-step cost from 152
-# to ~108 ns (neither pays alone). This is a NAMED VALUE CHANGE at the 1-ulp level
-# (gfortran's sin/cos intrinsics differ from libm's by 1 ulp on ~2e-6 of arguments,
-# and -O3 re-contracts FP): every benchmark tier re-measured and re-recorded.
-set_source_files_properties(modules/fel_track_mod.f90 PROPERTIES COMPILE_OPTIONS "-O3")
-
 set (EXE_SPECS
   #cmake_files/cmake.ansga2
   #cmake_files/cmake.aspea2
@@ -48,10 +41,6 @@ set (EXE_SPECS
   cmake_files/cmake.synrad_aperture_to_wall
   cmake_files/cmake.tune_plane_res_plot
   cmake_files/cmake.wall_generator
-  cmake_files/cmake.wavefront_drift_test
-  cmake_files/cmake.fel_track_test
-  cmake_files/cmake.fel_smoke_test
-  cmake_files/cmake.fel_advance_bench
 )
 
 #set (FFLAGS "-qopenmp")

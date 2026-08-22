@@ -10,6 +10,13 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-22 Added: Lucifer, an FEL tracker validated against Genesis 1.3 Version 4, as a
+  top-level program directory (`lucifer/`, executable `lucifer`, library `liblucifer`).
+  Time-dependent SASE and seeded tracking with slippage on Bmad lattices (wiggler/undulator
+  elements), wakes and space charge, distribution import, harmonic fields, an unaveraged
+  verification mode, openPMD wavefront I/O, and a validation harness
+  (`lucifer/tests/run_fel_benchmark.sh`). Physics manual in `lucifer/doc/fel-physics.tex`.
+
 - 2026-08-10 Fixed: Radiation integrals no longer depend upon how a magnet is sliced. Two bugs in
   the integration were fixed: The non-cached calculation evaluated the integrands 1 mm inside the
   element at the downstream end, and the cached calculation used a set of cache points that did not
