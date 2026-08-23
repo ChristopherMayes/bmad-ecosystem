@@ -10,6 +10,10 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-23 Added: Lucifer's `element_end/` stats group now also carries the radiation power,
+  energy, on-axis intensity and bunching per slice, so it stands alone when
+  `comb_ds_save < 0` keeps no per-record rows (Bmad's comb semantics are unchanged).
+
 - 2026-08-23 Changed: Lucifer's element-end whole-window bunch statistics are assembled from
   the per-slice moments by the pooled-covariance identity instead of concatenating every
   particle in the time window into one bunch and running the full 6D moments and Twiss on it.
