@@ -10,6 +10,13 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-23 Changed: Lucifer's element-end whole-window bunch statistics are assembled from
+  the per-slice moments by the pooled-covariance identity instead of concatenating every
+  particle in the time window into one bunch and running the full 6D moments and Twiss on it.
+  Removes 110 million single-threaded particle visits from a 131-slice run (16.5% of its wall
+  clock; 137.7 -> 126.9 s, utilization 931% -> 1048%). Agreement with the particle sum measured
+  at 4.0e-12 / 5.0e-11 on two physical configurations.
+
 - 2026-08-22 Fixed: `util/searchf.py` (getf/listf/create_searchf_namelist): the
   interface-end regex was `end\s+ interface` (a stray space requiring two whitespace
   characters), so a bare `interface` block made the scanner swallow the rest of the file —
