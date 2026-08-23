@@ -10,6 +10,18 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-22 Fixed: `util/searchf.py` (getf/listf/create_searchf_namelist): the
+  interface-end regex was `end\s+ interface` (a stray space requiring two whitespace
+  characters), so a bare `interface` block made the scanner swallow the rest of the file —
+  every routine after such a block was missing from `searchf.namelist` and invisible to
+  getf/listf wherever an index file existed. Directories with tracked index files may want
+  to regenerate them with `util/create_searchf_namelist`.
+
+- 2026-08-22 Changed: Lucifer messages now go through `out_io` (Bmad's standard message
+  system) with routine-tagged, severity-tagged blocks; the old `fel_track_test:` stdout
+  prefixes are gone. Data lines that scripts parse (import moments/currents, progress,
+  file listings) stay bare and full-precision.
+
 - 2026-08-22 Added: Lucifer, an FEL tracker validated against Genesis 1.3 Version 4, as a
   top-level program directory (`lucifer/`, executable `lucifer`, library `liblucifer`).
   Time-dependent SASE and seeded tracking with slippage on Bmad lattices (wiggler/undulator

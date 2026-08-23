@@ -155,7 +155,7 @@ re_type_interface_end    = re.compile(r'end +(type|interface)')
 re_end                   = re.compile(r'end')
 re_routine_name_here     = re.compile(r'program|subroutine|function|interface|procedure')
 re_interface_begin       = re.compile(r'interface')
-re_interface_end         = re.compile(r'end\s+ interface')
+re_interface_end         = re.compile(r'end\s+interface')
 
 def search_f90 (file_name, search_com):
 
