@@ -10,6 +10,16 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-23 Changed: Lucifer's terminal output is formatted for humans -- a framed configuration
+  header, a progress table with SI-prefixed values and fixed numeric columns, and a completion
+  block listing the files written with their sizes. The progress row now carries power, energy
+  and bunching in every comb mode. Parsing stdout is discouraged; machine-readable output goes
+  to files, with the ALL-CAPS refusal texts the one documented exception.
+
+- 2026-08-23 Added: Lucifer writes `<out_root>.import.txt` (distribution-import moments and
+  per-slice current profile) and `<out_root>.migration.txt` (one row per slice-migration event),
+  the two data streams that previously went to stdout.
+
 - 2026-08-23 Added: Lucifer's `element_end/` stats group now also carries the radiation power,
   energy, on-axis intensity and bunching per slice, so it stands alone when
   `comb_ds_save < 0` keeps no per-record rows (Bmad's comb semantics are unchanged).
