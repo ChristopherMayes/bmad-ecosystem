@@ -10,37 +10,38 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
-- 2026-08-23 Changed: Lucifer's terminal output is formatted for humans -- a framed configuration
+- 2026-08-23 Changed: Lucifer's terminal output is formatted for humans: a framed configuration
   header, a progress table with SI-prefixed values and fixed numeric columns, and a completion
   block listing the files written with their sizes. The progress row now carries power, energy
-  and bunching in every comb mode. Parsing stdout is discouraged; machine-readable output goes
-  to files, with the ALL-CAPS refusal texts the one documented exception.
+  and bunching in every comb mode. Do not parse stdout. Machine-readable output goes to files,
+  with the ALL-CAPS refusal texts the one documented exception.
 
-- 2026-08-23 Added: Lucifer writes `<out_root>.import.txt` (distribution-import moments and
-  per-slice current profile) and `<out_root>.migration.txt` (one row per slice-migration event),
-  the two data streams that previously went to stdout.
+- 2026-08-23 Added: Lucifer writes the distribution-import moments and per-slice current profile
+  to `<out_root>.import.txt`, and one row per slice-migration event to
+  `<out_root>.migration.txt`. Both data streams previously went to stdout.
 
-- 2026-08-23 Added: Lucifer's `element_end/` stats group now also carries the radiation power,
-  energy, on-axis intensity and bunching per slice, so it stands alone when
-  `comb_ds_save < 0` keeps no per-record rows (Bmad's comb semantics are unchanged).
+- 2026-08-23 Added: Radiation power, energy, on-axis intensity and bunching per slice are now in
+  Lucifer's `element_end/` stats group, so a run with `comb_ds_save < 0` (no per-record rows
+  kept) still has these quantities at element ends. Bmad's comb semantics are unchanged.
 
-- 2026-08-23 Changed: Lucifer's element-end whole-window bunch statistics are assembled from
-  the per-slice moments by the pooled-covariance identity instead of concatenating every
-  particle in the time window into one bunch and running the full 6D moments and Twiss on it.
-  Removes 110 million single-threaded particle visits from a 131-slice run (16.5% of its wall
-  clock; 137.7 -> 126.9 s, utilization 931% -> 1048%). Agreement with the particle sum measured
-  at 4.0e-12 / 5.0e-11 on two physical configurations.
+- 2026-08-23 Changed: A 131-slice Lucifer run finishes in 126.9 s instead of 137.7 s, with
+  utilization up from 931% to 1048%. The element-end whole-window bunch statistics are now
+  assembled from the per-slice moments by the pooled-covariance identity instead of
+  concatenating every particle in the time window into one bunch and running the full 6D
+  moments and Twiss on it. That removes 110 million single-threaded particle visits, 16.5% of
+  the run's wall clock. Agreement with the particle sum measured at 4.0e-12 / 5.0e-11 on two
+  physical configurations.
 
 - 2026-08-22 Fixed: `util/searchf.py` (getf/listf/create_searchf_namelist): the
   interface-end regex was `end\s+ interface` (a stray space requiring two whitespace
-  characters), so a bare `interface` block made the scanner swallow the rest of the file —
-  every routine after such a block was missing from `searchf.namelist` and invisible to
+  characters), so a bare `interface` block made the scanner swallow the rest of the file.
+  Every routine after such a block was missing from `searchf.namelist` and invisible to
   getf/listf wherever an index file existed. Directories with tracked index files may want
   to regenerate them with `util/create_searchf_namelist`.
 
-- 2026-08-22 Changed: Lucifer messages now go through `out_io` (Bmad's standard message
-  system) with routine-tagged, severity-tagged blocks; the old `fel_track_test:` stdout
-  prefixes are gone. Data lines that scripts parse (import moments/currents, progress,
+- 2026-08-22 Changed: Lucifer messages appear as routine-tagged, severity-tagged blocks, and the
+  old `fel_track_test:` stdout prefixes are gone. The messages go through `out_io` (Bmad's
+  standard message system). Data lines that scripts parse (import moments/currents, progress,
   file listings) stay bare and full-precision.
 
 - 2026-08-22 Added: Lucifer, an FEL tracker validated against Genesis 1.3 Version 4, as a
