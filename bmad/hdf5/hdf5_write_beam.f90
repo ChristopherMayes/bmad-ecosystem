@@ -17,7 +17,7 @@
 !   error         -- logical: Set True if there is an error. False otherwise.
 !-
 
-subroutine hdf5_write_beam (file_name, bunches, append, error, lat, alive_only)
+subroutine hdf5_write_beam (file_name, bunches, append, error, lat, alive_only, as_patches)
 
 use hdf5_openpmd_mod
 use bmad_interface, dummy => hdf5_write_beam
@@ -27,7 +27,11 @@ implicit none
 type (bunch_struct), target :: bunches(:)
 type (bunch_struct), pointer :: bunch
 type (bunch_struct), target :: abunch
+type (bunch_struct), target :: pbunch(1)
+type (bunch_struct), pointer :: blist(:)
 type (coord_struct), pointer :: p(:)
+integer, allocatable :: pat_n(:), pat_off(:)
+real(rp), allocatable :: pat_lo(:,:), pat_hi(:,:)
 type (lat_struct), optional :: lat
 
 real(rp) f
@@ -42,7 +46,7 @@ character(26) date_time, root_path, bunch_path, particle_path, fmt, species_str
 character(100) this_bunch_path
 character(*), parameter :: r_name = 'hdf5_write_beam'
 
-logical, optional :: alive_only
+logical, optional :: alive_only, as_patches
 logical append, error, err
 
 ! Open a new file using default properties.
@@ -84,17 +88,31 @@ else
   call H5Gcreate_f(f_id, trim(root_path), r_id, h5_err) ! Not actually needed if root_path = '/'
 endif
 
+! With as_patches the bunches become particlePatches of ONE species record: the
+! particles concatenate in bunch order and the patch records say where each bunch
+! starts and how many it has. A bunch with no particles is then a zero-count patch,
+! which is the only way an empty bunch can be written at all, since the species name
+! below comes from the first particle. The concatenation copies the beam once.
+
+blist => bunches
+
+if (logic_option(.false., as_patches)) then
+  call pmd_concat_bunches (bunches, logic_option(.false., alive_only), pbunch(1), &
+                                                        pat_n, pat_off, pat_lo, pat_hi)
+  blist => pbunch
+endif
+
 ! Loop over bunches
 
-n = log10(1.000001 * size(bunches)) + 1
+n = log10(1.000001 * size(blist)) + 1
 
 ib2 = 0
-do ib = 1, size(bunches)
-  if (logic_option(alive_only, .false.)) then
-    call remove_dead_from_bunch(bunches(ib), abunch)
+do ib = 1, size(blist)
+  if (logic_option(.false., alive_only) .and. .not. logic_option(.false., as_patches)) then
+    call remove_dead_from_bunch(blist(ib), abunch)
     bunch => abunch
   else
-    bunch => bunches(ib)
+    bunch => blist(ib)
   endif
   p => bunch%particle
 
@@ -233,6 +251,11 @@ do ib = 1, size(bunches)
   enddo
   call pmd_write_int_to_dataset(b2_id, 'locationInElement', 'location', unit_1, ivec, err)
 
+  if (logic_option(.false., as_patches)) then
+    call pmd_write_particle_patches (b2_id, pat_n, pat_off, pat_lo, pat_hi, err)
+    if (err) return
+  endif
+
   call H5Gclose_f(b2_id, h5_err)
   call H5Gclose_f(b1_id, h5_err)
   call H5Gclose_f(b_id, h5_err)
@@ -242,4 +265,88 @@ call H5Gclose_f(r_id, h5_err)
 call H5Fclose_f(f_id, h5_err)
 error = .false.
 
-end subroutine hdf5_write_beam 
+contains
+
+!------------------------------------------------------------------------------------------
+!+
+! Subroutine pmd_concat_bunches (bunches, alive_only, cat, pat_n, pat_off, pat_lo, pat_hi)
+!
+! Routine to concatenate an array of bunches into one bunch, recording where each bunch
+! landed so it can be written as an openPMD particlePatch. The particles keep their
+! bunch order, so patch k covers cat's particles pat_off(k)+1 through pat_off(k)+pat_n(k).
+!
+! An empty bunch is a zero-count patch. That is the point of the exercise: a species
+! record takes its name from its first particle, so an empty bunch cannot be a species
+! of its own, while a patch of no particles is well defined.
+!
+! Input:
+!   bunches(:)  -- bunch_struct: Bunches to concatenate.
+!   alive_only  -- logical: Skip particles that are not alive.
+!
+! Output:
+!   cat         -- bunch_struct: All the particles, in bunch order.
+!   pat_n(:)    -- integer, allocatable: Particles in each patch.
+!   pat_off(:)  -- integer, allocatable: Index offset of each patch within cat.
+!   pat_lo(:,:) -- real(rp), allocatable: Lower position bound (x, y, z) of each patch.
+!   pat_hi(:,:) -- real(rp), allocatable: Upper position bound of each patch.
+!-
+
+subroutine pmd_concat_bunches (bunches, alive_only, cat, pat_n, pat_off, pat_lo, pat_hi)
+
+type (bunch_struct), target :: bunches(:)
+type (bunch_struct) :: cat
+type (coord_struct), pointer :: p
+integer, allocatable :: pat_n(:), pat_off(:)
+real(rp), allocatable :: pat_lo(:,:), pat_hi(:,:)
+integer ib, ip, n_tot, n_bun, ic
+logical alive_only
+
+!
+
+n_bun = size(bunches)
+call re_allocate (pat_n, n_bun)
+call re_allocate (pat_off, n_bun)
+call re_allocate2d (pat_lo, n_bun, 3)
+call re_allocate2d (pat_hi, n_bun, 3)
+
+n_tot = 0
+do ib = 1, n_bun
+  pat_off(ib) = n_tot
+  pat_n(ib) = 0
+  do ip = 1, size(bunches(ib)%particle)
+    if (alive_only .and. bunches(ib)%particle(ip)%state /= alive$) cycle
+    pat_n(ib) = pat_n(ib) + 1
+  enddo
+  n_tot = n_tot + pat_n(ib)
+enddo
+
+if (allocated(cat%particle)) deallocate (cat%particle)
+allocate (cat%particle(n_tot))
+cat%charge_tot = sum(bunches%charge_tot)
+cat%charge_live = sum(bunches%charge_live)
+cat%n_live = n_tot
+
+ic = 0
+do ib = 1, n_bun
+  pat_lo(ib,:) = 0;  pat_hi(ib,:) = 0
+  do ip = 1, size(bunches(ib)%particle)
+    p => bunches(ib)%particle(ip)
+    if (alive_only .and. p%state /= alive$) cycle
+    ic = ic + 1
+    cat%particle(ic) = p
+    ! The patch bound must contain its particles. The z bound is degenerate for charged
+    ! species, whose position/z is zero by construction with the longitudinal coordinate
+    ! carried by time, so patches here order the records rather than locate them in z.
+    if (pat_n(ib) > 0 .and. ic == pat_off(ib) + 1) then
+      pat_lo(ib,:) = [p%vec(1), p%vec(3), 0.0_rp]
+      pat_hi(ib,:) = pat_lo(ib,:)
+    else
+      pat_lo(ib,1) = min(pat_lo(ib,1), p%vec(1));  pat_hi(ib,1) = max(pat_hi(ib,1), p%vec(1))
+      pat_lo(ib,2) = min(pat_lo(ib,2), p%vec(3));  pat_hi(ib,2) = max(pat_hi(ib,2), p%vec(3))
+    endif
+  enddo
+enddo
+
+end subroutine pmd_concat_bunches
+
+end subroutine hdf5_write_beam

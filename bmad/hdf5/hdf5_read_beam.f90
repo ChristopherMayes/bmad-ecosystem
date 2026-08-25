@@ -53,7 +53,7 @@ integer(size_t) g_size
 integer i, j, ik, ib, ix, is, it, nn, nt
 integer state, h5_err, n_bunch, storage_type, n_links, max_corder, h5_stat
 integer h_err
-integer, allocatable :: ivec(:)
+integer, allocatable :: ivec(:), pat_n(:)
 
 character(*) file_name
 character(*), parameter :: r_name = 'hdf5_read_beam'
@@ -88,7 +88,12 @@ it = index(pmd_head%basePath, '%T')
 if (it == 0) then  ! No "%T" means only one bunch present
   z_id = hdf5_open_group(f_id, pmd_head%basePath, err, .true.);  if (err) return
   call reallocate_beam (beam, 1)
-  call hdf5_read_bunch(z_id, '.', beam%bunch(1), error, pmd_head, ele)
+  call hdf5_read_bunch(z_id, '.', beam%bunch(1), error, pmd_head, ele, pat_n)
+  if (.not. error .and. allocated(pat_n)) then
+    n_bunch = 1
+    call split_bunch_into_patches (beam, n_bunch, pat_n, error)
+    deallocate (pat_n)
+  endif
   call H5Gclose_f(z_id, h5_err)
   call H5Fclose_f(f_id, h5_err)
   return
@@ -135,7 +140,13 @@ do idx = 0, n_links-1
   name = trim(name) // sub_dir
   n_bunch = n_bunch + 1
   call reallocate_beam (beam, n_bunch, 0, extend = .true.)
-  call hdf5_read_bunch(z_id, name, beam%bunch(n_bunch), error, pmd_head, ele)
+  call hdf5_read_bunch(z_id, name, beam%bunch(n_bunch), error, pmd_head, ele, pat_n)
+  if (error) return
+  if (allocated(pat_n)) then
+    call split_bunch_into_patches (beam, n_bunch, pat_n, error)
+    if (error) return
+    deallocate (pat_n)
+  endif
 enddo
 
 if (n_bunch == 0) then
@@ -151,10 +162,72 @@ call H5Fclose_f(f_id, h5_err)
 !------------------------------------------------------------------------------------------
 contains
 
-subroutine hdf5_read_bunch (root_id, bunch_obj_name, bunch, error, pmd_head, ele)
+!------------------------------------------------------------------------------------------
+!+
+! Subroutine split_bunch_into_patches (beam, n_bunch, pat_n, error)
+!
+! Routine to turn the bunch just read into one bunch per particlePatch. The patches
+! partition the species' records in order, so patch k takes the next pat_n(k) particles.
+! A zero-count patch gives an empty bunch, which is how an empty bunch survives a format
+! whose species name comes from its first particle.
+!
+! Input:
+!   beam      -- beam_struct: Beam whose bunch n_bunch holds the whole species.
+!   n_bunch   -- integer: Index of that bunch. Set to the last bunch written on exit.
+!   pat_n(:)  -- integer: Particles per patch.
+!
+! Output:
+!   beam      -- beam_struct: Bunches n_bunch through n_bunch+size(pat_n)-1.
+!   error     -- logical: Set True if the patches do not account for every particle.
+!-
+
+subroutine split_bunch_into_patches (beam, n_bunch, pat_n, error)
+
+type (beam_struct), target :: beam
+type (bunch_struct) whole
+integer n_bunch, pat_n(:)
+integer ib0, k, ip, n_pat, ic
+logical error
+
+!
+
+error = .true.
+ib0 = n_bunch
+n_pat = size(pat_n)
+whole = beam%bunch(ib0)
+
+if (sum(pat_n) /= size(whole%particle)) then
+  call out_io (s_error$, r_name, 'THE particlePatches DO NOT ACCOUNT FOR EVERY PARTICLE: \i0\ VS \i0\ ', &
+               'FILE: ' // file_name, i_array = [sum(pat_n), size(whole%particle)])
+  return
+endif
+
+call reallocate_beam (beam, ib0 + n_pat - 1, 0, extend = .true.)
+
+ic = 0
+do k = 1, n_pat
+  call reallocate_bunch (beam%bunch(ib0+k-1), pat_n(k))
+  do ip = 1, pat_n(k)
+    ic = ic + 1
+    beam%bunch(ib0+k-1)%particle(ip) = whole%particle(ic)
+  enddo
+  beam%bunch(ib0+k-1)%n_live = count(beam%bunch(ib0+k-1)%particle%state == alive$)
+  beam%bunch(ib0+k-1)%charge_live = sum(beam%bunch(ib0+k-1)%particle%charge, &
+                                        mask = (beam%bunch(ib0+k-1)%particle%state == alive$))
+  beam%bunch(ib0+k-1)%charge_tot = sum(beam%bunch(ib0+k-1)%particle%charge)
+enddo
+
+n_bunch = ib0 + n_pat - 1
+error = .false.
+
+end subroutine split_bunch_into_patches
+
+subroutine hdf5_read_bunch (root_id, bunch_obj_name, bunch, error, pmd_head, ele, pat_n)
 
 type (pmd_header_struct) pmd_head
 type (ele_struct), optional :: ele
+integer, allocatable, optional :: pat_n(:)
+type (hdf5_info_struct) info
 type(H5O_info_t) :: infobuf 
 type(bunch_struct), target :: bunch
 type (coord_struct), pointer :: p
@@ -348,6 +421,35 @@ do idx = 0, n_links-1
 
   if (error) exit
 enddo
+
+! particlePatches, when the file has them: the standard's partition of the species'
+! one-dimensional records. The caller turns each patch into a bunch, which is how a
+! multi-bunch beam survives a single species record.
+
+if (present(pat_n)) then
+  if (hdf5_exists(g2_id, 'particlePatches', error, .false.)) then
+    g3_id = hdf5_open_group(g2_id, 'particlePatches', error, .true.)
+    if (.not. error) then
+      info = hdf5_object_info(g3_id, 'numParticles', error, .true.)
+      if (.not. error .and. info%element_type == H5O_TYPE_GROUP_F) then
+        call out_io (s_error$, r_name, &
+             'particlePatches/numParticles IS A CONSTANT-VALUE GROUP, NOT A DATASET.', &
+             'THE PATCH PARTITION MUST BE A DATASET OF ONE VALUE PER PATCH, EVEN WHERE', &
+             'EVERY PATCH HOLDS THE SAME COUNT. FILE: ' // file_name)
+        error = .true.
+      endif
+      if (.not. error) then
+        call re_allocate (pat_n, int(info%data_dim(1)))
+        call pmd_read_int_dataset (g3_id, 'numParticles', 1.0_rp, pat_n, error)
+      endif
+      call H5Gclose_f(g3_id, h5_err)
+    endif
+    if (error) then
+      call out_io (s_error$, r_name, 'CANNOT READ THE particlePatches GROUP OF: ' // file_name)
+      return
+    endif
+  endif
+endif
 
 ! g_id = g2_id when pmd_head%particlesPath = "./". In this case both refer to the same group.
 

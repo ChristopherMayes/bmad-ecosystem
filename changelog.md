@@ -10,6 +10,52 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-25 Changed: Lucifer reads and writes openPMD and nothing else. A particle dump
+  is `<out_root>-final.beam.h5` and a field dump `<out_root>-final.wf.h5`, and the format
+  knobs `beam_formats` and `wavefront_formats` are gone with no alias. A file that is not
+  openPMD is refused by name on import, with the conversion command in the message.
+  `lucifer/tests/scripts/convert_genesis.py` converts particles and fields between the
+  Genesis format and openPMD in either direction, and the validation harness converts the
+  Genesis reference dumps once per chain at its boundary, so both codes still start from
+  the same state (measured: the field bit-identical, the particles at 3e-16 steady state
+  and 8e-15 over 32 slices). The slice partition is now the standard's own
+  `particlePatches`, one patch per slice with an empty slice as a patch of no particles,
+  so the seven `fel*` root attributes are gone: the patch count is the window, `one4one`
+  is what the weights say, and the wavelength, the slice spacing and the beamlet size come
+  from the deck. Reading a dump with no `lambda0` is refused rather than defaulted, since a
+  wrong wavelength rescales every phase in the run.
+
+- 2026-08-25 Fixed: A particle dump now carries the whole ponderomotive phase. The chart
+  splits it into a per-beam reference phase and a per-particle lag, and no dump format has
+  anywhere to put the reference, so every reader restarts it at zero. The writer folds the
+  reference into the lag it writes, which makes the file's time coordinate
+  `-theta/(ks c)` and a restart exact. Without the fold a mid-line restart placed the beam
+  at a different phase against the same dumped field, which the windowed-composition check
+  measured at 2.1e-2 and now measures at 3.7e-14.
+
+- 2026-08-25 Fixed: `hdf5_write_beam` writes its `particlePatches` records as datasets
+  even where every patch holds the same particle count. Bmad's dataset writer collapses an
+  all-equal array to a constant-value group, which is a legal openPMD record component and
+  not a legal patch list, so a single-patch file, or any file whose patches held equal
+  counts, came back with no partition at all. `hdf5_read_beam` names that form rather than
+  reading zero particles from it.
+
+- 2026-08-25 Changed: The eleven benchmark tiers are re-recorded. Both codes still start
+  from the same state, but the tracker now reads it through a conversion, which costs a
+  multiply and a divide: the initial field is bit-identical and the initial particles move
+  in their last digits (3e-16 steady state, 8e-15 over 32 slices). Each tier's digits then
+  move by that times its own sensitivity, measured here by perturbing the input by 1e-15
+  and rerunning: 2.6e4 for the averaged FEL core, and saturating at ~1e-5 for the
+  unaveraged mode, whose final-field phase is chaotic and whose recorded digits are
+  therefore only reproducible on a bit-identical input. tier1 1.825901e-06 ->
+  1.825899e-06, tier1_unavg 6.933979e-02 -> 6.934613e-02, tier2_genesis 1.771895e-05 ->
+  1.771890e-05, tier2_bmad 5.001254e-02, td1 8.467690e-07, td2_genesis 2.398226e-06,
+  td2_bmad 4.127587e-02, tdsase 2.292906e-06 -> 2.292496e-06, tdsc 2.440477e-04, tdwk
+  8.708129e-07, weight_split 3.508953e-13 -> 3.532394e-13, all on the debug tree. The
+  production tree lands at the same digits except where the build reaches: tier1_unavg
+  6.934017e-02, td2_genesis 2.397983e-06, tdwk 8.708128e-07, weight_split 3.536001e-13.
+  Every tolerance is unchanged.
+
 - 2026-08-25 Changed: A Lucifer run's particle dumps are openPMD by default
   (`<out_root>-final.beam.h5`), so a beam with per-particle weights now survives a dump
   and a restart. Genesis `.par.h5` holds one current per slice, and writing a
