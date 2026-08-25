@@ -10,6 +10,15 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-25 Changed: A Lucifer run's particle dumps are openPMD by default
+  (`<out_root>-final.beam.h5`), so a beam with per-particle weights now survives a dump
+  and a restart. Genesis `.par.h5` holds one current per slice, and writing a
+  nonuniform-weight beam to it is refused by name rather than silently returning a
+  uniform beam on read. Both dump kinds now take a LIST of formats instead of an enum,
+  `beam_formats` and `wavefront_formats`, so a third code costs a token rather than
+  another combination. `wavefront_format = 'both'` is retired with no alias, and
+  `beam_file` accepts either format by signature.
+
 - 2026-08-24 Changed: Running Lucifer's validation harness now needs an
   openPMD-beamphysics checkout carrying `beamphysics/wavefront/openpmd.py`
   (`../openPMD-beamphysics` by default), and the harmonics section refuses by name
