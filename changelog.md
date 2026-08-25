@@ -10,6 +10,14 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-24 Changed: Running Lucifer's validation harness now needs an
+  openPMD-beamphysics checkout carrying `beamphysics/wavefront/openpmd.py`
+  (`../openPMD-beamphysics` by default), and the harmonics section refuses by name
+  without it. The Python side of the wavefront round trip was a patch carried in
+  `lucifer/openpmd/`. It has landed upstream, so the patch is removed and the checks
+  exercise `Wavefront.from_openpmd` and `write_openpmd` directly. The Fortran reader
+  is now also checked against Python-written files.
+
 - 2026-08-23 Changed: Lucifer's terminal output is formatted for humans: a framed configuration
   header, a progress table with SI-prefixed values and fixed numeric columns, and a completion
   block listing the files written with their sizes. The progress row now carries power, energy
