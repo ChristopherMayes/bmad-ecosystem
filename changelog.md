@@ -10,6 +10,52 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-25 Changed: The statistics file `<out_root>.stats.h5` describes itself, at
+  `@file_format_version` 2.0. Every dataset carries `@unit`, `@description` and `@axes`,
+  the last naming the `coords/` datasets its dimensions run over, so a reader needs no
+  table of names: `lucifer/tests/scripts/read_stats.py` is the one reader the tree uses
+  and it hard-codes nothing. Units stay DOCUMENTATION, never a factor to apply. Five
+  groups replace the old flat layout: `coords/` holds every axis once (including the
+  SLICE axis, which the file never had, with `@head_direction` publishing which end of
+  the index is the window head), `params/` holds every scalar as data so nothing is
+  scraped out of the echoed namelist, `beam/slice/` the per-record sufficient statistics
+  with `sigma` at its natural `(nz, ns, 6, 6)` rank, `beam/slice_twiss/` and
+  `beam/bunch/` the evaluated Bmad bunch_params on the element-end grid, and `field/`
+  one group per component and per harmonic, each with its own always-written `total/`.
+  No dataset's meaning now depends on what else the file holds: `field/power` used to
+  become a sum when a second polarization was live. Not-computed is NaN rather than a
+  zero that reads as an answer. `element_end/` is gone: an element end is always a
+  record, and `coords/at_element_end` marks it, which removes a duplicated copy of every
+  element-end quantity. `charge_tot`, `n_particle_tot` and `beam/s` are gone too, being
+  other datasets under second names. The provenance group is `meta/`, lower case with the
+  rest.
+
+- 2026-08-25 Added: The statistics file carries a `lattice/` table, one row per tracked
+  element indexed by `coords/ix_ele`, so a layout plot needs nothing but the file: name,
+  key, s_start, s_end, l, ds_step, is_fel, fel_tracking, b_max, aw as the physics used
+  it, l_period, ku, helical, k1, tilt, z_offset. Genesis writes its lattice as per-step
+  arrays; a table joined through the element index says the same thing without a second
+  copy of the record axis. `beam/slice/` also gains `current`, `energy` in eV and
+  `sigma_energy`, which every consumer used to re-derive.
+
+- 2026-08-25 Changed: An element end is always a stats record, whatever
+  `global%comb_ds_save` says. Bmad's comb semantics drop the comb entirely at a negative
+  value; here that leaves the element ends, because the file now carries one record axis
+  with a mask rather than a second axis. A `comb < 0` run therefore writes a file whose
+  every record is an element end, at the positions an every-record run puts them.
+
+- 2026-08-25 Fixed: The first stats record of a run said it sat in an uninitialized
+  element rather than at the entry face. The debug build zeroed the stack, which is the
+  right answer by accident, so only the production build showed it, and only the new join
+  check between `coords/ix_ele` and the `lattice/` table could see it at all.
+
+- 2026-08-25 Fixed: `hdf5_write_dataset_int_rank0` and `hdf5_write_dataset_real_rank0`
+  wrote an uninitialized local to the file and then copied it back over the CALLER's
+  variable, a reader's body in a writer. Neither had a caller in the tree until the stats
+  file grew a group of scalars, and the symptom was memory corruption in the caller
+  rather than a wrong number in the file. Both now write the value they were given, and
+  `intent(in)` makes the direction structural.
+
 - 2026-08-25 Changed: Lucifer reads and writes openPMD and nothing else. A particle dump
   is `<out_root>-final.beam.h5` and a field dump `<out_root>-final.wf.h5`, and the format
   knobs `beam_formats` and `wavefront_formats` are gone with no alias. A file that is not
