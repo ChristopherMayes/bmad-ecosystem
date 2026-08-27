@@ -10,6 +10,49 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-26 Changed: The statistics file's axis vocabulary is complete, at
+  `@file_format_version` 2.1, so a reader guesses nothing. EVERY NAME IN `@axes` NOW
+  RESOLVES TO A `coords/` DATASET, the trailing label axes included: `bmad` and
+  `bmad_col` for the six phase-space coordinates, `wavefront` and `wavefront_col` for the
+  four field moments, `plane` for the six twiss planes. The two sides of a square matrix
+  are named apart on purpose, so selecting the (x, pz) entry needs no rule rather than a
+  dedupe. THE RECORD NUMBER IS THE AXIS, `coords/record`, with `z` demoted to a variable
+  on it: `z` repeats wherever two records land on one plane, and a selection on a
+  repeating index answers silently wrong. The element-end axis gains its own coordinates,
+  `coords/element_end` and `coords/s_element_end`, and the lattice table's axis is now
+  `ele` with `coords/ele` beside it, which ends the collision where `ix_ele` named two
+  axes of different length. `coords/ix_ele` stays the per-record join key. Every dataset
+  also carries `@long_name`, since `@description` is a sentence and an axis label wants
+  three words, and every group carries `@kind` and `@description`. `params/` holds true
+  HDF5 scalars rather than shape-(1,) arrays. `t_slice` carries `@head_direction` too,
+  and a `sigma` matrix carries `@unit_of_axis` and `@unit_power` beside the human unit
+  string, which no reader could parse. The version is a development marker and is refused
+  by name, with no compatibility machinery for older files. It resets to 1.0 at the first
+  external release.
+
+- 2026-08-26 Changed: The six twiss planes of `beam/slice_twiss/` and `beam/bunch/` are
+  an AXIS rather than six groups. One `twiss/` subgroup per set holds nine datasets over
+  `coords/plane`, so 108 datasets became 18 and no group is named after a coordinate. A
+  group named `z` beside a `z` coordinate is something xarray and netCDF both refuse. The
+  names stay `bunch_params_struct`'s, as labels now, so the mapping to Bmad's struct is
+  exact and machine-readable. They sit in a subgroup because one of them is `sigma`, and
+  the covariance matrix beside them is `sigma` too.
+
+- 2026-08-26 Added: `field/@components` and `field/@harmonics` name what the children of
+  `field/` are, and `total/@derived_from` names what it sums, so a reader adding up the
+  children cannot take the always-written derived sibling for a component and
+  double-count. `@components` was specified when 2.0 landed and never written.
+
+- 2026-08-26 Added: Two structural checks in `check_diagnostics.py`. The acceptance test
+  is a GENERIC LOAD: label every dimension of every dataset from `@axes` alone, failing
+  if a name does not resolve to a coordinate, if a dimension has no name, if a length
+  disagrees with its coordinate, or if one dataset names an axis twice. Nothing in it
+  knows a dataset name, which is the property being checked. The second holds the record
+  axis: `z` non-decreasing, and every repeated `z` straddling an element boundary, since
+  a repeat inside one element would be a defect in the walk that demoting `z` to a
+  variable would otherwise hide. The same check runs on the three-element line in
+  `check_program.py`, where every comb comparison matches rows by `z`.
+
 - 2026-08-25 Changed: The statistics file `<out_root>.stats.h5` describes itself, at
   `@file_format_version` 2.0. Every dataset carries `@unit`, `@description` and `@axes`,
   the last naming the `coords/` datasets its dimensions run over, so a reader needs no
