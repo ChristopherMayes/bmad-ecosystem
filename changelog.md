@@ -10,6 +10,54 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-27 Fixed: `stats.h5`'s `meta/` group was three ways wrong at once, and is
+  rebuilt at `@file_format_version` 2.2 (FINDINGS 7.31). **The 64 kB attribute cap.**
+  HDF5 caps a single attribute at 64 kB (measured: the largest that writes is 65495
+  bytes, where a scalar string dataset took 3 MB), the echoed namelist is already 12 kB
+  and a real lattice text 37 kB, and a failure only warned. A lattice under twice a real
+  one's size would have written a file whose provenance was SILENTLY absent. Every text
+  in `meta/` is a scalar string dataset now. The cost is that `meta/` no longer sits
+  outside dataset-level identity comparisons for free, since `input_echo` carries
+  `out_root`, so the harness excludes it by name with the reason on the line.
+  **Completeness.** `file_text` reads ONE file, so `lattice_text` never was the
+  reproducibility record it claimed to be: every wrapper lattice in the tree recorded a
+  call statement while the lattice it called was absent, 91 bytes of the diagnostics
+  wrapper and 485 of the tier wrapper against the 2569-byte lattice. It is now
+  `lattice_source`, described as the top-level file only, beside a new
+  `n_lattice_files` from the parser's own tally, and the claim is withdrawn from the
+  manual and the README: reproduction rests on the `lattice/` table and the input echo.
+  Serializing the lattice was examined and rejected, `write_bmad_lattice_file` inlining a
+  `grid_field` as ASCII under `one_file$` and writing sibling binary files otherwise, so
+  no `output_form` is both complete and bounded. **Privacy.** A stats file is meant to
+  travel, so `user` and `cwd` leave the default file behind the new
+  `global%record_environment`, and `lattice_file` records a base name. Genesis records
+  user and cwd unconditionally. Parity is not a reason to leak.
+
+- 2026-08-27 Changed: The twiss planes and the normal modes are SEPARATE axes.
+  `coords/plane` keeps the projected x, y and z, the new `coords/mode` takes a, b and c,
+  and `beam/bunch/` and `beam/slice_twiss/` each hold nine datasets in `twiss/` and nine
+  in `modes/`. One axis carrying both was one axis carrying two decompositions of one
+  beam: `beta` read 16.65, 8.99, 2.5e-6 beside 11.67, 6.47, 2.5e-6, a mean over the axis
+  was meaningless, and a reader plotting all planes got six curves where it wanted three.
+  `coords/mode` also states that its labels are eigenvector-identified rather than
+  magnitude-sorted, which is why the harness compares mode emittances as a set.
+
+- 2026-08-27 Added: The per-entry units of a centroid and a sigma live on their axis.
+  `coords/bmad_unit` and `coords/wavefront_unit` are variables on those axes, and a
+  dataset over one of them carries `@unit_of_axis` and `@unit_power` (1 for a centroid, 2
+  for a second moment) beside the human `@unit` string, which is a comma list nothing can
+  parse. Also: a root `@kinds` enumerating the group vocabulary, `@dtype_hint = bool` on
+  every int8 flag so the boolean convention is something a dataset says rather than a
+  rule to pattern-match, and `@plot_against` on `coords/record` and
+  `coords/element_end` naming `z` and `s_element_end`, which is information only the
+  writer has.
+
+- 2026-08-27 Added: Four provenance checks in `check_diagnostics.py`. No attribute
+  anywhere near the 64 kB cap. Every text in `meta/` a dataset. `n_lattice_files`
+  reporting the wrapper lattice's second file, which is the case that was broken.
+  And no machine-local value in a default run, with `global%record_environment`
+  restoring them.
+
 - 2026-08-26 Changed: The statistics file's axis vocabulary is complete, at
   `@file_format_version` 2.1, so a reader guesses nothing. EVERY NAME IN `@axes` NOW
   RESOLVES TO A `coords/` DATASET, the trailing label axes included: `bmad` and
