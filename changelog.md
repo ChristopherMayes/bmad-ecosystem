@@ -10,6 +10,55 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-28 Fixed: `coords/t_slice` carried a spurious factor of `beta0`, and the
+  statistics file is at `@file_format_version` 2.3. The slice grid is uniform in TIME,
+  which is provable from the tracker's own code: the migration invariant carries each
+  PARTICLE's beta, and with `z = -beta*c*(t - t_ref)` that beta cancels at a grid point,
+  leaving an arrival-time separation of `slice_spacing/c` with no beta in it. So
+  `t_slice` is `-ct_slice/c` exactly, where it read `-s_slice/(beta0*c)` and was wrong by
+  3.9e-9. Nothing read `coords/` back, which is why nothing caught it, and no tier digit
+  can move. FINDINGS 7.32.
+
+- 2026-08-28 Changed: The slice axis is the slice NUMBER, with three positions as
+  variables on it, which is the treatment `coords/record` already had. `ct_slice` is the
+  light-travel distance ahead of the reference and `t_slice` the arrival time, both exact
+  and free of beta. `z_slice` is Bmad's z AT THE REFERENCE beta and says so in its
+  description, because a particle's own offset uses its own beta, which is why the
+  slice-to-bunch concatenation stores every entry beta rather than one number.
+  `slice_spacing` is documented as a light-travel distance: one slice is exactly
+  `window_sample` wavelengths of slippage, which is what makes the field record's rotation
+  an integer index shift with no interpolation, and uniformity in `ct` is the reason it
+  works.
+
+- 2026-08-28 Changed: `coords/z` is `coords/s`. It holds path length along the lattice,
+  which Bmad calls s, while `coords/s_element_end` held the same quantity under an `s`
+  name with a `@long_name` that said "z at element end", and `lattice/s_start` and `s_end`
+  said s all along. So one quantity had two names, and z was already taken twice over as
+  the fifth entry of `coords/bmad` and the third of `coords/plane`. z now means only the
+  phase-space coordinate and the longitudinal twiss plane.
+
+- 2026-08-28 Changed: A zero-length element whose wake CANNOT act is skipped like any
+  other zero-length element. Bmad's `scale_with_length` defaults true and `wake_mod`
+  scales the kick by the element length, so at zero length it is identically zero. This is
+  not refused, since a wake assigned over an element range or a class lands on
+  zero-length members as a matter of course. But honoring one cost the serial interlude
+  path, a record, an element end and a repeated `coords/s`, all for a kick of zero.
+  Measured: such a run is now dataset-identical to one whose zero-length pipes carry no
+  wake at all. A long-range wake has no `scale_with_length` and would act, so it keeps
+  the element.
+
+- 2026-08-28 Added: The harness tracks a lattice with zero-length wake pipes in BOTH
+  polarities. The check that every repeated `coords/s` straddles an element boundary had
+  only ever seen zero repeats, so it was untested. It now meets a real duplicate, at the
+  plane where a kicking zero-length pipe follows an undulator.
+
+- 2026-08-28 Fixed: Attribute shape expresses arity. `@unit_power` and a harmonic group's
+  `@harmonic` are true HDF5 scalars, where the high-level Fortran layer had made them
+  shape-(1,) arrays that a reader had to unwrap. `@components` and `@derived_from` are
+  arrays of length one or more, so a one-component file parses exactly like a
+  two-component one. `units_note` also states that a coordinate variable may repeat, and
+  names the case.
+
 - 2026-08-27 Fixed: `stats.h5`'s `meta/` group was three ways wrong at once, and is
   rebuilt at `@file_format_version` 2.2 (FINDINGS 7.31). **The 64 kB attribute cap.**
   HDF5 caps a single attribute at 64 kB (measured: the largest that writes is 65495
