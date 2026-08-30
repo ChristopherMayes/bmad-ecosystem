@@ -10,6 +10,42 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-29 Changed: The statistics file is `bmad-stats` 1.0 with the `fel`
+  extension, the PLANNED VERSION RESET from the development format `lucifer-stats` 2.x.
+  The layout was never FEL-specific, so the general contract now carries a general
+  name: the root states `@file_format`, `@file_format_version`, `@writer`,
+  `@extensions` and `@kinds` (an array), and the reader refuses an unknown version by
+  name. The acceptance test is the format's own conformance checker,
+  `tests/scripts/validate_bmad_stats.py`, program-blind, numpy and h5py only, run by
+  the harness on the diagnostics file and required to report zero failures. The join
+  key and the mask are machine-readable: `coords/ix_ele` carries `@indexes = 'ele'`
+  and `coords/at_element_end` carries `@selects = 'element_end'`, the last two
+  relationships a reader had to learn from prose.
+
+- 2026-08-29 Changed: `params/` is the INPUT TREE: one subgroup per input structure
+  the program honors (`global`, `beam_init` as the quiet start's honored set,
+  `beam_param`, `imp`, `wavefront_init`, `wake`, `sc`, and `bmad_com` and
+  `space_charge_com` whole), each carrying `@struct` naming the Fortran type, every
+  honored component resolved after defaults as a true HDF5 scalar. Two runs diff by
+  their inputs and no reader needs a defaults table. `out_root` alone is left out: it
+  is the run's own name, and as data it made two otherwise identical runs compare
+  different, which the thread-identity check caught immediately. What the run PRODUCED
+  is the new `run/` group: `p0c`, the species, `slice_spacing` and the axis lengths.
+  Everything that is a pure function of other datasets declares `@derived_from`: the
+  twiss and modes groups, `current`, `energy`, `sigma_energy`, the field emittances,
+  and `beam/bunch`, which is pooled from the slice moments.
+
+- 2026-08-29 Added: The per-slice envelope extremes, at every record. `rel_max` and
+  `rel_min` are bunch_params_struct's per-coordinate extremes RELATIVE TO THE CENTROID
+  over the new seven-entry `bmad_t` axis (the six phase-space names plus t), order
+  statistics no moment can reconstruct, accumulated in the per-record sweep that
+  already visits every particle. NaN for an empty slice. `plot_fel`'s beam-size panel
+  draws the envelope band, centroid plus rel, which is what they are for. Checked
+  against numpy extremes over a `dump_beam_at` file's particles at the same plane:
+  the position entries match EXACTLY (same particles, and IEEE subtraction of the
+  stored centroid is deterministic), the momentum entries at 2.9e-16 across the dump's
+  unit round trip, and the t entry is the z entry through -dz/(beta0 c) exactly.
+
 - 2026-08-28 Fixed: `coords/t_slice` carried a spurious factor of `beta0`, and the
   statistics file is at `@file_format_version` 2.3. The slice grid is uniform in TIME,
   which is provable from the tracker's own code: the migration invariant carries each
