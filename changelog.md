@@ -10,6 +10,28 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-30 Changed: The README is a front door. It was 1467 lines and 26 sections, and
+  it is now 60: what Lucifer is, the three tracking methods, how to build and run, where
+  it stands, and a table of links. Its content moved rather than being rewritten, into
+  four new documents under `lucifer/doc/`. `user-guide.md` holds building, the source
+  map, the architecture, the FEL element's lattice attributes, the program structure and
+  the output inventory. `reading-output.md` holds the statistics file, the particle dumps
+  and the Python side for a reader who never runs the program. `input-reference.md` is
+  the normative parameter reference. `validation.md` holds the keystone rule, the tier
+  table, the check sections and the measured record subsystem by subsystem. The
+  saturation demo's measured story moved to the demo's own directory, where its inputs
+  already lived. Every scientific-notation value in the old README was checked into its
+  new home: none was lost.
+
+- 2026-08-30 Changed: The tier digits have one home, `doc/validation.md`. The README now
+  states the shape of the validation and links, rather than carrying a second copy of the
+  numbers that could drift from the first.
+
+- 2026-08-30 Changed: `program/lucifer.f90`'s input documentation went from 234 lines to
+  36: a group summary and a pointer to `doc/input-reference.md`, which is now normative.
+  The refusal text that named the honored-fields table retargets in the same commit,
+  since a refusal must be recognizable by name and this one told the user where to look.
+
 - 2026-08-30 Added: The format specifications join the tree as
   `lucifer/doc/BMAD-STATS-SPEC.md` and `lucifer/doc/BMAD-STATS-EXT-FEL.md`. The tree
   already shipped files claiming `@file_format = 'bmad-stats'`, a reader refusing other
