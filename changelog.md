@@ -10,6 +10,26 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-30 Changed: The unaveraged mode is documented as a peer of the averaged one, not
+  as a probe. The manual section retitles from "The unaveraged verification mode" and its
+  opening states what the cost per step buys: the full quiver dynamics, the energy
+  accounting the beam actually pays, polarization-agnostic coupling and arbitrary harmonic
+  content. Its role as the referee for the averaged path is still there, as a second
+  paragraph rather than as the mode's name. The physics of the section is unchanged, and
+  "verification mode" is swept from all eleven places it survived.
+
+- 2026-08-30 Changed: The manual sheds the file format and the program. `fel-physics.tex`
+  goes from 1580 lines to 1384. The diagnostic-output section was 213 lines of layout,
+  attribute vocabulary and reader rules that `BMAD-STATS-SPEC.md` and `reading-output.md`
+  own normatively; it is 117 lines of what the tracker computes and how each quantity is
+  defined. The program, comb and tracking-window sections are dissolved into
+  `user-guide.md`, which already held that content, and the fourteen pointers that named
+  the deleted section now name the user guide. Two things filed under the program were
+  physics and stayed: the pooled-covariance identity that builds the whole-window row is
+  now a subsection of the diagnostic output, and the coherent source is a top-level
+  section. Number conservation over the restructure: 103 distinct numeric values in the
+  old manual, none lost.
+
 - 2026-08-30 Changed: The README is a front door. It was 1467 lines and 26 sections, and
   it is now 60: what Lucifer is, the three tracking methods, how to build and run, where
   it stands, and a table of links. Its content moved rather than being rewritten, into
