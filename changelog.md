@@ -10,6 +10,29 @@ Types of entries:
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+- 2026-08-30 Added: The format specifications join the tree as
+  `lucifer/doc/BMAD-STATS-SPEC.md` and `lucifer/doc/BMAD-STATS-EXT-FEL.md`. The tree
+  already shipped files claiming `@file_format = 'bmad-stats'`, a reader refusing other
+  versions by name, and a validator citing rule numbers, so the definition of those bytes
+  belongs beside them rather than in a working document a repository reader cannot see.
+  The manual's stats section names the specification as the normative home, and the
+  validator's docstring cites it by its path in the tree.
+
+- 2026-08-30 Changed: Committed prose cites committed artifacts only. Every
+  `FINDINGS.md n.m` and design-brief reference is gone from the manual, the README, the
+  code comments and the scripts, with the load-bearing lesson inlined where it earned its
+  line and the pointer dropped otherwise. `changelog.md` is append-only history, so past
+  entries stand as written. The manual's citation-convention paragraph, which announced
+  that those references pointed outside the repository, goes with them.
+
+- 2026-08-30 Changed: Committed prose no longer shouts. Multi-word capital phrases used
+  for emphasis are a house-style violation and are swept from the manual, the README, the
+  scripts' docstrings and check names, and the `@description`, `@long_name` and
+  `@units_note` strings the writers emit into every statistics file. What stays capital is
+  what the style guide sanctions: `out_io` message text, the refusal strings the checks
+  match against it, machine-parsed banners such as the wavefront suite's
+  `LARGEST RELATIVE DIFFERENCE`, acronyms and code identifiers.
+
 - 2026-08-29 Changed: The statistics file is `bmad-stats` 1.0 with the `fel`
   extension, the PLANNED VERSION RESET from the development format `lucifer-stats` 2.x.
   The layout was never FEL-specific, so the general contract now carries a general
