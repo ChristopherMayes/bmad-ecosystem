@@ -79,11 +79,20 @@ integer, parameter :: fixed_step_runge_kutta$ = 9, symp_lie_bmad$ = 10, magnus$ 
 integer, parameter :: Auto$ = 12, sprint$ = 12, fixed_step_time_runge_kutta$ = 13, mad$ = 14
 integer, parameter :: transverse_kick$ = 3, spin_integration$ = 99
 
-character(28), parameter :: tracking_method_name(0:14) = [character(28) :: &
+! The two free-electron-laser methods, valid on wiggler and undulator elements and
+! supplied by the program through track1_custom_ptr as custom$ is. fel_averaged$ is the
+! wiggle-averaged model and fel_unaveraged$ integrates the undulator field directly.
+! They are named methods rather than a custom element attribute so that a lattice says
+! which physics it asks for without an integer code.
+
+integer, parameter :: fel_averaged$ = 15, fel_unaveraged$ = 16
+
+character(28), parameter :: tracking_method_name(0:16) = [character(28) :: &
       'GARBAGE!', 'Bmad_Standard',               'Symp_Lie_PTC',     'Runge_Kutta', &
       'Linear',   'GARBAGE!',                    'Time_Runge_Kutta', 'Custom', &
       'Taylor',   'Fixed_Step_Runge_Kutta',      'Symp_Lie_Bmad',    'GARBAGE!', &
-      'GARBAGE!', 'Fixed_Step_Time_Runge_kutta', 'MAD']
+      'GARBAGE!', 'Fixed_Step_Time_Runge_kutta', 'MAD', &
+      'FEL_Averaged', 'FEL_Unaveraged']
 
 character(16), parameter :: spin_tracking_method_name(0:12) = [ &
       'GARBAGE!        ', 'Off             ', 'Symp_Lie_PTC    ', 'Transverse_Kick ', &

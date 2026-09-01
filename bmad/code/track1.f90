@@ -261,10 +261,11 @@ case (symp_lie_ptc$)
 case (mad$)
   call track1_mad (end_orb, ele, param)
 
-case (custom$)
+case (custom$, fel_averaged$, fel_unaveraged$)
   if (.not. associated(track1_custom_ptr)) then
     call out_io (s_error$, r_name, 'TRACK1_CUSTOM_PTR HAS NOT BEEN SET IN THIS PROGRAM!', &
-                                   'NEEDED FOR CUSTOM ELEMENT OR TRACKING_METHOD = CUSTOM: ' // ele%name)
+                                   'NEEDED FOR A CUSTOM ELEMENT, OR TRACKING_METHOD = CUSTOM,', &
+                                   'FEL_AVERAGED OR FEL_UNAVERAGED: ' // ele%name)
     end_orb%state = lost$
     return
   endif

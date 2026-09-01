@@ -8113,6 +8113,7 @@ do n = 0, ubound(lat%branch, 1)
   do i = 1, branch%n_ele_max
     ele => branch%ele(i)
     if (ele%key == custom$ .or. ele%tracking_method == custom$ .or. &
+        ele%tracking_method == fel_averaged$ .or. ele%tracking_method == fel_unaveraged$ .or. &
         ele%mat6_calc_method == custom$ .or. ele%field_calc == custom$ .or. &
         ele%aperture_type == custom_aperture$) then
       call init_custom_ptr (ele, err)
