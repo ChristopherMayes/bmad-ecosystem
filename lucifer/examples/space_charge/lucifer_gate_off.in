@@ -1,8 +1,8 @@
 &fel_params
   lat_file = "sc_line.bmad"
-  global%out_root = "space_charge"
+  global%out_root = "gate_off"
 
-  bmad_com%csr_and_space_charge_on = T
+  bmad_com%csr_and_space_charge_on = F
   space_charge%rmax = 250e-6
   space_charge%nz = 2
   space_charge%nphi = 1
