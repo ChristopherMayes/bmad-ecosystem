@@ -1,0 +1,85 @@
+/* The device seam with no backend behind it: every build that cannot carry one
+ * compiles this file, so the same tree compiles everywhere and a deck asking for a
+ * device is refused rather than failing at link time or, worse, quietly
+ * taking the CPU path. That is not only the non-Darwin platforms: the Metal backend
+ * is ARC-managed Objective-C++, so a macOS build whose Objective-C++ compiler is a
+ * GNU one lands here too, which is what the CMake decision reports at configure
+ * time. Only luc_dev_available can legitimately be called on a stub build;
+ * everything else exists to satisfy the linker and would be a caller bug.
+ */
+
+#include "lucifer_device.h"
+
+#include <stdio.h>
+#include <string.h>
+
+static void put_str (char *dst, int len, const char *src)
+{
+  if (dst == NULL || len < 1) return;
+  snprintf (dst, (size_t) len, "%s", src);
+}
+
+int luc_dev_available (char *name, int name_len, char *reason, int reason_len)
+{
+  put_str (name, name_len, "none");
+  put_str (reason, reason_len,
+           "this build carries no device backend (the Metal backend needs macOS and a "
+           "Clang-family Objective-C++ compiler; the configure output names which "
+           "backend was built)");
+  return 0;
+}
+
+int luc_dev_init (int nslice, int npart, int ngrid, int nfield, int npol,
+                  char *reason, int reason_len)
+{
+  (void) nslice; (void) npart; (void) ngrid; (void) nfield; (void) npol;
+  put_str (reason, reason_len, "no device backend in this build");
+  return 1;
+}
+
+void luc_dev_close (void) {}
+void luc_dev_resize_particles (int npart) { (void) npart; }
+
+void luc_dev_upload_slice (int is, int n, const float *x, const float *px,
+                           const float *y, const float *py, const float *goff,
+                           const int64_t *uphase, const float *w)
+{
+  (void) is; (void) n; (void) x; (void) px; (void) y; (void) py;
+  (void) goff; (void) uphase; (void) w;
+}
+
+void luc_dev_download_slice (int is, int n, float *x, float *px, float *y,
+                             float *py, float *goff, int64_t *uphase)
+{
+  (void) is; (void) n; (void) x; (void) px; (void) y; (void) py;
+  (void) goff; (void) uphase;
+}
+
+void luc_dev_upload_field_slice (int im, int ip, int is, const float *e)
+{
+  (void) im; (void) ip; (void) is; (void) e;
+}
+void luc_dev_download_field_slice (int im, int ip, int is, float *e)
+{
+  (void) im; (void) ip; (void) is; (void) e;
+}
+void luc_dev_zero_field_slice (int im, int ip, int is) { (void) im; (void) ip; (void) is; }
+void luc_dev_download_source_slice (int im, int is, float *s) { (void) im; (void) is; (void) s; }
+void luc_dev_set_kernel (int im, const float *expk) { (void) im; (void) expk; }
+void luc_dev_set_slice_phases (const float *base, const float *base_dep)
+{
+  (void) base; (void) base_dep;
+}
+
+int luc_dev_step (const luc_dev_step_par *par, int64_t cret_ticks,
+                  char *reason, int reason_len)
+{
+  (void) par; (void) cret_ticks;
+  put_str (reason, reason_len, "no device backend in this build");
+  return 1;
+}
+
+void luc_dev_sync (void) {}
+int luc_dev_wrap_check (int64_t bucket_ticks) { (void) bucket_ticks; return 1; }
+double luc_dev_seconds (void) { return 0; }
+int64_t luc_dev_bytes (void) { return 0; }

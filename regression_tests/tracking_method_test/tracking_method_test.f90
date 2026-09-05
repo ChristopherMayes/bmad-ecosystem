@@ -128,7 +128,9 @@ do ib = 0, ubound(lat%branch, 1)
       if ((j == fixed_step_runge_kutta$ .or. j == fixed_step_time_runge_kutta$)) cycle
       if (track_method /= '' .and. upcase(tracking_method_name(j)) /= upcase(track_method)) cycle
       if (.not. valid_tracking_method(ele, branch%param%particle, j)) cycle
-      if (j == custom$) cycle
+      ! Skipped for one reason: the program has to supply the tracking, and this one
+      ! does not set track1_custom_ptr.
+      if (j == custom$ .or. j == fel_averaged$ .or. j == fel_unaveraged$) cycle
       if (j == mad$) cycle   ! Ignore MAD
       if (j == taylor$ .and. lat%particle_start%direction == -1) cycle
       if ((j == symp_lie_ptc$ .or. j == taylor$) .and. ele%key == ac_kicker$) then

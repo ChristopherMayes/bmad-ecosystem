@@ -158,7 +158,7 @@ tdir0 = .true.; charge0 = .true.; species0 = .true.; s0 = .true.; t0 = .true.; p
 do ib = 1, size(beam%bunch)
   bunch => beam%bunch(ib)
   p => bunch%particle(1)
-  if (logic_option(alive_only, .false.) .and. p%state /= alive$ .and. p%state /= pre_born$) cycle
+  if (logic_option(.false., alive_only) .and. p%state /= alive$ .and. p%state /= pre_born$) cycle
   if (any(bunch%particle%spin(1) /= 0))              spin0 = .false.
   if (any(bunch%particle%spin(2) /= 0))              spin0 = .false.
   if (any(bunch%particle%spin(3) /= 0))              spin0 = .false.
@@ -246,7 +246,7 @@ do ib = 1, size(beam%bunch)
 
   do ip = 1, size(bunch%particle)
     p => bunch%particle(ip)
-    if (logic_option(alive_only, .false.) .and. p%state /= alive$ .and. p%state /= pre_born$) cycle
+    if (logic_option(.false., alive_only) .and. p%state /= alive$ .and. p%state /= pre_born$) cycle
     line = ''
     do ic = 1, size(colvec)
       col = colvec(ic)

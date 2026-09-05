@@ -86,7 +86,8 @@ if (.not. ele%is_on) mat6_calc_method = bmad_standard$
 if (mat6_calc_method == auto$) then
   select case (ele%tracking_method)
   case (bmad_standard$, linear$);   mat6_calc_method = bmad_standard$
-  case (custom$);                   mat6_calc_method = custom$
+  case (custom$, fel_averaged$, fel_unaveraged$)
+                                    mat6_calc_method = custom$
   case (mad$);                      mat6_calc_method = mad$
   case (symp_lie_bmad$);            mat6_calc_method = symp_lie_bmad$
   case (symp_lie_ptc$);             mat6_calc_method = symp_lie_ptc$

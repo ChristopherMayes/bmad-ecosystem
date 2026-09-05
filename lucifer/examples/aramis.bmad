@@ -1,0 +1,42 @@
+! Bmad translation of Genesis4's benchmark/Benchmark1-SASE/Aramis.lat, shared by the
+! examples in this directory.
+!
+! The undulator segments are Bmad wiggler elements tracked by the FEL_Averaged method, so
+! their FEL parameters derive from the element attributes: aw from b_max and l_period,
+! helicity from field_calc. Everything else is tracked by Bmad.
+!
+! e_tot is the reference energy and the driver derives gamma0 from it. Genesis4's
+! benchmark value 11357.82 is encoded as an expression in Bmad's own rest mass.
+!
+! Genesis4's quadrupole k1 = 2 m^-2 is the geometric strength at the reference energy
+! and Bmad's k1 means the same. The chromatic behavior differs at the model level.
+! Genesis4 scales the focusing per particle by gamma0/gammaz (TrackBeam.cpp:26,69) and
+! Bmad by p0/p, which differ by about 4e-9 relative at this energy.
+
+no_digested
+parameter[geometry] = open
+parameter[particle] = electron
+parameter[e_tot] = 11357.82 * m_electron
+
+! The matched periodic Twiss of this FODO cell, Genesis4's zmatch values. The FEL walk
+! never reads lattice Twiss. Imports do, since init_beam_distribution matches the bunch
+! it generates to these.
+beginning[beta_a] = 8.53711
+beginning[alpha_a] = -0.703306
+beginning[beta_b] = 17.3899
+beginning[alpha_b] = 1.40348
+
+! aw = c*b_max/(k_u*m_e c^2) for a helical device in the rms convention, so b_max
+! encodes aw = 0.84853 as an expression in Bmad's own constants.
+UND: wiggler, l = 3.99, l_period = 0.015, field_calc = helical_model, &
+     b_max = 0.84853 * (twopi / 0.015) * m_electron / c_light, &
+     tracking_method = fel_averaged, ds_step = 0.045
+D1: drift, l = 0.44
+D2: drift, l = 0.24
+QF: quadrupole, l = 0.08, k1 = 2.0
+QD: quadrupole, l = 0.08, k1 = -2.0
+
+FODO: line = (UND, D1, QF, D2, UND, D1, QD, D2)
+ARAMIS: line = (6*FODO)
+
+use, ARAMIS

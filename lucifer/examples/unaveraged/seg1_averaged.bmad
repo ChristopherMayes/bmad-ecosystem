@@ -1,0 +1,4 @@
+! The averaged twin of seg1.bmad: the same element tracked by fel_averaged, which is
+! the wiggle-averaged model on Bmad's own periodic-wiggler maps.
+call, file = seg1.bmad
+UND[TRACKING_METHOD] = fel_averaged

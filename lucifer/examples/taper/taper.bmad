@@ -1,0 +1,32 @@
+! Two-stage tapered variant of ../aramis.bmad: the same 6-FODO-cell line, with the last
+! two cells' undulators a second element definition whose b_max is stepped down 0.4%.
+! What the taper does to the gain curve is this directory's README.
+
+no_digested
+parameter[geometry] = open
+parameter[particle] = electron
+parameter[e_tot] = 11357.82 * m_electron
+
+beginning[beta_a] = 8.53711
+beginning[alpha_a] = -0.703306
+beginning[beta_b] = 17.3899
+beginning[alpha_b] = 1.40348
+
+! Stage 1: aw = 0.84853 rms helical, the Benchmark1-SASE undulator.
+UND1: wiggler, l = 3.99, l_period = 0.015, field_calc = helical_model, &
+      b_max = 0.84853 * (twopi / 0.015) * m_electron / c_light, &
+      tracking_method = fel_averaged, ds_step = 0.045
+
+! Stage 2: the same device with b_max, and so aw, 0.4% lower.
+UND2: UND1, b_max = 0.99600 * 0.84853 * (twopi / 0.015) * m_electron / c_light
+
+D1: drift, l = 0.44
+D2: drift, l = 0.24
+QF: quadrupole, l = 0.08, k1 = 2.0
+QD: quadrupole, l = 0.08, k1 = -2.0
+
+FODO1: line = (UND1, D1, QF, D2, UND1, D1, QD, D2)
+FODO2: line = (UND2, D1, QF, D2, UND2, D1, QD, D2)
+TAPERED: line = (4*FODO1, 2*FODO2)
+
+use, TAPERED

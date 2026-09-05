@@ -332,11 +332,15 @@ case (vkicker$)
 
 case (wiggler$, undulator$)
   ! %field_calc = int_garbage during parsing. Must accept any possible tracking_method in this case.
+  ! The two FEL methods are valid on the periodic types, where an analytic undulator field
+  ! exists to average or to integrate, and not on a field map: an FEL run needs the
+  ! periodic parameters (l_period, b_max, the helicity) that a map does not carry.
   field_ele => pointer_to_field_ele(ele, 1)
   select case (field_ele%field_calc)
   case (int_garbage$)
     select case (method)
-    case (bmad_standard$, symp_lie_ptc$, runge_kutta$, linear$, taylor$, symp_lie_bmad$, time_runge_kutta$, custom$)
+    case (bmad_standard$, symp_lie_ptc$, runge_kutta$, linear$, taylor$, symp_lie_bmad$, time_runge_kutta$, custom$, &
+          fel_averaged$, fel_unaveraged$)
       is_valid = .true.
     end select
   case (fieldmap$)      ! Is map type
@@ -346,12 +350,14 @@ case (wiggler$, undulator$)
     end select
   case (planar_model$)  ! Is periodic type
     select case (method)
-    case (bmad_standard$, symp_lie_ptc$, runge_kutta$, linear$, taylor$, symp_lie_bmad$, time_runge_kutta$, custom$)
+    case (bmad_standard$, symp_lie_ptc$, runge_kutta$, linear$, taylor$, symp_lie_bmad$, time_runge_kutta$, custom$, &
+          fel_averaged$, fel_unaveraged$)
       is_valid = .true.
     end select
   case (helical_model$)  ! Is periodic type
     select case (method)
-    case (bmad_standard$, runge_kutta$, linear$, symp_lie_bmad$, time_runge_kutta$, custom$)
+    case (bmad_standard$, runge_kutta$, linear$, symp_lie_bmad$, time_runge_kutta$, custom$, &
+          fel_averaged$, fel_unaveraged$)
       is_valid = .true.
     end select
   end select

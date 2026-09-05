@@ -1,0 +1,6 @@
+! Single segment in the UNAVERAGED mode, for the tier that compares the unaveraged
+! dynamics directly against Genesis's averaged run from the same starting dumps -- a
+! priced model-difference tier (ramps + no averaging + integrator structure), the
+! unaveraged counterpart of tier2_bmad's priced seam. See aramis_1seg.bmad.
+call, file = aramis_1seg.bmad
+wiggler::*[TRACKING_METHOD] = fel_unaveraged

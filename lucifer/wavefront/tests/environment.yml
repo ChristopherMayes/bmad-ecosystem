@@ -1,0 +1,43 @@
+# Environment for the wavefront validation harness.
+#
+# This provides the Python side of the Fortran/Python drift comparison. It carries
+# the runtime dependencies of openPMD-beamphysics but not the package itself:
+# openPMD-beamphysics is used directly from its checkout via PYTHONPATH, which
+# run_validation.sh sets, so that the comparison always runs against the working
+# tree rather than an installed copy.
+#
+#   conda env create -f environment.yml
+#   ./run_validation.sh --beamphysics <path to openPMD-beamphysics>
+#
+# Note this is deliberately separate from the bmad-build environment defined in
+# .github/bmad-build-env.yaml, which builds the Fortran side.
+
+name: bmad-fel-validate
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.12
+  - numpy
+  - scipy
+  - h5py
+  - matplotlib-base
+  - python-dateutil
+  # For Bmad's own regression suite, regression_tests/test_fortran.py, which is worth running
+  # after any change to the build configuration:
+  #   cd regression_tests && python -m pytest test_fortran.py -q
+  - pytest
+  # The reference code the FEL benchmark compares against. It lives here so the
+  # comparison runs against a named build rather than whatever is on PATH: the
+  # recorded levels belong to the build that produced them, and the harness refuses a
+  # reference reporting any other version.
+  #
+  # 4.6.15 is the first release carrying both things the levels need: the CODATA
+  # electron rest energy, which is also Bmad's m_electron, and noise seeded from the
+  # global slice index. Releases to 4.6.14 have neither, and the local build from
+  # Genesis master that the retired $GENESIS4 variable used to name is no longer
+  # needed. Take the variant built against the hdf5 this environment already runs,
+  # since the other one downgrades hdf5 across a major version and h5py then has to
+  # move with it.
+  - genesis4=4.6.15=mpi_openmpi*
