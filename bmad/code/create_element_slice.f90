@@ -77,6 +77,9 @@ endif
 !
 
 if (.not. associated(sliced_ele%lord, ele_in) .or. sliced_ele%ix_ele /= ix_slice_slave$) then
+  ! Note: transfer_ele with nullify_pointers = True only nullifies the pointers of sliced_ele. So any
+  ! memory (EG %rad_map) that sliced_ele owns must be deallocated here to prevent a memory leak.
+  call deallocate_ele_pointers(sliced_ele)
   call transfer_ele(ele_in, sliced_ele, .true.)
 endif
 
@@ -109,8 +112,13 @@ else
   sliced_ele%lord => ele_in
 endif
 
+! Note: When re-slicing a slice_slave, sliced_ele%lord is set above to ele_in%lord, so sliced_ele has
+! the same lords as ele_in and must inherit ele_in%n_lord. Leaving n_lord = 1 here would hide all but
+! the first lord from em_field_calc (which loops 1 to n_lord), making field_calc = refer_to_lords$
+! return zero field for a slice of a slice of a multi-lord super_slave.
+
 sliced_ele%n_lord = 1
-if (ele_in%slave_status == super_slave$) sliced_ele%n_lord = ele_in%n_lord
+if (ele_in%slave_status == super_slave$ .or. ele_in%slave_status == slice_slave$) sliced_ele%n_lord = ele_in%n_lord
 
 ! Err check. Remember: the element length may be negative
 
@@ -225,13 +233,19 @@ elseif (ele_has_constant_ds_dt_ref(ele_in)) then
   sliced_ele%time_ref_orb_in%vec = 0
 
 else
-  call transfer_ele (sliced_ele, ele2)
+  ! Note: The pointers of ele2 are nullified so that ele2 does not share memory with sliced_ele.
+  ! Otherwise the deallocate_ele_pointers call above would deallocate memory owned by sliced_ele.
+  call transfer_ele (sliced_ele, ele2, .true.)
   call create_element_slice (ele2, ele_in, offset, 0.0_rp, param, .true., .false., err2_flag)
-  if (err2_flag) return
+  if (err2_flag) then
+    call deallocate_ele_pointers (ele2)
+    return
+  endif
   ele0%value(p0c$)      = ele2%value(p0c$)
   ele0%value(e_tot$)    = ele2%value(e_tot$)
   ele0%ref_time         = ele2%ref_time
   sliced_ele%time_ref_orb_in = ele2%time_ref_orb_out
+  call deallocate_ele_pointers (ele2)   ! ele2 is a local temporary so avoid a memory leak.
 endif
 
 ele0%ref_species = ele_in%ref_species

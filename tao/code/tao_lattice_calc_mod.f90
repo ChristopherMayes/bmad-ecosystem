@@ -596,8 +596,10 @@ do
       endif
 
       if (err) then
+        ix_track = ie
+        tao_model_ele(ie)%beam = beam   ! Make sure we save lost info.
         calc_ok = .false.
-        return
+        exit
       endif
     endif
 
@@ -697,12 +699,18 @@ enddo
 
 if (associated(ele%rad_map)) ele%rad_map = rad_map_save
 
+! slice_ele is a local temporary. Fortran does not deallocate the pointer components (EG %rad_map)
+! of a local variable so this must be done by hand to prevent a memory leak.
+
+call deallocate_ele_pointers (slice_ele)
+
 ! only post total lost if no extraction or extracting to a turned off lattice
 
 n_lost = 0
 do n_bunch = 1, size(beam%bunch)
   n_lost = n_lost + count(beam%bunch(n_bunch)%particle(:)%state /= alive$ .and. beam%bunch(n_bunch)%particle(:)%state /= pre_born$)
 enddo
+
 if (n_lost /= 0) &
   call out_io (s_blank$, r_name, "Total number of lost particles by the end of universe \I2\: \I5\.", &
                                   i_array = [u%ix_uni, n_lost])
