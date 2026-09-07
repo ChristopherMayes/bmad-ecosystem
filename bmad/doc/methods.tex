@@ -657,6 +657,34 @@ Example:
 Also see the \vn{space_charge_com} structure (\sref{s:sc.com}) which contains parameters used in
 space charge and CSR calculations.
 
+%-----------------------------------------------------------------
+\section{Free Electron Laser Method}
+\label{s:fel.meth}
+\index{fel method}\index{fel_method}
+
+A \vn{wiggler} or \vn{undulator} element can carry a free electron laser (FEL) method, which
+names the multiparticle physics a program is to apply within the element:
+\begin{example}
+  fel_method          = <Switch>   ! FEL method
+\end{example}
+
+The possible settings are
+\begin{example}
+  off             ! No FEL interaction. Default.
+  averaged        ! Wiggle-averaged model.
+  unaveraged      ! Direct integration of the undulator field.
+\end{example}
+
+The setting names what a beam does inside the element and leaves the single particle
+\vn{tracking_method} alone, as \vn{space_charge_method} does. A program that computes FEL
+physics reads the switch, and every other program tracks the element as the plain periodic
+wiggler its field attributes describe. Bmad itself carries the switch and does not act on it.
+
+Example:
+\begin{example}
+  u1: undulator, l = 3.42, l_period = 0.03, b_max = 1.25, fel_method = averaged, ...
+\end{example}
+
 Note: There is also high energy space charge calculation that can be used with single particle
 tracking and is discussed in \sref{s:he.space.charge}.
 
