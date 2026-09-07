@@ -242,6 +242,12 @@ do ib = 1, size(blist)
   call pmd_write_int_to_dataset(b2_id, 'branchIndex', 'ix_branch', unit_1, p(:)%ix_branch, err)
   call pmd_write_int_to_dataset(b2_id, 'elementIndex', 'ix_ele', unit_1, p(:)%ix_ele, err)
 
+  ! openPMD's own id record. Bmad does not use coord_struct%ix_user, so a program that
+  ! wants to follow a particle from one file to the next puts its label there and gets
+  ! it back on read. A file written by a program that does not is all -1.
+
+  call pmd_write_int_to_dataset(b2_id, 'id', 'ix_user', unit_1, p(:)%ix_user, err)
+
   do i = 1, size(p)
     select case (p(i)%location)
     case (upstream_end$);   ivec(i) = -1

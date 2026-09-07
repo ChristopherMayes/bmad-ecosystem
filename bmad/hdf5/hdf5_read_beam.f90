@@ -401,6 +401,8 @@ do idx = 0, n_links-1
     call pmd_read_int_dataset(g2_id, name, 1.0_rp, bunch%particle%state, error)
   case ('chargeState')
     call pmd_read_int_dataset(g2_id, name, 1.0_rp, charge_state, error)
+  case ('id')
+    call pmd_read_int_dataset(g2_id, name, 1.0_rp, bunch%particle%ix_user, error)
   case ('branchIndex')
     if (.not. present(ele)) call pmd_read_int_dataset(g2_id, name, 1.0_rp, bunch%particle%ix_branch, error)
   case ('elementIndex')
