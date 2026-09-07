@@ -339,8 +339,7 @@ case (wiggler$, undulator$)
   select case (field_ele%field_calc)
   case (int_garbage$)
     select case (method)
-    case (bmad_standard$, symp_lie_ptc$, runge_kutta$, linear$, taylor$, symp_lie_bmad$, time_runge_kutta$, custom$, &
-          fel_averaged$, fel_unaveraged$)
+    case (bmad_standard$, symp_lie_ptc$, runge_kutta$, linear$, taylor$, symp_lie_bmad$, time_runge_kutta$, custom$)
       is_valid = .true.
     end select
   case (fieldmap$)      ! Is map type
@@ -350,14 +349,12 @@ case (wiggler$, undulator$)
     end select
   case (planar_model$)  ! Is periodic type
     select case (method)
-    case (bmad_standard$, symp_lie_ptc$, runge_kutta$, linear$, taylor$, symp_lie_bmad$, time_runge_kutta$, custom$, &
-          fel_averaged$, fel_unaveraged$)
+    case (bmad_standard$, symp_lie_ptc$, runge_kutta$, linear$, taylor$, symp_lie_bmad$, time_runge_kutta$, custom$)
       is_valid = .true.
     end select
   case (helical_model$)  ! Is periodic type
     select case (method)
-    case (bmad_standard$, runge_kutta$, linear$, symp_lie_bmad$, time_runge_kutta$, custom$, &
-          fel_averaged$, fel_unaveraged$)
+    case (bmad_standard$, runge_kutta$, linear$, symp_lie_bmad$, time_runge_kutta$, custom$)
       is_valid = .true.
     end select
   end select
