@@ -1,0 +1,1443 @@
+# Validation: what is checked, how, and at what measured level
+
+Lucifer's physics is transcribed from Genesis 1.3 Version 4 (Genesis4) and validated against it from bitwise-identical starting states. This document is the measured record: the rule every commit obeys, the tier table and its recorded digits, the check sections that run on every validation pass, and the subsystem-by-subsystem story of what each measurement pins.
+
+The physics itself is the manual, [`fel-physics.md`](fel-physics.md): every equation the code integrates, each subsystem's Genesis4 provenance, and which check pins it. This document carries the numbers, and links to the manual section where a section here touches physics.
+
+(val-the-keystone-rule)=
+## The keystone rule
+
+Every commit is validated before it lands, and the tiers land on their recorded digits. A moved digit is a bug, not a new baseline. From the `bmad-ecosystem` root:
+
+```
+BUILD_PRODUCTION=N ./util/conda_compile      # debug
+./util/conda_compile                         # production
+
+# Everything below is independent, so start it all and wait. Each benchmark pass
+# needs its own --work-dir once they run together.
+./lucifer/tests/run_fel_benchmark.sh --results /tmp/fel-debug.txt --work-dir /tmp/wd-dbg &
+./lucifer/tests/run_fel_benchmark.sh --exe $PWD/production/bin/lucifer \
+        --results /tmp/fel-prod.txt --work-dir /tmp/wd-prd &
+(cd regression_tests && pytest test_fortran.py --bmad-bin=$PWD/../debug/bin) &
+./lucifer/wavefront/tests/run_validation.sh &
+./lucifer/examples/run_examples.sh --no-figures &
+wait
+```
+
+The five run at once because they share only a source tree they read: separate work directories, separate output roots, and no shared state anywhere else (checked: nothing persists FFTW wisdom or writes outside its own directory). Measured on an M3 Max, the whole thing takes 7.7 minutes with the Genesis references cached and 9.2 without, against 25 minutes when every step ran in sequence and the references were regenerated twice per run. The references are cached because they are a pure function of the reference binary and the decks that make them, under a key naming both and the pinned version besides, and each run says whether it hit or missed. Deleting `~/.cache/lucifer/genesis-refs` is always safe and costs one cold run.
+
+| step | cached | cold |
+|---|---|---|
+| both benchmark passes, regression, wavefront and examples, concurrent | 458 s | 551 s |
+| the regeneration below | 1 s | 1 s |
+| total | 7.7 min | 9.2 min |
+| the same work in sequence, before this arrangement | 25 min | 25 min |
+
+Every section runs in every keystone. Nothing is behind a flag, and there is no shorter mode to reach for, which is deliberate: a cheap run that checks less is the thing a keystone exists to prevent.
+
+Then regenerate the documentation that is generated, and require no diff. Both halves are the check, and running the diff alone is a trap: it then asks only whether someone hand-edited a generated file, and a page that no longer describes the code passes it. Two pages drifted for several commits under exactly that mistake, one of them missing a whole module (FINDINGS 7.43), so treat these four commands as one step.
+
+```
+python3 lucifer/tests/scripts/report_validation.py \
+        --debug /tmp/fel-debug.txt --production /tmp/fel-prod.txt \
+        --out lucifer/doc/generated/validation-measured.md
+python3 lucifer/tests/scripts/report_api.py \
+        --code lucifer/code --code lucifer/program --out lucifer/doc/generated/api.md
+python3 lucifer/tests/scripts/report_examples.py \
+        --examples lucifer/examples --out lucifer/doc/generated/examples
+git diff --exit-code -- 'lucifer/doc/generated/*.md' 'lucifer/doc/generated/examples/*.md'
+```
+
+The measured levels in this document are written by the harness that measured them, so
+a moved digit is a failing command rather than a discrepancy someone has to notice while
+reading. The benchmark regenerates the example pages itself, in its `examples` section,
+so the command above is the same work made explicit.
+
+The diff names the Markdown. The figures in `doc/generated/examples/` are committed
+beside the pages and deliberately excluded: a plotting-library upgrade rewrites every
+one of them byte for byte without changing any physics, and a check that fails on that
+is a check that gets switched off. `examples/run_examples.sh` writes them, and the
+examples check asserts that each page's figure exists rather than what it contains.
+
+The regression suite reports 53 passed and 3 skipped. Build in the `bmad-build` environment. The harness runs its Python in `bmad-fel-validate`, which also carries the `genesis4` the comparison runs against, from conda-forge and pinned in `lucifer/wavefront/tests/environment.yml`. The harness takes that one rather than searching PATH, because the levels recorded here belong to the build that produced them. `--genesis <path>` or `$GENESIS4` names a different one, which the version check then has to accept: it refuses whatever does not report the recorded version, however it was named.
+
+The levels here were measured against the Genesis4 4.6.15 release, and the harness refuses a reference reporting any other version rather than running against it, printing the one it found and the one it wants. That matters because the failure it prevents is silent: a different reference moves the recorded digits while every tolerance still passes. Two properties of 4.6.15 are load-bearing. It carries the CODATA electron rest energy, which is also Bmad's `m_electron`, where releases to v4.6.14 carried a value 2.14e-7 above it and loosened the transcription tiers by several percent of their own value ([](genesis4.md) states the constant and the size). And it seeds each stochastic stream from the global slice index, which this project contributed upstream, so noise realizations differ from every earlier release. The digits below were re-recorded on that migration, and which of them moved is stated in the changelog with the reason. The regeneration check refuses to absorb a reference change either way: it shows up as a non-empty diff on the generated table rather than as quietly different digits. Only environments this project created: an unrelated `devel` environment on PATH once caused an HDF5 mismatch that cost hours, and the same class of mistake is why the reference's own variant is chosen to match the HDF5 its environment already runs.
+
+Debug and production binaries are never bit-comparable to each other. Compare like builds only.
+
+(val-second-toolchain)=
+### The same checks on a second toolchain
+
+Every level in this document was measured on one machine, an M3 Max running macOS. A second platform finds a class of defect the first one hides, and this project has paid for an instance: five wake cases failed on Linux because a steady-state run read past the end of a one-element vector, and the macOS allocator had been answering with a number that happened to work. `.github/workflows/lucifer-keystone.yml` builds the debug tree on Linux and runs the benchmark harness and the wavefront validation there. The debug build is the point, since `-fbounds-check` is what turns that read into a failure rather than a wrong number.
+
+That build is a conda build, for the same reason the recording machine uses one: Bmad ships on conda-forge, so it is the configuration most people will actually run, and a check is worth more against what is delivered than against a configuration only the off-site distribution assembles. `util/conda_compile` automates it here and the workflow writes the same preferences there, so the CI build and the recorded levels come from one arrangement.
+
+That run asserts the tolerances and not the digits. A different FFTW and HDF5 give different last digits by construction, so the levels recorded here stay a property of the machine that recorded them. Its first green run is the demonstration: all eleven tiers passed, four of them on digits identical to the ones above and seven moved in their last places. It takes 37.5 minutes on a four-core runner, of which the harness is 30, so it runs on demand and weekly rather than per push, and the distribution's `ci.yml` covers the build on every push.
+
+The device section is the one section allowed to skip, and it skips there with its reason printed and recorded: a Linux build carries the refusing stub, so it has no backend to judge. The skip keys on what `lucifer` answers when run with no arguments, which names the backend the build carries and the machine under it, so a machine that has a usable backend cannot skip. A results file recording that skip cannot write the generated table, which `report_validation.py` refuses: that table lists every section that ran, and a run one section short would undercount them.
+
+(val-crossidentities-not-reference-files)=
+## Cross-identities, not reference files
+
+Almost nothing here is checked against a stored expected-output file. A reference file records what the code did once. An identity records what must be true of any correct implementation, and it stays valid when the code is rewritten underneath it. So the checks are conservation laws, closed forms, independent routes to the same number, invariance under a change that must not matter (thread count, weight splitting, a no-op), and refusals that state what they reject.
+
+A check that has never failed on a real defect is untested, so several here carry their own mutation record: what was broken deliberately, and how loudly the check noticed. And a measurement without a stated tolerance is not a check, so every number below is paired with the level it is held at.
+
+(val-the-transverse-grid)=
+## The transverse grid, and where the reference cannot be followed
+
+Every deck the harness runs carries a power-of-two transverse grid, and the derived count
+rounds up to one ([](input-reference.md#param-wavefront-grid)), so a deck runs on the CPU
+and on the Metal field solver unchanged. The LCLS example is the case that shows what that
+buys: 300 slices of 4096 macroparticles at grid 128, one deck, and the two backends land
+at 7.407 TW against 7.404 TW on exit power and 253.674 uJ against 253.561 uJ on pulse
+energy, a relative 4.1e-4 and 4.5e-4 inside the device's own 5.1e-4 band. Before the grids
+moved the same deck derived 127 points on the CPU and 128 on the device, so no such
+comparison could be made at all.
+
+Moving to those grids is what made a defect in the field solver's propagator reachable.
+The transverse wavenumbers were built as an offset index, which lands on whole multiples
+of the fundamental only when the point count is odd. On an even count every mode was
+propagated half a step out and the constant mode at half a step rather than at zero, and
+the error grows with the mode. The kernel now builds the wavenumbers the transform
+carries. On an odd grid the two tables are the same one, so the change is bit-identical
+there and every digit recorded on an odd grid is unmoved, checked by building both and
+running one deck in one directory. On an even grid it is a correction of 1.4e-1 peak
+normalized on the 57 m line at 256 points.
+
+Genesis4 builds the same table the same way, so this was transcribed faithfully and the
+defect is upstream. The two codes therefore agreed with each other on an even grid while
+both were wrong, at 1.4e-6, which is why no comparison against the reference could find
+it. What found it is the one tier that compares two models of the same thing inside this
+code, the Bmad seam against the transcribed interlude, since the seam moves the field with
+`wavefront_drift`, whose wavenumbers were right at both parities. FINDINGS 7.67 in the
+design repository carries the measurements.
+
+Four places therefore hold an odd grid on purpose, each saying so where it is written. The
+five Genesis reference decks under `tests/genesis4/` and the harmonic and phasing checks
+compare against Genesis at levels between 1e-6 and 1e-3, and a comparison that tight has to
+run where the reference is right: at 64 and 256 the harmonic tier reads 1.4e-3 against a
+1e-6 level and the phasing curve 1.0e-6 against the same. The saturation demo is held for
+the same reason. And `lucifer_smoke_test` with its namelist twin stays at 63 to keep the
+odd-grid path itself under test, since a user may write an odd count and an imported
+Genesis field can carry one. The device refuses an odd grid and names the nearest
+supported size, which `check_device` asserts. Those exceptions go away when the upstream
+fix lands.
+
+The other four checks that run Genesis4 are unaffected and stay on powers of two: the
+distribution import, the SASE startup cross-check, the beam format check and the device's
+own Genesis comparison compare loaders, formats and short propagations rather than a long
+field solve. The device's Genesis anchor at grid 64 moved from 8.4e-7 to 6.4e-5 with the
+correction, which is the upstream defect measured on a short planar segment, and it sits
+25 times inside that check's 1.6e-3 level.
+
+(val-validation-from-one-command)=
+## Validation, from one command
+
+The harness runs Genesis4 six times (full line and single segment, steady state and time
+dependent, plus the collective tiers), converts each chain's initial dumps to openPMD,
+which is the only format the tracker reads, runs the Bmad tracker for every tier and
+check, and prints the largest relative difference of each check. It fails loudly if the
+genesis4 binary is missing, and likewise without an openPMD-beamphysics checkout
+(`--beamphysics <path>`, a sibling of bmad-ecosystem by default), which is what performs
+the conversion. There is no comparison without either, so there is nothing to skip to. Genesis4 must be built with FFTW, since the
+benchmark runs with `fft_fieldsolver=true` (the Bmad tracker transcribes the FFT solver,
+and Genesis4's default ADI solver is out of scope).
+
+Both codes start from the same Genesis4 `&write` dumps, so the initial state is bitwise
+identical and no loader is reproduced. Genesis4 records diagnostics once at the start and
+once per integration step, with each interlude element being a single step. The tracker
+records at the same z positions (per slice, in time-window order, for the time-dependent
+tiers). Measured, on the numbers this tree was developed against:
+
+```{include} generated/validation-measured.md
+```
+
+What each level means, which the digits above cannot say on their own:
+
+| Tier | Attribution |
+|---|---|
+| `tier1` | The impedance-constant floor. With Genesis4's own constants transcribed it was 2.8e-11, which is what makes the floor an attribution rather than a guess |
+| `tier1_unavg` | A priced model difference (sin² ramps against hard edges, no averaging, integrator structure), dominated by the final-field phase. The power curve agrees at 6.1e-3 and per-particle gamma at 3.7e-6, and theta shows a constant ~6.6 rad ramp-phase offset with only 2.8e-3 rms about it |
+| `tier2_genesis` | The constants floor through full gain. With Genesis4's constants it was 5.9e-8 |
+| `tier2_bmad` | A measured transport model difference, located and priced below. The power curve is 1.3e-2 |
+| `weight_split` | Fortran against itself, so constants-independent |
+| `td1` | The constants floor |
+| `td2_genesis` | The constants floor |
+| `td2_bmad` | The tier2_bmad transport model difference with slippage interleaved |
+| `tdsase` | The constants floor. Exit total power agrees at 1.9e-6 |
+| `tdsc` | The epsilon_0-truncation floor of Genesis4's longRange, 8.85e-12 |
+| `tdwk` | The impedance floor |
+
+Particle ordering is preserved by both codes (no sorting happens without one4one), so the
+final dumps compare particle by particle, not just statistically, in every tier.
+
+All outputs land in the benchmark's work directory (`--work-dir <path>`, and without it
+a temporary directory is used, removed on success and kept on failure). To *see* any
+tier rather than check it, run from a kept work directory:
+`scripts/plot_fel_compare.py <tier>.diag.txt <GenesisRoot>.out.h5` overlays the two codes' power
+and bunching curves, plots the checked elementwise relative power difference along the
+line, and the per-slice exit power, e.g. `plot_fel_compare.py tdsase.diag.txt
+AramisTDSASE.out.h5`. Add `--fld <tier>-final.wf.h5 <GenesisRoot>-final.fld.h5` for a
+second figure overlaying the final field (on-axis amplitude and unwrapped-phase
+lineouts, plus the transverse map of the complex difference). That panel shows
+what a phase-dominated tier number is made of: for `tier1_unavg`, an amplitude overlay
+indistinguishable by eye, a −0.03 rad on-axis phase offset, and the 6.9e-2 difference
+localized at the beam center, i.e. the freshly radiated model-dependent part. The slice count comes from the Genesis4 file, so steady-state and
+time-dependent tiers both work.
+
+The `weight_split` check is Fortran against itself and exists because Genesis4 cannot test
+the weighted paths: its dump format has no weights, so every cross-code comparison sees
+the uniform case, where a bug like using one particle's weight for all is invisible.
+Collective observables are linear in the weights, so the split run must reproduce the
+unsplit one to round-off. The weight-dropping mutation fails this check at 2.4e-1.
+
+### The tier2_bmad difference is a transport model difference, located and priced
+
+The divergence localizes to the quadrupoles: after the first quad the bunching phase steps
+by 2.1e-3 rad while the transverse beam sizes still agree to 2.5e-11. The mechanism:
+Genesis4 advances theta through an interlude element as a single step whose path-length
+term `(px^2+py^2)/(2 gamma^2)` is sampled once, at mid element (transverse half step, then
+the theta step, then the second half, in `TrackBeam::track` + the `BeamSolver` drift case).
+Bmad's z advance integrates the same term exactly through the quad map. In a quad px
+changes substantially across the element, so midpoint sampling differs from the integral
+at the ~10 percent level of the ~0.01 rad px^2 contribution: the observed 2e-3 rad per
+quad. Through exponential gain and twelve quads this compounds to the 1.3e-2 power
+difference at saturation.
+
+The proof is `tier2_genesis`: the identical build with only the interlude model swapped to
+the transcribed Genesis4 step collapses the difference by six orders of magnitude. Nothing
+else changes between those runs, so nothing else contributes at that level. Where the two
+transport models differ, Bmad's is the better one (the exact integral). The benchmark's
+job is to price the difference against Genesis4, not to prefer Genesis4's answer.
+
+Residual budget for `tier2_genesis`'s own 1e-8: rounding differences in the interlude
+theta advance. Genesis4 evaluates `ks*(1 - 1/beta_z)` per particle (a ~4e-9 cancellation
+carrying ~1e-16 absolute rounding) inside its RK4 bookkeeping. The transcription
+evaluates the same expression but sums the step differently (the RK4 collapses exactly
+when the slope is theta independent, and is collapsed). Multiplied by `ks*L` this is
+microradians of per-particle phase noise per interlude, amplified through gain. The
+per-particle theta medians tell the same story: 6.4e-14 rad for the typical particle, with
+a chaotic separatrix tail (see below).
+
+### theta is reported, not checked
+
+The final per-particle theta difference is printed with max, rms and median but does not
+check the comparison. theta is a bucket phase: at saturation neighboring trajectories
+separate exponentially, so the worst-particle difference measures Lyapunov amplification,
+not implementation quality (the warning about chaotic growth, met in
+practice: `tier2_genesis` has median 6.4e-14 rad against max 2.0e-5). Its collective
+effect is checked, through the bunching curve and the final field.
+
+### The harness bites
+
+Verified by mutation. Dropping the factor 2 on the source
+term fails tier1 at 3.5e-1. Dropping the conjugation in the field gather fails at 2.8e-2.
+Using one particle's weight for every deposition, invisible to every Genesis4-based
+tier, fails the split-weight check at 2.4e-1. One sensitivity was knowingly traded away
+with the move to Bmad constants: the near-degenerate replacement of `sqrt(faw2)` by `faw`
+in the deposition, a 1.5e-10-level effect that the transcription-era 1e-10 check caught,
+now sits below the 2e-6 constants floor and is not detectable by the Genesis4 comparison.
+Recovering that class of sensitivity is a job for Fortran-vs-Fortran regression baselines
+(the weight_split pattern), not for tighter Genesis4 checks.
+
+The time-dependent checks were mutation-tested the same way. A slippage rotation that
+never fires fails td1 at 1.0e10 (elementwise per-slice power). Zeroing the wrong slice at
+rotation fails td1 at 1.0e9. Dropping the drift autophasing fails td2_genesis at
+1.9e8. The fourth sensitivity was demonstrated live rather than by mutation: guarding the
+end-of-lattice autophasing the way the mid-lattice case is guarded (one wavelength short
+on the final step) failed td1 at 0.84 of the final field during development, which is
+how the unguarded `+1` in Genesis4 was found. The elementwise per-slice
+power comparison is what makes these loud: a one-slice misalignment puts finite power
+against near-vacuum slices, so the failure signature is orders of magnitude, not percent.
+
+The element-parameter path was mutation-tested the same way. A spurious `1/sqrt(2)` on
+the helical aw (the rms-convention error, exactly the mistake a translator would make)
+kills the gain outright and fails tier1 at 1.0 relative. Deriving helicity from the
+wrong attribute (element key instead of `field_calc`) fails identically. Removing
+the `b_max` assertion is caught by the refusal check: the lattice still dies, but on an
+unrelated downstream message instead of the assertion's own, which the check's grep rejects.
+
+The thread-independence check bites too: reintroducing a shared source accumulator across
+slices (the exact state of the code before the parallel step landed) puts the 1-thread and 8-thread
+runs apart by 7.0 relative in power, while the mutated 1-thread run is identical to the
+pristine one. That is the defining property of this bug class: invisible to every
+single-threaded check, including all seven Genesis4 tiers, and caught only by comparing
+across thread counts.
+
+(val-shot-noise-under-weights)=
+## Shot noise under weights: the loader's noise is physical, and checked
+
+(Physics: manual [](fel-physics.md#sec-loading).)
+
+A slice of current I represents `N_lambda = I*slice_spacing/(e*c)` real electrons, and
+physical shot noise means `<|b(h)|^2> = 1/N_lambda` per harmonic. The loader
+imposes it Fawley style, transcribed from Genesis4's `ShotNoise::applyShotNoise` and
+generalized to per-particle weights in one substitution: the electron count in the
+amplitude is the group's real charge over e, where Genesis4 uses the slice-uniform
+`ne/mpart` (identical for uniform weights). The algebra then gives `1/N_lambda` for any
+distribution of weight across the groups with no correction factors. Weights
+must stay uniform within a group. The quiet cancellation is per beamlet. Genesis4's
+silent `nbl < 1` clamp is kept but counted and warned.
+
+The groups are the beamlets when the loader made them, else the particles sharing their
+transverse coordinates exactly, else the occupants of each deposit cell, and the rule
+used is printed. Before imposing, the loader measures the quiet floor
+`max_h |b(h)|^2 N_lambda` over every harmonic the beamlet structure can resolve
+(`1..beamlet_size-1`), not just the imposed ones, because an unquiet weight pattern can
+park its floor on a harmonic the imposition never touches (found by this guard's own
+mutation test), and refuses noise above 0.01 with the value in the message.
+
+Two permanent checks in the harness:
+
+- `check_shot_noise.py` (self-referenced): many-seed loading-only runs,
+  `<|b(h)|^2>*N_lambda` against 1 within 5/sqrt(n) for harmonics 1-3, uniform AND
+  0.25x/1.75x alternating beamlet weights. Measured 1.03 in both modes. The same
+  statistic on the loads that do not draw their own beamlets: keep mode from a generated
+  bunch, a bunch of copies made outside the loader (noise on the copies), and the same
+  copies with jittered coordinates (noise on the deposit cells). Measured 0.98,
+  0.98 and 0.95. Every group holds about 150 electrons: at 18 the kick is no
+  longer linear in its amplitude and the scaled mean sits at 0.88 in every mode alike,
+  which is the algorithm's own limit and Genesis4's too.
+- `check_sase_startup.py` (cross-code): dark start, one segment, each code generating
+  its own noisy beam (fully independent loaders and RNGs), and the mean SASE startup
+  power must agree. Measured ln ratio -0.003 (0.3 percent) over 6 seeds x 32 slices.
+
+Mutations bite. Amplitudes from macroparticle count fail the statistical check at 13-20x.
+A slice-uniform electron count (weights ignored) passes uniform and fails the nonuniform
+mode at 1.52 (theory 1.5625). The within-beamlet weight mutation makes the guard refuse
+at 2.3e-1 against a 5.3e-5 target.
+
+These two checks are statistical by necessity (independent RNGs). The `tdsase` tier is
+their deterministic complement: Genesis4 generates the noisy beam, writes it, and both
+codes track the identical realization dark through the full line, so startup-from-noise
+is also compared elementwise like any other tier.
+Both codes discretize the transverse plane and the load identically, and the tiers pin
+one grid and one particle count, so a dependence of the SASE power on either is
+invisible to them. It is measured in [](startup-noise.md).
+
+The loader's own current profile reproduces the derived-current identity exactly, **9.9e-15** of peak, and a dropped $\sqrt{2\pi}$ fails that at 1.5. Importing the same Gaussian description agrees with it at rms **4.9e-2** of peak, which is a statistical comparison over 50k particles against a truncated-tail fit rather than an identity.
+
+(val-the-load-path)=
+## The load path: a bunch, sliced, quietened if asked, with noise if asked
+
+(Physics: manual [](fel-physics.md#sec-loading).)
+
+The field file read as an import is checked against what a file written elsewhere may do and this writer never does. Samples stated in a unit other than V/m with `unitSI` carrying the factor, and a grid stated with `gridUnitSI` carrying the factor, read as the file this writer would have written for the same field: a copy with its samples doubled and `unitSI = 0.5`, and a copy with its spacing halved and `gridUnitSI = 2`, re-dump dataset for dataset identical to the plain file's re-dump. Before the factors were applied the first loaded four times the power. A `y` component shaped unlike `x` is refused before it is read: the buffer is allocated from `x`, an HDF5 read has no bound of its own, and a wider `y` once wrote past the buffer's end, which the debug build caught and the production build reported as success. The source filter's angle becomes a cutoff in grid units, and on the import path the conversion is taken from the file's spacing rather than from the grid keys of the deck, which a deck that imports its field need not state: taken from the deck it was zero, every cutoff was infinite and the filter passed every mode while the header named the angle asked for. The check runs an imported field at two angles with no grid in the deck and holds that the fields differ, and that the deck without the grid keys filters as the deck with them at 1e-9. `check_beam_format.py`, section `the field file as an import`.
+
+One path loads the beam from a bunch that `beam_init` generated or read through
+`beam_init%position_file`. `load_mode = "keep"` keeps every particle as a beamlet of
+copies at weight over `beamlet_size`, and `load_mode = "sample"` loads the same count into
+every slice, by the analytic loader for a described bunch and by the resampler below for
+a file. `quiet_start` and `shot_noise` act on every load. `check_load.py`, in the
+harness, measures:
+
+| Check | Kind | Measured |
+|---|---|---|
+| keep mode: per-slice currents, counts and charge-weighted moments against the bunch file, recomputed with the same binning | exact | **1.5e-11** over 9 slices |
+| the dump the load writes carries the bunch's charge, eight copies per particle | exact | 2.1e-16 |
+| split weights (coincident w/3 + 2w/3 copies) against the unsplit keep load | exact | 3.5e-12 |
+| in-cone startup: a Gaussian bunch in sample mode, in-cone power summed over a window with slippage headroom, per 3 kA of summed current, against the flat window's interior mean of [](startup-noise.md) (0.133 MW) | statistical | **1.385e5 W**, relative 0.041 (check 0.35) |
+
+The field record collects the emission of every beam slice it slipped past, so for a bunch
+the per-slice power is not proportional to the local current and the comparable quantity
+is the sum over records, with 24 slices of headroom on each side so nothing escapes. The
+edge records carry 5e-8 of the peak.
+
+Refusals, each with the floor in the message: noise on the generator without the quiet
+start (floor 2.8e-1 against 0.01), and a bunch of copies whose phases were shifted singly
+(0.70). The unshifted copies load at 2.9e-28 with the noise on the particles sharing
+their coordinates, and a slice dump named in `beam_init%position_file` is refused since its
+slices would collapse onto one another.
+
+(val-distribution-import-a-bunchstruct)=
+## The resampler: a bunch_struct, resampled into slices
+
+(Physics: manual [](fel-physics.md#sec-import).)
+
+The `importdistribution` equivalent: an arbitrary bunch (arbitrary times, arbitrary
+weights) resampled into the evenly spaced, equal-population slices the FEL step
+wants, by Genesis4's own method, transcribed from `SDDSBeam.cpp` (`fel_import_mod`, the
+class name is historical, it reads plain HDF5). The bunch is Bmad's `beam_init_struct`
+made by `init_beam_distribution`: read from an openPMD-beamphysics file named in
+`beam_init%position_file`, or generated from the `&beam_init` description on the
+validation route `resample%use_beam_init`, since a generated bunch otherwise takes the
+analytic loader. The driver can write any bunch back out
+as a Genesis4 distribution file (`t/p/x/xp/y/yp` + charge, with `t = -tau/c` so
+Genesis4's `s = -c*t` reproduces this port's window position exactly) and as
+openPMD-beamphysics (`hdf5_write_beam`).
+
+Per slice: every particle inside a sampling window `dslen = slicewidth*bunch_length`
+(default 0.01 of the bunch, deliberately much wider than a slice) is a candidate, and
+the slice current comes from the same window -- Genesis4's `count*dQ*c/dslen`,
+generalized to the weight sum `c*sum(w)/dslen`, identical for uniform weights and the
+only weighted generalization made. Candidates are brought to `npart/nbins` beamlet
+seeds by random deletion or by Genesis4's phase-space interpolation (normalize 5D to
+unit rms. Nearest original neighbor under a metric whose per-coordinate weights are
+fresh random draws. Child at midpoint plus uniform[-1,1] times the difference). Theta
+is refilled over one beamlet spacing, mirrored into nbins bins, and the Fawley
+loader imposes shot noise with `ne = round(I*lambda*sample/(e*c))`, shared
+code (`fel_fawley_noise`), so the generator and the import stay one implementation.
+Genesis4's `match`/`center` transforms are NOT ported, by decision: they exist because
+Genesis4 lattices carry no optics, so an imported bunch must be rematched by hand. A
+Bmad lattice carries its Twiss and `init_beam_distribution` generates bunches matched
+to it already -- the transform would be a second way to say what the lattice says.
+For the same reason there is no namelist `gamma0` anywhere in the driver anymore: the
+reference energy derives from the lattice's `e_tot`, after the first external user fed
+a hand-rounded gamma0 against a round lattice energy and the run died mid-tracking on
+the seam's backstop p0c check (two specifications of one truth was the defect,
+one specification of one truth). Facts pinned by reading: the `align*` parameters are parsed but
+never used in v4, and the `shot_noise` flag is read but never consulted (the import
+applies noise unconditionally, skipping only zero-current slices) -- both kept as
+Genesis4 has them, neither transcribed as functional. one4one is out of scope: weights
+supersede it. The port carried the unconditional noise until the load's two switches
+became explicit. `shot_noise` is now honored on this path as on every other, and a deck
+that wants the noise says so.
+
+Validation (`scripts/check_import.py`, in the harness) splits along the RNG boundary
+-- exact checks where no random number enters, statistical only where one does:
+
+| Check | Kind | Measured |
+|---|---|---|
+| per-slice current profile vs Genesis4 importing the same file | exact | **8.2e-13** of peak (24 slices) |
+| the generated bunch carries the specified emittance | exact | ex, ey within 3e-5 of spec |
+| split-weight invariance (coincident w/3 + 2w/3 copies) | exact | moments 1.8e-15, currents 7.4e-14 |
+| openPMD round trip (write_openpmd_file -> beam_init%position_file) | exact | moments 9.4e-19, currents 0 |
+| thread determinism (1 vs 8 threads, same seed) | exact | byte-identical diag |
+| slice Twiss/emittance recover the spec (mean, central slices) | statistical | beta 0.8%, alpha 1.0%, emit 1.4% |
+| dark-start startup power vs Genesis4, independent resampling RNGs | statistical | ln ratio +0.023 (check 0.30) |
+
+Mutations bite, each on the check built for it: normalizing the current by the slice
+spacing instead of `dslen` fails the exact current check at 6.5e-1. Skipping the shot
+noise fails the startup check at ln ratio -57 (a dead-quiet start). Collapsing the
+beamlet mirroring fails the startup check at ln ratio +4.7. One planned mutation --
+refilling theta over 2pi instead of 2pi/nbins, turned out to be an equivalent
+mutant: under the beamlet mirroring, a uniform seed over the full turn is uniform
+modulo one beamlet spacing, the quiet cancellation is untouched, and the checks
+correctly pass it. It is a convention, not a defect class. The
+load-bearing neighbor (the mirroring itself) is what gets mutation-tested.
+
+Recorded improvement path: with per-particle weights the resampling is optional -- a
+direct weighted import (every bunch particle a macroparticle in its slice, no deletion,
+no interpolation) has no Genesis4 counterpart outside one4one and is likely the better
+default once validated. Genesis4's O(n^2) randomly-reweighted nearest-neighbor
+interpolation is the first thing worth replacing. `examples/import/` is the
+self-contained demonstration: a beam_init bunch, matched by the import, tracked dark
+through the full line.
+
+(val-slice-migration-under-weights)=
+## Slice migration under weights
+
+(Physics: manual [](fel-physics.md#sec-migration).)
+
+Genesis4 permits migration only under one4one, because with uniform weighting the charge
+a mover carries cannot be expressed. Per-particle weights dissolve the problem, and this
+port's coordinates dissolve the other half: z is continuous, the slice index is derived,
+and a one-slice move adjusts z by exactly `beta*slice_spacing` -- a phase shift of
+exactly `2*pi*sample`, so for integer `sample` the ponderomotive phase is continuous
+across the move to rounding. No wrap protocol exists to get wrong (the 4.2 decision
+paying off a third time). `fel_migrate_slices` is the weighted generalization of
+`Sorting::localSort`: same criterion (`atar = floor(theta/slen)`), same swap-with-last
+removal, same rescan semantics. The MPI `globalSort` has no counterpart here by design
+Particles leaving the window ends are dropped with their charge counted and
+reported per event. Genesis4 discards them silently at the world edges
+(`Sorting.cpp:194-195`). Migration is off by default (`migrate = T` enables): the
+Genesis4-comparison tiers run against Genesis4 without one4one, which never migrates, so
+enabling it inside a transcription-level comparison would be a model difference. The
+pass runs serially at a per-element stride between the parallel regions, so the
+thread-independence check is untouched. Per-slice `current` and `n_eff` are appended to
+the diag columns. N_eff drifts once particles migrate and is monitored,
+not assumed.
+
+Four permanent checks (`check_migration.py`, self-referenced): charge
+conservation under heavy migration (a 60-m_ec² energy-spread beam, 74k moves, in-window
+charge plus reported drops equals initial charge at every record, measured 1.5e-14),
+exact phase continuity (the whole-beam weighted phasor obeys
+`S_before = S_after + S_dropped`, measured 6.9e-15), window residency (every surviving
+particle's phase inside its slice window in the final dump -- the routine's
+postcondition), and no-op bit identity (a frozen-phase run with migration enabled
+reports zero moves and reproduces the disabled run byte for byte).
+
+The device runs migration through the same pass. With the beam resident at an
+element's last step, the pass reads the beam and the field back and releases residency,
+and the same four checks hold on the device run at the device's grid, the no-op exactly:
+the fixed-point deposit made two device runs of one deck agree bit for bit, so the
+comparison that was three times the spread between two identical runs is now equality
+([](#val-device)).
+
+Mutations bite, each caught by the instrument built for it: charge left behind on the
+move fails conservation at 8.9e-1. Leaving z unadjusted on the move survives conservation and
+continuity, because the mover cascade evaporates through accounted window-end drops, a
+balance sheet that balances while the beam disappears. It is caught by window residency (17
+survivors outside). Removing the high-side bounds check dies on the constructed
+off-the-end mover with a bounds trap, never touching memory beyond the arrays
+
+
+(val-wakes-and-space-charge)=
+## Wakes and space charge: kernels, convolution and the solvers
+
+(Physics: manual [](fel-physics.md#sec-wakes), [](fel-physics.md#sec-spacecharge).)
+
+Inside undulators and Genesis4-model interludes, the collective terms are transcribed at
+Genesis4's granularity (`fel_collective_mod`): wakes as a per-slice energy-loss rate --
+the three single-particle kernels (resistive wall via the numerical impedance of Bane &
+Stupakov SLAC-PUB-10707, with AC conductivity and round/flat geometry. The undulator gap
+wake, convolved with dI/ds, and surface roughness via the complex-q contour) superposed and
+causally convolved with the window's current profile, applied between the longitudinal
+advance and the second transverse half step, theta held fixed through the kick, and
+longitudinal space charge as the per-particle `ez` in the pendulum equation, from the
+per-slice radial-harmonic tridiagonal solves plus the whole-window long-range term, both
+weighted (`c*w_j/slice_spacing` where Genesis4 has `current/npart`). The convolution is
+hoisted once, as Genesis4's is, and recomputed at every migration stride that moved a
+particle between slices or dropped one off the window's ends, since both change the
+currents. Every recompute appends a z-stamped eloss block to
+`<out_root>.wake.txt`, making "the wake followed the currents" a parseable fact. The
+recompute once keyed on moves alone, so a stride that only dropped left the table
+computed from charge no longer there. `check_collective.py` builds that stride: a cold
+beam confined to the head slice by editing a dump, detuned by 0.6% so it slips off the
+head over two segments and never into another slice, and holds one refreshed block per
+such stride.
+
+The short-range solve centers its radial bins and its azimuthal basis on the slice's charge-weighted centroid, which is what every term built on it is. Genesis gives every macroparticle the same charge, so its unweighted mean is its weighted one, and the transcription did not distinguish them. This port's weights differ within a slice, and with the unweighted mean, replacing one particle by colocated copies whose charges sum to the original's, the same physical beam described with more macroparticles, moved the origin and changed the field at every physical point. `check_collective.py` splits one particle sixteen ways and holds every physical diagnostic to the unsplit run at 1e-12, measured 1.4e-14, with two controls that pass either way: the same split with space charge off, and every particle split, which leaves an unweighted mean where it was and is why the harness's own beamlet loader never saw it. With the unweighted centroid restored the selective case reads 2.1e-5 and the controls stay at 1e-13.
+
+Two decisions recorded here as much as in the code: the numerical impedance is a clean,
+separable routine (`fel_resistive_wall_wake`) because that computation is a future port
+target into Bmad proper as a wake source, and the space-charge solver sits behind an
+interface a Bmad-slice implementation can later fill. Bmad's slice method is suspected
+the better model long-term, Genesis4's is transcribed now for consistency, and the
+comparison between the two is an explicit future task.
+
+Genesis4's collective code carries more truncated constants than its FEL core, and each
+tier's check is sized to the floor of the terms it enables:
+
+| Term | Genesis4 constant | Floor | Measured tier |
+|---|---|---|---|
+| resistive/geometric kernels | `vacimp = 376.73` | 8.3e-7 | tdwk 8.7e-7 |
+| roughness coefficient | `e = 1.6e-19`, `eps0 = 8.854e-12` | 1.4e-3 of that kernel | (inside tdwk) |
+| long-range space charge | `eps0 = 8.85e-12` | 4.7e-4 | tdsc 2.4e-4 |
+
+Self-referenced checks (`check_collective.py`): on a cold dark beam the wake is the only
+energy channel, and every record's `d<gamma>` must equal `eloss*dz/m_electron` exactly
+(measured 8.6e-11 against 4e-4 kicks, in gamma units) with the energy
+spread invariant under the uniform
+kicks (4.9e-13, after the diagnostics moved to a two-pass variance, since the one-pass form
+hid sigma-scale cancellation noise for a long time because nothing ever moved the
+mean), and under heavy migration the eloss blocks must multiply and
+change (49 blocks measured).
+
+Mutations bite, each on its named check: reversing the convolution's causality (wake
+collected from trailing charge) fails tdwk at 7.0e-3 against its 8.7e-7 pristine.
+flipping the sign of `ez` fails tdsc at 9.1e-1. Removing the migration-stride recompute
+leaves one eloss block and fails the stale-wake structural check.
+
+(val-bmad-element-wakes-across)=
+## Bmad element wakes across the whole bunch
+
+(Physics and conventions: manual [](fel-physics.md#sec-seamwake).)
+
+Elements carrying Bmad `sr_wake` definitions (pseudomodes and the tabular `z_long`,
+binning plus FFT) act across the whole time window. For wake elements only, the seam
+concatenates all slices into one bunch in global window coordinates,
+
+```
+z_global = z_local + beta * (islice-1) * slice_spacing
+```
+
+-- higher slice index is the window head (larger Bmad z). The formula is the slice-
+migration invariant run backward (a mover's z shifts by exactly -atar*beta*spacing),
+and the direction is triple-pinned: by that invariant, by the wake
+convolution (eloss collects `current(is+i)`, the wake trailing its source), and
+empirically by the causality check. The sign was guessed the other way when the seam wake was
+specified, and the checks corrected it. Interlude elements pass through Bmad's own `track1_bunch`
+(wake applied at `ds_wake`, Bmad's once-per-passage convention). FEL wigglers carrying
+`sr_wake` get one whole-window kick at the step nearest mid-element via
+`track1_sr_wake` directly -- a pure kick, no transport, with z rescaled by
+`beta_new/beta_old` to hold theta (the same convention as `wake_on`'s energy kick).
+Bmad's wake machinery is used as is: the seam supplies global z and charges, Bmad
+supplies the physics (`ix_z(1)` is the bunch head at largest `vec(5)`,
+`wake_mod.f90`). Refused: lr (multi-bunch) wakes. A pseudomode `z_max` or a
+`z_long` table extent `z0` shorter than the window (Bmad would kill the bunch
+mid-run). A Bmad drift cannot carry a wake at all (use a pipe, and the driver now
+stops on any `bmad_parser` error rather than running a partial lattice, found when an
+example's drift wakes silently never attached). Wakes are resolved through lords
+(`pointer_to_wake_ele`): a wake on a superimposed or split element lives on the lord
+and `ele%wake` is null on its slaves. Checking `ele%wake` directly was the first
+shipped version's hole, found by a user's lattice whose lord wakes fell through to the
+per-slice path (the zero-charge INFO spam returning was the symptom). Zero-length wake
+elements are kept in the walk for the same reason (a wake on a marker-like element is
+a standard Bmad idiom). A zero-length element is skipped only where Bmad tracks it as the
+identity: a marker, drift, pipe, instrument or monitor with no kick, no multipole, no
+aperture and no wake that can act. A thin kicker, a multipole, a patch or a zero-length
+cavity is tracked whatever its length. The rule is `fel_element_inert` in `fel_struct`,
+and the walk and the setup's record-count precompute both read it, as they both read
+`fel_interlude_wake` for which element's wake acts. Each once made its own decision, and
+the two disagreed twice: the walk skipped a zero-length kicker, dropping a kick of
+`1e-5` rad with no message, and with `bmad_com%sr_wakes_on` off the walk cut a
+wake-carrying element into pieces that setup had counted whole, so the run stopped at
+the stats writer with more records than the precomputed count. `check_diagnostics.py`
+holds a zero-length kicker to the same kick through a finite length at 1e-3, and cuts a
+wake-carrying pipe with the switch off.
+
+Checks (`scripts/check_seam_wake.py`, self-referenced, every wake
+measurement an A-B difference against a bit-identical no-wake run on a one-step
+wiggler so the FEL evolution cancels exactly):
+
+| Check | Measured |
+|---|---|
+| constant-pseudomode closed form (W = amp, self = W(0)/2), per-slice means | **6.2e-10** |
+| causality: kick ahead of all charge (must be exactly zero) | **0.0** bitwise |
+| d8 direction cross-check: `wake_on` marks the same affected mask | agrees, 0 ahead |
+| z_long vs first-principles particle convolution of the same table | **3.4e-8** |
+| resolved-beam z_long vs `wake_on`, same kernel, per-slice bound derived from Genesis4's half-slice head deficit | 0.55 of bound |
+| split-weight invariance of the kick profile | 1.8e-10 |
+| thread determinism with wake elements | byte-identical |
+| lord resolution: a wake on a superimposition-split element applies exactly once | **1.8e-10** closed form |
+
+The kernel bridge: `chamber_wake%write_kernels` exports the Bane-Stupakov
+kernels (eV/(m electron), s = 0 rows carrying the Bane self-slice half factor), and a
+`z_long` table built from them (sign-flipped, since the d8 kernels are stored as signed
+energy loss where Bmad's table is positive-decelerating, unhalved at s = 0, causal side
+z < 0, zero-padded past the window) gives the same physical wake through two
+independent implementations. Measured on the full 96-slice SASE line with a 0.5 mm
+copper chamber on every element (`examples/bmad_wake/`): exit mean energy drop
+-2.324 (Bmad z_long, once per element) vs -2.308 m_e c^2 (`wake_on`, per step), the
+interior per-slice profiles agreeing to **0.7%**. On a sub-slice-width bunch the two
+diverge by design: `wake_on` convolves slice-density (Genesis4's model, linearly
+interpolated with a zero pad past the head -- half a slice of charge missing at the
+window head), `z_long` bins actual particles. The derived per-slice bound
+0.5/(slices ahead + 0.5) brackets the measured differences at half its size.
+
+Mutations bite: flipping the head/tail direction fails the closed form at 22 and
+causality at 2.8e-4. Dropping the slice offset (all slices coincide) fails both,
+unwiring the charge fails the closed form at exactly 1.0 (kicks vanish).
+
+Two bookkeeping identities ride with the seam wake. Energy bookkeeping, $d\langle E\rangle = \mathcal{E}\,\delta z$, holds to **4.4e-5** eV against 203 eV kicks. The energy spread is invariant under a uniform kick to **2.5e-7** eV, since a rigid shift moves the centroid and must leave $\sigma_E$ alone.
+
+(val-the-unaveraged-mode-fc)=
+## The unaveraged mode: fc measured, not assumed
+
+The ledger's closure depends on the order inside a substep, and the order was wrong for a field that diffracts. The source was added to the record after the diffraction, so the beam was charged the cross term against the field the kick read while the record gained the cross term against the diffracted field, and the difference is first order in the substep's diffraction phase. The broad seed the ledger check used diffracts little in a substep and closed at 1.0e-5. A seed of 100 um waist left 1.2 percent of the turnover in the ledger at 20 substeps a period and 0.6 at 40, found by an independent review. The source now lands on the record the kick read and the pair diffracts together, on the CPU, in the FP32 twin and in the device's solve, whose first pass lands the fixed-point source as it reads. The 100 um seed closes at 3.5e-6 at 20 substeps and 2.1e-6 at 40, with no trend, and the broad seed at 3.7e-6.
+
+(Physics, conventions, and provenance: manual [](fel-physics.md#sec-unaveraged). MINERVA (Freund and
+van der Slot) is the published existence proof for this physics. Only its published
+work was used: nothing here is compared against a MINERVA run.)
+
+`fel_method = unaveraged` is per element, so unaveraged segments mix
+with averaged ones in a single line. It integrates the particles through the undulator's
+real field: the full Newton-Lorentz quiver, RK4 at `global%unaveraged_steps_per_period` (default
+20, floor 10 on the convergence measured below), with the radiation field as a Strang-split kick and a source
+built from the actual quiver current. Nothing from the averaged coupling path appears
+in it (the harness greps `fel_und_coupling|faw` out of the module), so the averaged
+mode's inputs become measurements. Entry/exit are sin² amplitude ramps
+(`global%unaveraged_ramp_periods`, default 2) with continuous slope, so the quiver vanishes at the
+segment ends where the averaged and unaveraged momentum conventions coincide. The
+beam carries a `quiver_in_px` convention flag that every averaged/seam entry asserts.
+In a mixed line those handoffs happen at real internal boundaries, and the sandwich
+check exercises them (ledger conserved on the middle segment at 1.3e-4 of turnover,
+mixed-vs-averaged exit price 2.9e-2 ln, a wake on the unaveraged segment refused by
+name). Parallel over slices with the averaged path's guarantees (results are
+bit-identical across thread counts. The harness checks it). Wakes/space
+charge/element wakes are refused. Each run writes `<out_root>.ledger.txt`.
+
+Measured (`check_unaveraged.py`, in the harness, self-referenced or closed-form):
+
+| Check | Measured | Check level |
+|---|---|---|
+| energy ledger: max d(E_beam+U_field) over field-energy turnover | **3.7e-6** | 1e-4 |
+| energy ledger, 100 um seed, 20 and 40 substeps a period | 3.5e-6, 2.1e-6 | 1e-4 |
+| ledger internal (kick-side vs realized beam change) | 7.7e-6 | 1e-4 |
+| ballistic dark run: max dgamma (B does no work) | **exactly 0** | 1e-12 |
+| ramp handoff: emittance ratio − 1 / orbit shift / mean-px shift | 9.8e-11 / 1.9e-9 m / 3.6e-14 | 1e-6 / 1e-7 / 1e-6 |
+| fc planar (h=1) vs closed-form JJ: 0.75051 vs 0.75095 | **5.9e-4** | 5e-3 |
+| fc helical (h=1) vs aw: 0.84803 vs 0.84853 | **5.9e-4** | 5e-3 |
+| fc planar h=3 vs closed form: 0.21287 vs 0.21302 | **7.1e-4** | 5e-3 |
+| convergence fc(10/20/30 steps per period) | 0.750582 / 0.750505 / 0.750502 | 5e-4 on 30 vs 20 |
+| full-segment gain curve, unaveraged vs the averaged default (bmad_standard maps), ln ratio at exit | **2.7e-3** | 0.2 (priced) |
+
+Two merit choices over the references' conventions, both measured: the source
+deposits with `1/u_s` (not Genesis4's averaged `1/gamma`), making kick and source
+exact energy duals: the ledger tightened 65× to the gamma-pz round-trip floor, while
+the period-averaged limit moves only ~5e-9, and the magnetic push is explicit RK4
+because fourth order is what makes fc measurable at 6e-4 with 20 steps/period. Its
+non-symplecticity is priced at gamma exact / emittance ≤ 3.3e-6 over the longest
+benchmark segment (266 periods, 5320 steps), with the ballistic check standing watch
+should production-length unaveraged runs ever appear.
+
+The JJ Bessel factor and its h=3 counterpart emerge from the raw dynamics at 6e-4,
+the first independent check on `fel_und_coupling`'s closed forms, and on the
+harmonic-load rule (the beamlet quiet start cancels every harmonic below `beamlet_size`, so
+`nbins = 8` is quiet at h=3 and no quadrature load is needed for this measurement).
+The h-probe is just the same undulator with the field at `lambda1/h`: the mode is
+harmonic-agnostic.
+
+Mutations bite, each on its named check: flipping the E·v kick sign fails the ledger
+at 2.0 (energy created) and the gain comparison at 0.69, while the magnitude-blind
+fc checks pass it, which is why the ledger is check zero. A hard-edge entry
+(`global%unaveraged_ramp_periods = -1`, the explicit sentinel) fails the orbit-handoff check at 3.2e-5 m (19 sigma of the
+probe beam. Note the exit momentum re-absorbs the quiver at integer-period lengths,
+so the orbit, not the exit mean px, is the reliable instrument).
+skipping the exit handoff flag is refused at the first seam element.
+
+(val-two-polarizations-vector-radiation)=
+## Two polarizations: vector radiation, tilt honored, the crossed undulator
+
+The radiation carries (Ex, Ey) when any FEL element is tilted (`UNDY: UNDX,
+tilt = pi/2` is a y-planar undulator, standard Bmad, no new attribute), when the seed
+is y-polarized (`seed_polarization = 'y'`), or when the field read from `field_file`
+carries both planes. Otherwise Ey is never allocated and the
+single-component path runs untouched (every tier bit-for-bit, the compatibility
+keystone). The third condition was missing: the state was decided at lattice setup from
+the first two, and a restart from a y-polarized field under a deck that stated no seed
+polarization allocated one plane in the stats and the device and wrote past it at the
+first record. An imported field now decides its own planes, the refusals that depend on
+the state are made again after the import, and the check restarts a y-seeded helical
+run with and without the seed's polarization and holds the two diag files byte identical. Kick and deposit act through each element's polarization 2-vector (planar:
+(cos t, sin t), helical (1,+i)/sqrt2). The unaveraged mode needs no polarization
+code at all, since its real per-particle currents work against and deposit into their own
+components. One openPMD dump holds both polarizations as components x and y of its
+mesh record, and the stats file carries field/total, field/x and field/y under the same
+dataset names.
+
+The helical handedness is checked with seeds of both circular polarizations, since a total power cannot tell them apart and the dark-start comparison of the scalar and vector paths never could. A cold, nearly chargeless beam through the helical probe is driven by a uniform seed as the scalar envelope, as the pair (1, +i)/sqrt2 and as the pair (1, -i)/sqrt2 of the same total intensity, in the averaged mode and the unaveraged one. In each mode the co-rotating pair reproduces the scalar seed's rms energy modulation at 1e-6 and the counter-rotating pair leaves it below 1e-2 of that: 4e-6 in the averaged mode, which carries no beat between the two rotations, and 1e-3 in the unaveraged mode, where the beat averages to nothing over whole periods and the ramps leave that much. The averaged vector once carried (1, -i), so the two modes selected opposite handedness from one field: a seed that drove the averaged element left the unaveraged one unmodulated, and a mixed two-plane line radiated the two elements into opposite circular polarizations. The unaveraged mode's Lorentz force, which needs no vector, is the authority the averaged vector now follows.
+
+Measured (check_two_polarization.py, in the harness -- symmetries and physics, not
+reference files):
+
+| Check | Measured | Check level |
+|---|---|---|
+| rotation identity, averaged (all-y line + swapped beam == all-x line) | **4.5e-15** | 1e-8 |
+| rotation identity, unaveraged | 4.1e-6 | 1e-5 (the vector path carries the betatron-current radiation the scalar convention omits -- a refinement, priced) |
+| beam-size swap identity, both modes | ~1e-16 | 1e-8 |
+| crossed undulator: x-field gain isolation through the y set | **1.6e-14** (avg), 1.7e-6 (unavg) | 5e-2 |
+| crossed undulator: the y field lights up from carried-over bunching | Py/Px ~ 1e-2 | floor 5e-3 |
+| averaged vs unaveraged crossed y-power, ln | 0.25 | 0.5 (priced) |
+| unaveraged TD ledger over both components | 9.6e-5 | 1e-3 |
+| 1 vs 8 threads, crossed TD | byte-identical | (exactness, no level) |
+| helical re-anchor (vector vs scalar path, shot-noise power) | **7.2e-15** | 1e-12 |
+| tilt on helical / tilt with transcribed maps | refused | (refusal, no level) |
+
+The rotation identity uses the driver's `swap_beam_xy` check instrument (the RNG
+draws its planes sequentially, so the generated beam itself is never swap-symmetric).
+The elliptical follow-on (cartesian_map-derived coupling, APPLE-II, the Ming-Xie
+ladder, B0's em_field_calc unification) builds on this foundation.
+
+The helical re-anchor, which rotates the reference polarization basis and must return the same field, closes at **7e-15**.
+
+(val-harmonic-fields-and-the)=
+## Harmonic fields and the openPMD wavefront
+
+The walk carries an ordered set of radiation fields, Genesis4's `vector<Field*>`
+shape, with the fundamental always entry 1. A harmonic field h (namelist
+`harmonics = 1, 3, ...`) lives at wavelength lambda_1/h and enters the physics in
+exactly three places: its coupling fc(h) (the Bessel factor, zero for every
+harmonic of a helical device), the harmonic ponderomotive phase h*theta in kick and
+deposit, and its own diffraction kernel and escape accounting. In V/m no other
+factor appears. Genesis4's per-field ks factors are its internal unit conversion,
+absorbed once. Harmonic fields start dark and grow from the beam's bunching
+(nonlinear harmonic generation: `examples/harmonics/`, P3 climbing nine decades to
+5.1 kW under a 200 MW fundamental in 4 m), or import. A single-entry set is the
+pre-harmonic walk bit for bit (the two-polarization overlay discipline again).
+Harmonics with two live polarizations, and with an unaveraged element, are refused,
+so unvalidated combinations refuse rather than guess.
+
+Dumps speak one format, openPMD, in both directions. A field dump is an openPMD
+EXT_Wavefront file (`.wf.h5`), both polarizations as complex components of one mesh
+record (h5py reads them as complex128 natively), one file per harmonic with
+photonEnergy identifying it, and a harmonic's file carrying `-h<h>`. The standard
+document is authoritative: the harness verifies every required attribute against its
+text independently of the writer. A file that is not openPMD is refused on
+import, with the conversion command in the message, and
+`lucifer/tests/scripts/convert_genesis.py` converts either kind of file in either
+direction. The Python side of the round trip is openPMD-beamphysics's own
+`Wavefront.from_openpmd`/`write_openpmd`, exercised against the Fortran writer and
+reader every harness run.
+
+One format rather than a choice of formats is a decision, and its cost is one
+conversion step in the benchmark: the Genesis4 reference chains write their own dumps
+and the harness converts them once per chain before the tiers read them. What that
+buys is that no writer in the physics code has to hold a second chart, no deck names a
+format, and every dump carries the per-particle weight.
+
+Measured (check_harmonics.py, the harness's harmonics section):
+
+| check | level |
+|---|---|
+| planar SS tier vs Genesis4, fundamental power | 5.3e-8 |
+| planar SS tier vs Genesis4, dark harmonic-3 growth | 1.3e-4 |
+| one-step dark deposit P3/P1 vs the exact Bessel sum | 3.3e-16 |
+| the converter's Genesis4 view of a dump, complex values | 1.5e-16 |
+| Fortran openPMD read-back, re-dump | dataset-identical |
+| Python Wavefront class energy (its Genesis4 path) | 1.2e-12 |
+| Python openPMD read + round trip | 1.4e-16 / exact |
+| Fortran reads the Python writer's file | dataset-identical |
+| 1 vs 8 threads (TD harmonic run) | byte-identical |
+| six refusals (anchor, unavg, two-pol, frequency domain, no-match, format) | message matched |
+
+(val-phasing-between-segments-measured)=
+## Phasing between segments: measured, then built
+
+The offset and the migration are checked together, since each alone was checked and the pair was not: the migration checks ran without an offset and the phasing checks without migration, and the migration at a displaced element's last step read the displaced phase. On eight cold, nearly chargeless slices behind a 0.1 m break, a full carrier turn of `z_offset` (25.8 mm) moved every particle one slice and dropped an eighth of the charge, with the survivors outside their new slices once the phase was nominal again. The offset is now returned before that migration. `check_migration.py` runs the four cases, offset on and off against migration on and off, and holds every particle kept, no moves, every particle inside its window, and the offset run's phases against the zero-offset run's at 1e-9 rad.
+
+Between undulator segments the default is Genesis4's behavior, verified by
+measurement before anything was written: scanning an inter-segment gap by fractions
+of 2 gamma^2 lambda (25.8 mm per turn at the benchmark) leaves the bunching phase
+entering the next segment flat on Genesis4 and on this code alike, since segments are
+autophased, and the fractional drift slip never reaches the coupling. The
+deliberate off-phase knob is the wiggler's own `z_offset` (standard Bmad
+misalignment, anchored at the nominal position): a displacement delta shifts the
+entry phase by exactly -2 pi delta/(2 gamma^2 lambda), and the same scan run as
+Genesis4's own PHASESHIFTER element (which needs finite length to register, since a
+zero-length one silently does nothing) reproduces our curve at 1.9e-8, and the
+exit power against phi at 9.3e-9, so the phase reaches the physics identically, not
+just the bookkeeping (both codes tracking the same Genesis4-written initial dumps,
+on independently loaded beams the same comparison sits at 1.4e-4, which measures
+the two loaders, not the phasing). No new element, no new attribute.
+
+With `bmad_com[absolute_time_tracking] = T` in the lattice (honored per element
+through Bmad's own resolver), phasing follows the real spacings instead -- the
+recirculating-linac discipline: a wrong-length break visibly detunes the next
+segment, and the absolute-mode gap scan reproduces the relative-mode z_offset scan
+point by point. Chicanes work in both modes: the beam detours the closed bump via
+the seam while the radiation drifts the chord between undulator faces (from
+ele%floor, derived never entered). The arc-minus-chord delay becomes whole-slice
+window rotations plus, in absolute mode, its carrier phase. examples/chicane/
+flips a second segment between 1.32x gain and 0.94x absorption on 0.43 urad of
+bend angle -- half a wavelength of geometric delay.
+
+Measured (check_phasing.py, the harness's phasing section):
+
+| check | level |
+|---|---|
+| re-anchor baseline: gap scan flat (rad span) | 1.5e-3 |
+| z_offset knob vs -2pi delta/(2 gamma^2 lambda) | 1.5e-3 |
+| cross-mode identity (absolute gap == relative knob) | 1.2e-3 |
+| our knob curve vs Genesis4's PHASESHIFTER curve (shared dumps) | 1.9e-8 |
+| exit power vs phi: our knob vs Genesis4's shifter (shared dumps) | 9.3e-9 |
+| chicane, relative mode: geometric fraction dropped | 6.3e-6 |
+| chicane, absolute mode vs independent 2D geometry | 6.7e-4 |
+| 2D trace vs the small-angle closed form theta^2(2L_b/3 + L_d) | 6.4e-8 |
+| unaveraged ledger closure across the chicane | 4.0e-6 |
+| TD chicane: extra banked slices == floor(delay/lambda) at 3.5, 6.5, 10.5 lambda | exact |
+| TD chicane 1 vs 8 threads | byte-identical |
+| four refusals (open bump, genesis-model bend, oversize z_offset, first-element z_offset) | message matched |
+
+(val-spontaneous-emission-the-two)=
+## Spontaneous emission: the two FEL modes against Bmad's own radiation
+
+Bmad-only, no Genesis4 (the averaged mode's Genesis4 agreement is settled by the tiers).
+One short helical wiggler (`tests/bmad/spont_probe.bmad`, 40 periods, benchmark
+parameters), the same beam, tracked four ways -- `check_spontaneous.py` in the harness:
+
+| | Δγ over 0.6 m | vs analytic |
+|---|---|---|
+| analytic `(2/3) r_e γ² k_u² a_w²` (= the coefficient in Genesis4's `Incoherent.cpp`) | 0.018369 | the reference |
+| **Bmad `runge_kutta` + `radiation_damping`** (the same wiggler, Bmad's own tracking) | 0.018371 | **1.0e-4** |
+| Bmad `runge_kutta`, radiation off | exactly 0 | the integrator conserves |
+| averaged FEL mode | 1.6e-5 | 8.9e-4 of it, nothing |
+| unaveraged FEL mode | 6.0e-4 | 3.3% |
+
+Bmad's radiation damping reproduces the analytic rate to **1e-4**, so the reference is
+independent and not in doubt. The two FEL modes then say something specific:
+
+The **averaged (KMR) mode does not charge the beam at all**. Its step adds `2S` to the
+field while the particles are kicked by `E`, so the `4|S|²` part of the field-energy
+increment is created rather than taken from the beam. That is the model, not a defect
+-- Genesis4 carries an optional `&sponrad` module (`doLoss`/`doSpread`, off by default)
+precisely to add the missing loss and diffusion by hand. The check pins it as a known
+zero, so a future change that starts debiting the beam cannot pass unnoticed.
+
+The **unaveraged mode conserves energy by construction**, so its beam pays, but only
+for the radiation the grid can hold. An SVEA grid represents angles to the FFT Nyquist
+θ_max = λ/2dx, and the evidence that the captured 3.3% really is acceptance-limited
+undulator radiation is its scaling: varying only the acceptance (ngrid 64/128/256 at
+fixed box, θ_max = 0.79/1.6/3.2e-5 rad) moves the captured loss 0.21% -> 0.82% -> 3.32%,
+a measured 15.5x against a predicted 14.3x across a 16x range in captured solid angle.
+The absolute normalization sits ~3x below a dipole-limit estimate of the angular
+distribution, which is that estimate's own accuracy at a_w ~ 1 -- so the test checks
+the shape tightly and the magnitude loosely, which is the honest split.
+
+Resolved: both FEL modes now honor Bmad's global switches
+`bmad_com%radiation_damping_on` / `%radiation_fluctuations_on` (set directly in
+`&fel_params`, which exposes `bmad_com` the way Tao's `&tao_params` does. Interludes
+always honored them through track1). Measured, same instrument:
+
+| with the switches on | measured | check level |
+|---|---|---|
+| damping: averaged vs analytic | **8.9e-4** | 5e-3 |
+| damping: unaveraged vs the ramp+capture composite (0.9703 of analytic: the explicit term integrates the ramp envelope, the grid-captured self-field adds on top) | **2.1e-6** | 2e-2 |
+| fluctuations: averaged / unaveraged sigma growth vs the Saldin form | 1.3e-2 / 1.8e-2 | 5e-2 |
+| fluctuations: FEL form vs Bmad runge_kutta+fluctuations, ln | 0.13 | 0.25 (the references' own F-convention spread) |
+| 1 vs 8 threads with fluctuations on | byte-identical | (serial per-beamlet draws in fixed slice order) |
+| unaveraged TD ledger with radiation on: E_beam + U + U_esc − U_spont + E_rad | 4.6e-5 of turnover | 1e-3 |
+
+Fluctuation kicks are one draw per beamlet, exactly as Genesis4: independent
+per-particle kicks would break the quiet start's per-beamlet harmonic cancellation
+(and fluctuations + slice migration is refused for the same reason). Genesis4
+reaches the same variance with uniform x sqrt(3) draws. Ours are Gaussian. The
+physical limit. With the switches off (the default) every tier and check is unchanged
+bit for bit. The full trail includes the measurement that first
+exposed the gap (a dark segment where the averaged model's field gained 134x what its
+beam paid) and the measurement-design lesson (cold beam for fluctuation growth: with a
+real energy spread the sigma^2 differencing drowns in cross-covariance sampling
+noise).
+
+(val-the-coherent-source-simplex)=
+## The coherent source (SIMPLEX hybrid)
+
+`global%source_model = "coherent"` swaps the per-particle source deposit for Tanaka's
+coherent retrieval (PRAB 27, 030703 (2024), implemented from the paper): the spatially
+incoherent part of the bunching, whose per-cell sampling noise makes under-populated
+runs overestimate gain, is dropped from the source. The coherent part deposits as an
+analytic Gaussian carrying the slice's exact source phasor, centered and tilted by
+phasor-weighted moments (this port's extension) with Tanaka's kappa width fit. The
+field, gather, and every diagnostic are untouched. `"deposit"` stays the default and
+the reference the coherent model is measured against.
+
+Measured (check_coherent.py, the harness's coherent-source section): at M = 128/slice the
+plain deposit fakes ln P by +0.42 on a curve that truly absorbs, the coherent source
+stays at 0.048 -- a 64x particle reduction at the model's own bias (1.9e-2 at large
+M). Guarded: per-slice Gaussianity vs sampling significance (weighted by charge),
+and refusals for unaveraged/harmonics/two-polarization and for dark starts -- measured
+~175x startup deficit: spontaneous spatially-incoherent emission dominates SASE
+startup and the coherent model drops it, so seeded runs only. Also priced once:
+SIMPLEX's coarse stepping (12 periods/step) costs 2.6e-3 in |ln P| here (taper and
+harmonics untested at coarse steps).
+
+(val-the-programs-own-identities)=
+## The program's own identities
+
+Three invariances of the driver, none of them physics, each one a way a rewrite could break the tracker silently.
+
+The library never stops. Every error returns through `err_flag` and the program decides, so `tests/lucifer_smoke_test.f90` drives the whole library with no namelist anywhere and reproduces a namelist run dataset-identically. `track_fel_line` is re-entrant, and twice in one process is bit-identical to two processes.
+
+A windowed run composes with the full one. `global%track_start`/`track_end` bound the walk, but the schedule (slippage, autophasing, break geometry, including the end-of-lattice fixup) is always built on the full lattice. So `[start, D]` followed by `[after D, end]` from its dumps reproduces the one-shot run to the dump format's own round-trip floor, measured **3e-13** and held at 1e-10, with the walk itself bit-for-bit and a windowed run's finals equal to the full run's mid-line dumps exactly.
+
+Refusal texts are a supported contract. stdout is otherwise for humans and carries no contract at all, which is why the suite reads files rather than scraping the screen. The one exception is deliberate: a refusal must be recognizable from its message, so the suite matches the capitalized text of a refusal together with a nonzero exit status. Those texts therefore change only with their checks, in the same commit.
+
+A fourth: an element-driven line reproduces the namelist-driven reference bit-identically at $z=0$, growing only to **3.4e-12** over the line, which is the one-ulp round trip of the $a_w$ lattice attribute. The FEL element's assertion checks refuse each malformed lattice, naming the attribute at fault.
+
+(val-parallelism-openmp-over-slices)=
+## Parallelism: OpenMP over slices, bit-identical by construction
+
+Slices are independent within an integration step: the only cross-slice operations are
+slippage (an index rotation, applied serially between steps) and the per-beam `phi0`
+advance (one scalar, computed before the loop). The slice loops of `fel_track_und_step`
+and `fel_track_interlude_genesis` are therefore plain `parallel do` regions, and the work
+of the parallel step was making the per-slice step safe to run concurrently:
+
+- The FFTW plan cache in `wavefront_mod` is **threadprivate**: each thread owns its plans
+  and its aligned work buffer (the change the cache's design note anticipated). Plan
+  *creation* stays inside a named critical section (FFTW's planner is globally
+  serialized), while plan *execution* touches only the calling thread's buffer.
+- The field-solve kernel (`fel_k2`) is built **once, serially**, by
+  `fel_field_kernel_init` before any parallel loop, and is read-only ever after.
+  `fel_field_step` errors on a mismatch rather than rebuilding, so nothing writes module
+  state inside a parallel region. The source accumulator is a local of `fel_field_step`,
+  one per invocation.
+- The Bmad-seam interlude loop stays **serial** at the slice level: `track1_bunch`
+  parallelizes over particles internally (`track1_bunch_hom`, on by default via
+  `global_com%mp_threading_is_safe`), so the threads are already busy inside each call
+  and an outer parallel loop would nest.
+
+Because each slice's arithmetic is identical regardless of which thread runs it (no
+cross-slice reductions exist in the step loop), the result is **bit-identical across
+thread counts**, and the harness checks that: the time-dependent single-segment
+configuration reruns with `OMP_NUM_THREADS=8` against the 1-thread run, requiring the
+diag file byte-equal and every dump dataset exactly equal. (Whole-file `cmp` of HDF5
+would false-alarm on object-header timestamps. The comparison is per dataset.)
+
+Measured scaling, full 6-FODO line, 32 slices x 2048 particles (Apple Silicon, debug
+build):
+
+| Threads | Wall time | Speedup | Efficiency |
+|---|---|---|---|
+| 1 | 129.6 s | 1.00 | the reference |
+| 2 | 74.4 s | 1.74 | 87% |
+| 4 | 46.4 s | 2.79 | 70% |
+| 8 | 32.6 s | 3.97 | 50% |
+
+It saturates near 4x at 8 threads. Two parallel regions are spawned per integration
+step, and on this machine 8 threads includes efficiency cores. With 32 slices there is
+also little schedule slack: 4 slices per thread at 8 threads. Production-size runs
+(hundreds to thousands of slices) have more parallel work per serial byte, so this is
+the floor of the scaling rather than its ceiling.
+
+[](performance.md#perf-thread-scaling) measures the same curve at 96 slices in a
+production build and gets 7.00x at 8 threads and 9.59x at 12, which holds that claim. It
+also prices what the serial fraction is made of. The slippage rotation is 0.3% of the
+walk, the per-slice diagnostics reduction runs slice-parallel, and every phase this file
+can name totals 0.5%, so the rest is the cost of entering a parallel region.
+
+### Head to head against Genesis4 at 12 workers
+
+One command reproduces this measurement on any machine:
+
+```
+./lucifer/tests/run_perf_benchmark.sh
+```
+
+It detects the performance-core count (`--workers N` to override), sizes the window to
+4 slices per worker so Genesis4 does not pad, finds the MPI launcher that matches the
+Genesis4 binary's own linkage (an OpenMPI `mpirun` aborts an MPICH-linked genesis4 on
+sight), times all four runs with one external clock, and refuses to print a table
+unless the two codes' answers agree at the documented seam level first.
+
+Measured on a 48-slice run (slice count divisible by the worker count, so Genesis4 does
+not pad its window), full line, 2048 particles per slice, identical starting dumps,
+production/release builds on both sides, M3 Max with 12 performance cores. The answers
+agree at the documented seam level (4.0e-2) before any timing is quoted:
+
+| | Serial | 12 workers | Parallel speedup |
+|---|---|---|---|
+| Genesis4 (MPI) | 152.7 s | 35.8 s (12 ranks) | 4.3x |
+| `lucifer` (OpenMP) | 123.6 s | 19.4 s (12 threads) | 6.4x |
+
+The tracker is 1.2x faster serial and 1.85x faster at 12 workers. The parallel gap is
+the shared-memory bet showing up in a measurement: Genesis4's 12-rank run
+spent 68 s of system time on the per-step MPI slippage ring exchange and diagnostics
+gather, where this code's slippage is an index rotation in shared memory and costs
+nothing to communicate.
+
+(val-the-particlepath-cost-measured)=
+## The particle-path cost: measured, two levers adopted
+
+A real 42 m case (131 slices) at 2048 particles/slice ran at parity with Genesis4
+(96 vs 94 s, 12 threads vs 12 MPI ranks, same machine back-to-back). At 8192/slice it
+did not (164 vs 99 s). The per-element time stamps and an in-wiggler profile put the
+gap in one place: the FEL step's particle path (the RK4 + gather), whose cost
+quadrupled with the particles while the per-slice field FFTs (~68 s) stayed constant.
+[](performance.md#perf-the-particles-against-the-grid) measures that crossover as a
+table, and [](performance.md#perf-the-phase-profile) is the standing phase profile every
+run's own footer now prints.
+
+`tests/lucifer_advance_bench.f90` (built as `lucifer_advance_bench`) times the path serially
+at fixed state -- measured (min-of-5, this machine): full fel_advance **152
+ns/particle-step**, the RK4+ODE alone 87.5, the four sin/cos pairs the ODE evaluates
+48. A clang -O3 twin of the same verbatim RK loop runs 68 ns, and its sincos loop
+13.7 ns. The gap is codegen and libm rather than physics (macOS gfortran has no vectorized
+libm and emits scalar calls).
+
+Adopted, as one named value change (each pays nothing alone, together full
+fel_advance drops to ~108-125 ns and the real case 164 -> 143 s):
+
+- per-file `-O3` on `fel_track_mod` (CMakeLists `set_source_files_properties`), and
+- the paired-sincos shim (`code/fel_sincos.c`): one libm call for the (sin, cos)
+  pair at the ODE's three call sites.
+
+The change is 1-ulp-level: gfortran's sin/cos intrinsics differ from libm's sincos
+by one ulp on ~2e-6 of arguments (measured: 73 mismatches in a 44M-point sweep of
+the theta domain. The C-side test of __sincos against libm sin/cos was clean, so
+the divergence is gfortran's intrinsic lowering), and -O3 re-contracts floating
+arithmetic. Per the tier contract, the full benchmark re-ran and every tier holds
+its Genesis4 tolerance. Four recorded values moved at the ulp-amplified level
+(tier1_unavg 6.934012e-02 -> 6.933979e-02, tier2_genesis 1.772017e-05 ->
+1.771895e-05, tdsase 2.292890e-06 -> 2.292906e-06, weight_split 7.917158e-13 ->
+3.508953e-13). The other seven are unchanged.
+
+The interludes (the seam) now track SLICE-PARALLEL where they can: the per-slice
+track1_bunch loop runs one slice per thread (coarse granularity instead of
+per-particle inner threading), BIT-FOR-BIT at any thread count against the serial
+baseline (checked at 1 and 8 threads on tier2 and td2). Two boundaries, both
+deliberate: radiation fluctuations keep the serial loop (they draw from the one
+shared RNG stream inside track1, whose order must stay fixed), and wake-carrying
+elements were always whole-window concatenations (manual [](fel-physics.md#sec-seamwake)), so lattices whose
+interludes all carry wakes see no change. One hard-won implementation note: the
+scratch bunch is BLOCK-LOCAL inside the loop body, not an OMP `private` variable --
+gfortran left a `private` copy of the allocatable-component derived type improperly
+initialized (a deterministic 2x bunching shift, present even at one thread), while a
+block-local declaration gets Fortran's own default initialization.
+
+Also measured and worth knowing: the production (-O2) and debug (-O0) trees were
+never bit-identical to each other (FP contraction). The bit-for-bit keystone is a
+WITHIN-tree contract, and the harness runs the debug tree. And the remaining gap to
+Genesis4 on the 8192 case (143 vs 99 s) now sits in the per-slice field FFTs and the
+wake-path interludes, with the clang-twin numbers bounding what further particle-path
+codegen work could still buy (~68 ns vs our ~125 per particle-step).
+
+(val-source-filter)=
+## The source filter, against Genesis4's own
+
+The angular filter on the source term ([](fel-physics.md#sec-source-filter)) is a transcription, so it is checked the way every transcribed path is: both codes run the same configuration from the same particles and the same field, and what is left over is transcription fidelity. Genesis4 4.6.15 carries the filter as `source_filter`, so the reference exists rather than having to be argued for. The chain is the pure-SASE deck with the filter on at Genesis4's own defaults, `xcut = ycut = sigmoid = 1`, which puts the sigmoid's half-height at twice the Nyquist angle, off the grid, so the filter is the sigmoid's soft roll-off alone. The same deck with the filter off is the `tdsase` tier.
+
+| Run | Line | Window power at the end | Relative to Genesis4 | Worst over records |
+|---|---|---|---|---|
+| Filter on, `xcut = 1` | 12 undulators | 32.739 MW | 1.80e-06 | 2.18e-06 |
+| Filter off | 2 undulators | 43.927 MW | 1.26 | 1.28 |
+| Mutation: the sigmoid on the field instead of the source | 2 undulators | 4.722 MW | 0.757 | 1.28 |
+| Mutation: the sigmoid's edge at twice the cut | 2 undulators | 21.428 MW | 0.101 | 1.08e-01 |
+
+The filtered run lands at 2.18e-06, which is the `tdsase` tier's own level of 2.35e-06 against the same reference chain with the filter off. The filter is transcribed to the fidelity of the path it sits in.
+
+The three rows below it are why that number means something. The unfiltered run differs from the filtered reference by 1.28, so the filter is what moved the answer rather than the comparison being insensitive. Both mutations leave a run that completes and a power curve that stays plausible, since a sigmoid on the field suppresses wide angles too and an edge at twice the cut is the right shape in the wrong place. The second mutation moves both cuts together, and its level moved from 5.0e-02 to 1.1e-01 when it stopped leaving `ycut` at Genesis4's default. Only the reference separates them. Each of the three is wrong from its first step, so each stops at the second undulator: a full line to prove it would cost four times the section for no more evidence. Over the whole line the filter removes a factor of 3.6 of the exit power on this deck.
+
+`tests/scripts/check_source_filter.py`, section `source-filter`, tolerance 1e-4.
+
+On the device the filter takes a different route to the same quantity. The CPU multiplies the sigmoid onto the source inside the field's own transform pair, which it has to spare. The device's fused solve adds the source in real space in its last pass, so the source is filtered in place first by four passes of its own and the solve is left exactly as it was. The two are compared on a time-dependent 64-point deck, since Genesis4's reference chain is a 255-point grid and the Metal solver takes powers of two: the window power agrees at 1.3e-5, and the filter removes 2.3x of it. On the 256-point SASE example the same comparison is 1.7e-4 with 4.1x removed. The mutation hook is the CPU check's own and the device refuses it, since it carries no second solve to make wrong. `tests/scripts/check_device.py`, section `device`.
+
+(val-fp32-lockstep)=
+## The FP32 particle path, priced by lockstep
+
+Apple GPUs have no FP64, so a single-precision form of the averaged FEL advance exists as a measured object before any kernel: an FP32 twin steps beside the FP64 path from a shared state at `fel_advance`'s own sequence point, and `global%fp32_check` records the per-quantity divergence (`fel_fp32_mod`, [](input-reference.md#param-global-fp32-check)). The twin carries the three reformulations FP32 forces, each documented in the module header with the quantum that forces it: energy as an offset from the reference (the FP32 quantum of absolute gamma is 1.35e-3 against a per-step change of 3.0e-4), phase as a residual with the base rotator evaluated in FP64 once per slice, and the detuning as a difference of like small quantities (the FP64 ODE's square-root argument is 1 minus ~1.3e-8, which is exactly 1 in FP32 and erases the phase equation).
+
+The longitudinal residual needs a moving reference, and the instrument's own guard found that. The split is $z = z_{ref} + dz$ with the reference one FP64 number per slice; on the instrument's first run the reference was static, the beam's common $z$ drift accumulated into the residual, and at step 514 of 1068 the guard refused the run at 28 ulps against its floor of 32. A secular term in the residual is silent death by quantization, so the reference now follows the slice's FP64 mean each step, one host number per slice, and in freerun mode the persistent residuals rebase across the move with `fel_fp32_renorm`, the same operation migration needs (round trip measured at 1 ulp).
+
+The field solve has its own twin: the deposit scattered into an FP32 source grid, FFTW's single-precision transform pair, and the propagator rounded from the FP64 kernel, applied to the twin's own field record each step. Two rows join the stream, the source grid and the post-solve field, both against the FP64 post-solve field's norm. In freerun the FP32 field carries across steps, fed by the twin's own deposit and read by its own gather, so the twin is a complete single-precision run beside the FP64 one, longitudinal and field state alike (the transverse maps stay FP64 and enter rounded). A freerun window is one slice by refusal: the twin keeps no slippage rotation of its own. That transform is FFTW's own single-precision interface, and the build detects it rather than assuming it: the conda toolchain carries `libfftw3f` and the off-site distribution's from-source FFTW is double precision only, so a build without the library refuses `fp32_check` instead of transforming in a precision other than the one it reports.
+
+Measured levels, worst over the run per quantity (M3 Max, production build; debug agrees):
+
+| case | pz (relative) | theta [rad] | phasor (of full charge) | source | field | guard [ulp] |
+|---|---|---|---|---|---|---|
+| steady state, 2048 particles, 57 m through saturation | 4.2e-7 | 4.7e-5 | 7.2e-6 | 7.2e-5 | 7.2e-5 | 1.9e3 |
+| SASE, 96 slices x 2048, full line through saturation | 4.1e-7 | 5.7e-5 | 2.8e-6 | 4.1e-5 | 4.1e-5 | 8.2e2 |
+| freerun (compounding), steady state | 1.8e0 | 3.3e1 | 2.1e-1 | 4.0e-2 | 1.3e0 | 2.2e3 |
+
+The lockstep rows are the per-step cost of FP32: about 4e-7 on the energy chart, 5e-5 rad on the phase, under 1e-5 on the source term and under 1e-4 on the field step, flat across a run because the state refreshes each step. The source and field rows agree to three digits, so the deposit's FP32 phase noise dominates the step and the single-precision transform contributes beneath it, consistent with published transform-only figures of 2.2e-7 to 4.0e-7. The transverse rows measure representation only (~6e-8, FP32 epsilon), since the transverse maps stay FP64.
+
+The end-to-end number, the one a device port is judged against:
+
+| case | exit power (relative) | exit bunching (absolute) |
+|---|---|---|
+| freerun, one 3.99 m segment, exponential gain | 1.0e-3 | 2.9e-8 |
+| freerun, 57 m steady state, deep saturation | 2.7e-1 | 3.6e-2 |
+
+The gain-regime figure sits at the order of the published backends' end-to-end SASE comparison (6.7e-4). The deep-saturation figure is a different animal and reads as one: past saturation the power oscillates with the synchrotron rotation, an FP32 trajectory ends at a visibly different phase of that oscillation, and a 27% instantaneous power difference at one z is what phase decorrelation looks like there, with the bunching magnitude off by 3.6e-2 on 0.185. A device port validated per step by this instrument's lockstep rows is not exposed to that compounding; a device run trusted end to end through deep saturation is, in FP32, and now the number is on record rather than discovered later.
+
+| check (harness section `fp32-lockstep`) | level |
+|---|---|
+| lockstep steady and TD levels within the recorded ceilings | pz 2e-6, theta 3e-4, phasor 3e-5, source 1e-4, field 1e-4 |
+| residual guard healthy | >= 256 ulp (measured 5.7e3 to 6.8e3 on the check cases) |
+| bucket renormalization round trip | <= 1.5 ulp (measured 1.0) |
+| FP64 untouched: diag byte-identical, instrument on vs off | exact |
+| the mutation moves the theta level and the source row | >= 10x and >= 5x (measured 12.5x, 29x) |
+| freerun compounds past lockstep on the phasor | measured 14x |
+| freerun end-to-end power divergence on the gain segment | <= 1e-2 (measured 6.2e-4) |
+| instrument stream at 1 vs 8 threads | byte-identical |
+| wake with the instrument on | refused |
+
+The instrument is read-only on the physics by construction and by check: nothing outside it reads the FP32 state, and the instrumented run's FP64 outputs are byte-identical to the uninstrumented run's. Configurations this twin does not cover (harmonics, two polarizations, the coherent source, wakes, space charge) are refused rather than half-measured. The unaveraged mode has a twin of its own, [](#val-unaveraged-fp32).
+
+(val-device)=
+## The Metal backend, judged by the instrument
+
+Slippage on the device keeps the fundamental's bookkeeping for every member of the field set, and the energy it transmits out of the window is now stated in the footer per member, since the unaveraged ledger was otherwise its only reader. The device's own routine once formed the transmitted slice's light time from the member's wavelength alone, where `sample` counts fundamental wavelengths, so a third harmonic's escaped energy came out a third of what left the record while the surviving field and the window power were right. The routine takes the harmonic number as the CPU's does, and the check holds the device's escaped energy to the CPU's on the time-dependent harmonic deck: the fundamental to six digits and the third harmonic at 1.2e-5, against the factor of three the defect gave. `check_device.py`, section 7c.
+
+`global%device = "metal"` runs the FEL step on an Apple Silicon GPU ([](input-reference.md#param-global-device)). The seam is one C interface (`device/lucifer_device.h`) behind `iso_c_binding`, one Objective-C++ file behind that, and a stub that refuses on every other platform, naming the toolchain it would need; no Metal type or call appears anywhere else, so a second backend is a new implementation of the same interface plus one CMake branch. The design is this project's own prior work, the Genesis 1.3 v4 backends on branch `gpu/metal-engine` (commit 4919b01, unmerged upstream): the transform kernels, the one-command-buffer step and the buffer-sync rule transcribe `MetalEngine.mm` from that branch, while the physics kernels transcribe Lucifer's own `fel_fp32_mod` twin and the Bmad transverse map, so the arithmetic the device runs is the arithmetic the lockstep instrument already priced.
+
+The source deposit is the second place this backend carries fixed point, and for a
+different reason. Float addition is neither associative nor commutative, so a deposit
+that adds atomically into a cell answers differently depending on the order threads
+arrive, and two runs of one deck differed by 2.0e-7 on a field power and 1.6e-8 at the
+exit. That is far inside the band against the CPU and it is not an accuracy problem, but
+it costs every device output the right to be compared exactly, which is why the migration
+no-op was once measured against the spread between two identical device runs. Integers do not have that
+property, so the deposit accumulates in ticks of a power-of-two scale and converts once
+where its first consumer reads it, which is the first of the filter's source passes when
+the filter is on and the solve's last pass when it is off, since nothing transforms the
+source then. Sixty-four bits are carried as two 32-bit words, this hardware having no
+64-bit atomic of any kind: every low addend is unsigned, so the carry count is a property
+of the sum rather than of the order. Thirty-two bits would not serve. A scale that keeps
+the worst case inside an int leaves a quantum that loses to the float accumulation it
+replaces by a factor of seven, where sixty-four bits beat it by the same factor, and the
+four configurations in the table below hold at the float deposit's own levels. The bound is
+every macroparticle of the run in one cell in phase at an eighth of the lowest gamma the
+run loaded. That gamma is measured over the beam rather than assumed of the reference, and
+the eighth is then margin for what tracking can take off a particle, which is of order rho
+and a thousand times smaller. The run's charge gives the bound at setup, the element's
+source scale and the roll-off complete it at the first step, and the scale, that origin
+and the headroom are printed there: on the Aramis segment, 2^24 ticks per volt per metre
+against a bound of 2.7e11 V/m, the quantum 37 bits below the FP32 spacing of the bound.
+
+The roll-off is the kernel's own, not a simpler stand-in for it. The kernel takes the
+particle's offset from the undulator axis, rotates it when the segment is tilted, and
+forms the roll-off from that, so the bound takes the box half width plus the axis offset
+and puts the whole of that radius against the larger of the two curvatures. Bounding each
+axis at the half width with no offset and no rotation, which is what this did first, is
+short by up to four and a half in the roll-off term and about twelve percent in the bound.
+
+That floor is checked in the kernel, where the deposit happens. A readback cannot do it:
+it sees the state at an element's last step, so a particle is free to cross the floor and
+come back before anything looks, and a breach found there is found after that element's
+deposits have already used the bound. The kernel tests every particle before its
+contribution is converted or accumulated, drops one that fails, and records a fault that
+survives to the next drain. The test is written so that a gamma which is not a number
+fails it. On seeing the fault the host stops the run at that readback, which is ahead of
+any stats row, dump or exit line drawn from the step, so nothing computed across a
+breached interval is written. Raising the floor above the beam demonstrates it: the run
+exits non-zero, names the floor and the lowest gamma read back, and writes no output file.
+Guarding in the kernel also covers the twin, which is never resident and whose readback a
+host check never reaches.
+
+What the quantum contributes is measured rather than bounded. The deposit's scale can be
+shifted by whole bits, which moves the quantization and leaves the phase and the FP32
+arithmetic beside it alone, so the source row's composition can be read off directly. On
+the cancelling-phase deck the row is 1.4673e-05 at the derived scale and the same to every
+digit with the quantum 24 bits coarser, a factor of sixteen million. It first moves at 26
+bits coarser, to 1.0100x, and reaches 1.0505x at 29, which is the last shift the headroom
+refusal allows. So the floor of eight bits sits where quantization begins to cost a few
+percent, and at the thirty-seven bits the derivation delivers it costs nothing the row can
+resolve. Both ends are asserted, the row unmoved at 24 bits coarser and the run refused at
+30.
+
+Two refusals guard the scale, and they guard different things. The headroom refusal
+catches a quantum that would not beat the float accumulation it replaced. It cannot catch
+everything, because the scale is chosen against the same bound the headroom is measured
+against, so their product always lands in one binade and the headroom reads 37 bits
+whatever the deck: no deck reaches that refusal, and raising the minimum past 37 is what
+fires it. What the headroom cannot see is a scale the kernel cannot hold. The scale and
+its reciprocal reach the kernel in single precision, and a bound below about 5e-20 volts
+per metre sends the scale past the largest float while a bound above about 4e56 sends its
+reciprocal there. Either would deposit through an infinity with the headroom still
+reporting 37 bits. Both are refused explicitly. Neither is reachable by a deck with charge
+in it, the tested decks sitting some thirty orders inside the nearer edge, and the refusal
+is demonstrated by forcing the scale past what a float holds.
+
+One deliberate divergence from the reference backend, stated where the citation is: the longitudinal state is not an absolute FP32 theta but a 64-bit fixed-point phase, in ticks of $2\pi/2^{32}$ off a static FP64 per-slice reference. The low 32 bits are the phase modulo one radiation period at a uniform 1.5e-9 rad, the high bits count whole periods, and a bucket crossing is exact integer arithmetic. The uniform quantum is what lets the reference stay static for a whole element where the FP32 residual of [](#val-fp32-lockstep) needed a moving one. Bucket wraps are modular arithmetic and are asserted exactly, on the device's own arithmetic at every setup: a bucket shift and its return must be bit-exact and the extracted phase must never see the shift, a statement no tolerance is allowed to soften.
+
+The backend is judged by the lockstep machinery with the device in the twin's role: `device = "metal"` with `fp32_check = "lockstep"` leaves the FP64 run untouched (diag byte-identical, on against off) and the device advances every step from the shared pre-step state, whole -- its own transverse maps, push, deposit and field solve -- with the rows in the same `.fp32.txt` stream. The ceilings are three times the recorded CPU-twin levels above, absorbing that Metal's precise-math sincos is not libm and its fused ops round differently; the transverse rows get their own recorded levels, since the CPU twin refreshed those from FP64 and the device runs its own FP32 maps. A jump against the refreshed reference is a kernel bug by definition. Measured levels, worst over the run (M3 Max, both builds agree; the check cases of `check_device.py`, grid 64):
+
+| case | x..py (relative) | pz (relative) | theta [rad] | phasor | source | field | guard [tick] |
+|---|---|---|---|---|---|---|---|
+| steady state, 1024 particles | 2.7e-7 | 1.4e-7 | 6.6e-6 | 7.3e-8 | 1.5e-5 | 1.5e-5 | 8.8e6 |
+| SASE window, 8 slices x 1024, slippage live | 2.8e-7 | 1.4e-7 | 6.8e-6 | 1.0e-7 | 6.4e-6 | 6.4e-6 | 6.8e6 |
+
+The guard column is the median per-step phase increment in ticks of the fixed-point quantum; its floor plays the same silent-z role as the residual guard above. The mutation hook reaches the kernels themselves: `fp32_mutate` perturbs the detuning resonance inside the shader by one part in $2^{12}$ and coarsens the uploaded phase, and the theta and source levels move by 710x and 52x, so the ceilings are demonstrated to catch a wrong kernel constant, not just a wrong upload.
+
+End to end the two roles corroborate each other. The freerun twin (state resident and compounding, single-slice window) lands at 5.1e-4 on exit power; the production run (`fp32_check` off, the device is the run, beam and field resident through each element with readbacks only at the stats comb's positions) lands at 5.1e-4 against the CPU run's diag rows on the same deck -- the freerun-measured order, and the same number twice by different routes. Wall times against the CPU are in [](performance.md#perf-device), with the dispatch floor stated.
+
+| check (harness section `device`) | level |
+|---|---|
+| device lockstep steady and TD levels within the recorded ceilings | x..py 1e-6, pz 1.3e-6, theta 1.5e-4, phasor 2.2e-5, source 2.2e-4, field 2.2e-4 |
+| phase-increment guard healthy | >= 1e6 ticks (measured 6.8e6 to 8.8e6) |
+| bucket wraps exact on device arithmetic | asserted bit-exact, never a tolerance |
+| FP64 untouched: diag byte-identical, device twin on vs off, steady and TD | exact |
+| the perturbed kernel constant moves the recorded levels | theta >= 10x, source >= 5x (measured 710x, 52x) |
+| device freerun compounds past lockstep on the phasor | measured 14x |
+| freerun and production exit power vs CPU, steady and TD | <= 1.6e-3 (measured 5.1e-4, 5.1e-4, 1.5e-5) |
+| wakes, radiation, harmonics together with two polarizations, an unknown backend, an unsupported grid | each refused |
+| harmonic lockstep, steady (bunched beam) and TD (shot-noise window): the ten rows inside the ceilings above, and per member phasor_h3, source_h3, field_h3 | <= 6e-7, 8e-6, 8e-6 (measured 6.6e-8 and 2.0e-7; 3.5e-9 and 2.7e-6; the same) |
+| harmonic read-only proof, mutation on theta and source_h3, freerun compounding | exact, >= 10x and 5x (measured 700x, 190x), measured 26x |
+| harmonic production P1 and P3 vs CPU, bunched beam, and TD window | P1 <= 1.6e-3 (measured 1.4e-6, 3.3e-6); P3 <= 1.8e-3 (measured 6.0e-4, 3.4e-6) |
+| device one-step deposit P3/P1 vs the Bessel closed form | <= 1.3e-5 (measured 4.4e-6; the CPU's 2.7e-14) |
+| device and CPU vs one Genesis TD harmonic reference at grid 64, P1 and P3 | device 1.5e-5 and 2.3e-5, CPU 8.4e-7 and 1.1e-6 |
+| quiet-start dark harmonic: P1 vs CPU; P3 | P1 3.0e-4 in band; P3 137x the CPU's, the FP32 floor radiating, recorded and not asserted |
+| two-plane lockstep, steady crossed and TD crossed: the ten rows | inside the ceilings above (measured x..py 1.9e-7, theta 2.5e-6, source and field 6.4e-6) |
+| two-plane read-only proof, mutation on theta and source | exact; >= 10x and 5x (measured 690x, 180x) |
+| crossed production Px and Py vs CPU, steady; Px and Py TD with slippage | Px <= 1.6e-3 (measured 1.4e-4), Py <= 1.3e-2 (measured 4.3e-3); TD both <= 1.6e-3 (measured 4.1e-6, 4.1e-6) |
+| crossed on the device: x-field isolation through the y set; Py/Px | <= 1.3e-5 (measured 4.3e-6; the CPU's 1.6e-15); >= 5e-3 (measured 8.8e-3) |
+| migrating TD lockstep, the heavy-migration deck at 16 slices with the capacity growing under it: the ten rows | inside the ceilings above (measured x..py 2.9e-7, pz 1.9e-7, theta 7.4e-6, phasor 2.0e-7, source and field 7.9e-6) |
+| migrating read-only proof: diag byte-identical, device twin on vs off | exact |
+| migration accounting with the device resident: conservation, phase continuity, window residency | < 1e-10, < 1e-10, 0 outside (measured 1.6e-14, 5.2e-15, 0 on 73,877 moves) |
+| heavy-migration window power, device vs CPU | <= 3e-3 (measured 4.0e-4) |
+| a slice outgrowing the setup rectangle grows the device's capacity | asserted from the run's own message |
+| migration no-op on the device: moves; two migrate = F runs; migrate T vs F final beam | 0; identical; identical |
+| two runs of one deck, every array of the statistics file, the filter on and off | identical, 127 arrays each, where the float deposit differed on 54 of them |
+| the deposit against the CPU's FP64 deposit, cancelling phases, unequal weights, charge in few cells, the largest load | 1.46e-5, 1.46e-5, 6.95e-6, 2.51e-6, each under the source ceiling and no worse than the float deposit's 1.46e-5, 1.47e-5, 6.89e-6, 2.51e-6 |
+
+The field set rides the device whole. Every harmonic member and both polarization planes are resident, stored member-major with one propagator per member, and the step's constants carry each member's harmonic number, coupling $f_c(h)$ and deposit scale plus the element's polarization pair. The push gathers every member at $h\theta$ and sums them into every RK stage, `fel_ode_multi`'s structure in the FP32 reformulation. The deposit writes every member's source at $e^{-ih\theta}$. The transform runs over every plane with its member's propagator, and the polarization factors apply at the field add as `fel_field_step` writes them. Every member rides the one fixed-point phase, at $h$ times it, so the exact-wrap assertion covers the set, and every plane slips together. With one member and one plane every kernel is the single-field arithmetic it was, term for term, and the eleven recorded levels above did not move. Harmonics together with two live polarizations is refused for the device as for the CPU.
+
+The instrument judges every member. The device twin fills the phasor, source and field rows as the worst over members, so the stream keeps its ten columns and its ceilings, and the footer adds each member's own worst for attribution. A member's phasor and deposit are compared at $h\theta$ through `fel_fp32_deposit64` unchanged, and every member's source and field rows are normalized by the fundamental's field, the run's power scale. That normalization is a measured decision: a harmonic's own norm cannot serve, because on a quiet start the CPU cancels the harmonic bunching to FP64 roundoff while the device's FP32 phase leaves it at $\sim 10^{-7}$ of the charge, and the first attempt read 6 to 8 on a deposit whose end-to-end power agreed at $10^{-3}$. The harmonic's fidelity lives in its phasor row, which needs no field normalization, and in the end-to-end harmonic power against the CPU.
+
+That floor is the one thing the set does not resolve, and it is recorded rather than hidden. The device's harmonic bunching error is $\sim 2\times10^{-7}$ of the charge, three times the fundamental's phase error as $h = 3$ predicts. Where the harmonic's true bunching sits above that, the device is right: the shot-noise TD window puts $b_3$ at $1/\sqrt{N}$ and the device lands at 3.4e-6 on $P_3$ against the CPU, a strongly bunched beam lands at 6.0e-4, and against one time-dependent Genesis reference with shot noise, imported by the CPU and the device alike at grid 64, the device lands at 1.5e-5 on $P_1$ and 2.3e-5 on $P_3$ where the CPU lands at 8.4e-7 and 1.1e-6. Where the true bunching sits below the floor, the device radiates the floor instead: on the planar steady-state tier deck with a quiet start and a dark third harmonic, whose $b_3$ is $\sim 10^{-8}$, the device's $P_3$ is 137 times the CPU's while $P_1$ holds its band. No guard refuses that case, because the same configuration with a strong seed bunches the beam past the floor within the segment (`examples/harmonics/` climbs nine decades and agrees at 4.7e-4); the phasor row states the floor per member, and a user compares it with the bunching the run is after. Steady-state Genesis holds no shot noise, which is why the reference here is time dependent.
+
+Slice migration runs with the device resident, and no kernel is involved. `fel_migrate_slices` touches no field and runs serially on the host at an FEL element's last step, so when the beam is resident there the pass reads the beam and the field set back first and then releases residency, since the host is now authoritative and the field came back with it. The comb readback and the element end that follow find nothing resident, so the readback moves rather than doubles, and the next element uploads the re-sliced beam. Migration grows a slice's arrays, and the device's particle buffers are a rectangle sized at setup to the largest fill, so an element entry or a twin step whose largest fill exceeds the capacity grows the rectangle, growth only and without a shader recompile, and says so in the run's output. The checks are `check_migration.py`'s own decks at the device's grid. Conservation and phase continuity hold on the device run by construction, since the pass runs on read-back arrays, and the check proves the order: the run bites past 73,000 moves with conservation at 1.6e-14 and continuity at 5.2e-15. The heavy-migration window lands at 4.0e-4 on exit power against the CPU. The lockstep instrument runs on a migrating time-dependent deck with the twin re-staging every step across the changed fills and the capacity growing under it, and the ten rows sit inside the ceilings above at the single-field levels. The no-op check is byte identity on the device as it is on the CPU, the fixed-point deposit having made two device runs of one deck agree bit for bit: a frozen-phase run with migration enabled reports zero moves, its final beam matches the migrate = F device run exactly, and two migrate = F device runs match each other exactly. One property of the instrument surfaced here and is recorded. The source and field rows normalize by the slice's own post-solve field, and on a quiet-start deck without shot noise every slippage feeds the tail slice a field at FP64 roundoff, so those rows read 0.4 on a deposit whose end-to-end power agreed at 4e-4. The deck the check runs carries a seed and shot noise, as the time-dependent lockstep deck above does, and the rows read 7.9e-6.
+
+One property was inherited from the reference backends and no longer holds here. Their deposits accumulate with device atomic adds whose ordering is not fixed, so two runs of one step differed in the source's last bit or two, and no device output could be asserted byte-identical against another device run. The fixed-point accumulator above ends that, and the two-run comparison covers every array of the statistics file. Everything the kernels do not cover is refused at setup or first use, and a build without the backend refuses the knob itself with the stub's own message. Which build that is comes from detection rather than from the platform: the backend needs macOS and a Clang-family Objective-C++ compiler, since it is ARC-managed Objective-C++ against the Metal framework, and a macOS build whose Objective-C++ compiler is a GNU one takes the stub like any other. The configure output names the backend it built, and a capability-free build was measured to produce byte-identical physics to a full one.
+
+(val-device-unaveraged)=
+## The unaveraged mode on the device
+
+The mode resolves the undulator quiver, so a record step is `nsub` Strang substeps of half magnetic push, radiation kick with its source deposit, half push, and the slice's own diffract and source add ([](fel-physics.md#sec-unaveraged)). Three kernels are the mode's own and everything else in the step is the kernels the averaged path already had.
+
+What is reused carries most of the step, which is why the port is small. The four-pass solve, the accumulator's clear, the fixed-point deposit's scatter, the residency and staging, and the tick phase chart with its exact-wrap assertion are unchanged. What is new is the quiver-resolving push, the kick with its deposit, and the ledger's spontaneous reduction. Their share of the device's own seconds is measured in [](performance.md#perf-device-unaveraged), and it moves with the load exactly as the CPU's split does: 34% of the device time at 512 particles a slice and 57% at 4096.
+
+Three quantities do not depend on the particle and are built in FP64 on the host, once a substep rather than once a particle, which is the hoist FINDINGS 7.37 records. The envelope $g$, its slope, and $\cos(k_u s)$ and $\sin(k_u s)$ at the four RK stage positions of each half push arrive as eight `float4` a substep. The optical carrier's base $e^{i\Psi_\text{mid}}$ arrives per substep per slice, reduced modulo $2\pi$ first, since $\Psi_\text{mid}$ reaches some 1700 radians over a segment and no float carries that. The propagator $\exp(K_2 \delta)$ is the entry `fel_field_diffract` reads, at the substep rather than at the record step.
+
+The lag is the one state variable of the push that no other line reads: $d\tau/ds$ depends on $\gamma$, $u_x$ and $u_y$ alone. The push therefore integrates it from zero over a substep and adds the increment to the 64-bit tick accumulator, so the lag is carried exactly and no arithmetic ever differences the increment against a lag that grew. That is what the FP32 twin of [](#val-unaveraged-fp32) could not do, and its guard on the residual is the measurement of what it cost there: the residual's own quantum overtakes the per-substep change on a long window, where a tick is $2\pi/2^{32}$ of a radiation period whatever the window. The kick then reads the lag as an angle in $[-\pi, \pi)$, where FP32 spacing is finest, exactly as the averaged push reads its own.
+
+The deposit's bound is this mode's own. A contribution here carries $|j|/u_s$ where the averaged deposit's carries a roll-off over $\gamma$, so the bound is the run's whole charge times the largest ratio the kernel is allowed to meet. The quiver sets that ratio, $|j|$ reaching $\sqrt{2}\,a_w$ at the peak of a planar wiggle, the betatron momentum adding a hundredth of it on the checked decks, and $u_s$ falling no lower than the gamma floor the device measured at setup. One rest momentum of headroom on the numerator covers a transverse momentum no FEL beam has. The kernel checks the ratio on every particle and refuses the run through the same fault the averaged deposit's gamma floor uses, so the bound is checked rather than assumed. On the check's decks the scale lands at $2^{26}$ ticks per V/m against a bound of $6.6\times10^{10}$ V/m, the quantum 37 bits below the FP32 spacing of the bound, as it is on every deck ([](#val-device)).
+
+The encoder shape is the averaged step's, repeated. One record step is one command buffer holding eight dispatches a substep: the accumulator's clear, a half push, the kick with its deposit, a second half push, the ledger's reduction and the solve's four passes, with one more dispatch a record step for the energy baseline. A 60-substep step therefore encodes 481 dispatches and an 89-step segment past 42,000, which is why the per-pass instrument commits early many times over on this mode and says so.
+
+The readback cadence is the comb's for the beam and the field, as it is on the averaged path, and one record step for the ledger. The stage factors and the carrier rotators are host writes into buffers the device is reading, so the command buffer drains once a record step before they land, and the ledger's two terms are read there because that drain has already been paid. The device is busy for three quarters to nine tenths of the walk on every deck measured ([](performance.md#perf-device-unaveraged)), so the drain is not what this mode waits on.
+
+The ledger's two terms cross the seam differently, and neither reduces with a float atomic. $\gamma$ changes only in the kick, exactly, so the record step's beam-energy change is $\sum w (\gamma_\text{end} - \gamma_\text{start}) m_e$ and the host forms it in FP64 from two readbacks in its own order. The spontaneous term $4\sum|\text{src}|^2$ has no such shortcut and reduces on the device: one threadgroup owns one chunk of one slice and one accumulator slot, reduces its chunk in threadgroup memory over a fixed pairing, and adds the result into its own slot as a compensated pair. Nothing is contended, so the arithmetic runs in one order, and two device runs of one deck give one answer. The check holds that on a time-dependent window at 4 threads against 8.
+
+Measured levels, worst over the run, the device in the twin's role on one Aramis segment at grid 64 and 1024 macroparticles a slice, 89 record steps of 60 substeps. Ceilings are three times the first measurement, `check_device.py`'s own convention.
+
+| row | steady | 8-slice window | ceiling |
+|---|---|---|---|
+| x | 1.13e-6 | 1.13e-6 | 3.5e-6 |
+| px, the quiver chart | 6.15e-6 | 8.29e-6 | 2.5e-5 |
+| y | 9.61e-7 | 9.66e-7 | 3.0e-6 |
+| py, the quiver chart | 6.38e-6 | 6.86e-6 | 2.1e-5 |
+| pz | 2.15e-6 | 1.97e-6 | 6.5e-6 |
+| theta [rad] | 3.38e-6 | 3.66e-6 | 1.1e-5 |
+| phasor | 6.54e-8 | 8.21e-8 | 2.5e-7 |
+| ledger, the source column | 5.23e-5 | 1.67e-3 | 5.0e-3 |
+| field | 6.38e-6 | 5.95e-6 | 2.0e-5 |
+| guard [ticks a record step] | 3.13e9 | 3.13e9 | >= 1e9 |
+| the FP64 diag and ledger, twin on against off | byte identical | byte identical | |
+| production exit power against the CPU | 1.72e-3 | 1.55e-6 | 5.0e-3 |
+
+The theta row is better than the CPU twin's 9.9e-6 and the phasor row better than its 7.7e-8, which is the tick chart's own doing. The ledger row is wider on the window because it is scaled by the energy the record step turned over, and on a dark-start shot-noise window a slice can turn over almost nothing.
+
+The mutation moves what it reaches. The hook coarsens the uploaded lag accumulator by 65536 ticks, which is $9.6\times10^{-5}$ rad, and the residual angle the kick reads. The theta row goes from 3.4e-6 to 9.8e-5, the phasor row from 6.5e-8 to 3.3e-5 and the field row from 6.4e-6 to 7.7e-4. The transverse rows do not move, and they should not: $\gamma$ changes only in the kick, so a phase perturbation reaches $x$ and $p_x$ at second order. That hook was itself a no-op in the shader until this landing, returning its argument unchanged for as long as it existed, and FINDINGS 7.71 records why.
+
+What this mode's ceilings are set by is arithmetic that predates it. An FP32 forward transform, propagator multiply and inverse transform lose about $1.3\times10^{-7}$ of the field's energy every time they run, systematically and in the same direction, where the FP64 pair drifts by $1.6\times10^{-12}$ over 5340 applications. Measured with the charge set to $10^{-30}$ C, so the repeated diffract is the only thing acting on the field: $-1.273\times10^{-7}$ a pair at grid 64, $-1.295\times10^{-7}$ at 128, $-1.499\times10^{-7}$ at 256 and $-1.787\times10^{-7}$ at 512, roughly linear in the butterfly stage count. The averaged mode runs the pair once a record step and a 12-segment line therefore loses $1.4\times10^{-4}$ of the field energy, which sits under every ceiling that mode records. This mode runs it `nsub` times, so one 89-step segment of 60 substeps loses $7.2\times10^{-4}$, and on the weakly seeded steady deck that is the whole of the exit power's 1.7e-3 divergence from the CPU. The check measures the per-pair loss on both decks and holds it in a band, so a pair that stopped being nearly unitary would show. The rate those four grids give is about 0.17 of an FP32 quantum a butterfly stage over the $2\log_2 n$ stages of a pair, $1.22\times10^{-7}$ to $1.83\times10^{-7}$ against the measured $1.27\times10^{-7}$ to $1.79\times10^{-7}$. The run header counts the pairs a field record sees over the line, substeps included, and projects the loss from that rate: 5340 pairs and $6.5\times10^{-4}$ on the one-segment unaveraged deck, 89 pairs and $1.1\times10^{-5}$ on the averaged one. The check holds the count to the deck's and the projection within a factor of two of what the same run measured. The rate is one machine's fit to four grids, which is what the factor of two allows for.
+
+The unaveraged energy ledger therefore does not close on the device at the level it closes on the CPU, and the reason is that loss rather than the port. On the CPU the ledger closes at $4.2\times10^{-6}$ of the turnover. On the device it cannot close better than the transform's accumulated loss, and on a deck whose per-record energy exchange is comparable to one FP32 quantum of the field's own energy it says nothing at all: the ledger deck of `check_unaveraged.py` has a per-record $|dU|$ of $1.1\times10^{-18}$ J against a quantum of $2.0\times10^{-18}$ J on a field of $3.3\times10^{-11}$ J. FINDINGS 7.72 records the measurement and what it means for a single-precision ledger. The ledger's internal consistency, the kick-side column against the realized beam change, does hold on the device: 2.8e-6 against the CPU's 8.9e-6, since both sides of that comparison come from the same FP32 energy offsets.
+
+The frame series rides the comb here as it does everywhere. The comb's positions are where the resident state comes back to the host, so a frame is written from arrays the readback refreshed rather than from stale ones, and the check holds that: with `dump_at_comb` on, a device run writes the same nine beam frames and nine field frames the CPU run writes, at the same $s$ exactly. What a frame must carry is the chart. A frame taken inside the segment holds the undulator quiver in `px`, which is a common offset of order $a_w/\gamma$ and reaches 4.2e5 eV/c where the averaged chart sits near 1e2, and `felMethod` names the chart so a reader cannot mistake one for the other. The comparison is on the mean and not the spread, since an rms is blind to exactly the quantity the chart adds. The device's mean tracks the CPU's to 1.9e-7, which is the FP32 round trip of the chart rather than the transform loss that sets the power band above.
+
+Two live polarizations ride the device in this mode as they ride the CPU. The mode needs no polarization vector: the two real kinetic momenta work against and deposit into their own field components, so the kick gathers both planes with the same four weights, fills a source plane for each, and each plane meets the diffraction with its own source. The crossed line is the deck, an x set then a y set, and its rows sit inside the one-plane ceilings: x 1.9e-6, px 2.5e-6, y 2.2e-6, py 3.0e-6, pz 5.0e-7, theta 2.0e-6, phasor 1.6e-8, the ledger's kick-side term 2.2e-4 and the field row, which is both planes summed, 2.0e-6. The FP64 stream is byte identical with the twin on against off, the mutation moves the rows it reaches, and in the production role the x plane agrees with the CPU at 2.0e-4. The y plane carries 1.3e-4 of the x plane there, the afterburner's transfer, and agrees at 3.0e-2 of its own value, which is what single precision does to a weak coherent transfer and is far from the 1 a plane that went dark would read. That is not a hypothetical: the second plane's propagator first asked for a member the kernel buffer does not hold, and its record came back an exact zero while the first plane and the field's total stayed in family. The transform pair costs the set what it costs one plane, since the loss is each plane's own, measured 1.3e-7 a pair against the one-plane 1.3e-7 (FINDINGS 7.72).
+
+The handedness the mode selects is checked on the device, since a total power cannot tell two circular polarizations apart (FINDINGS 7.85). A cold beam through the helical probe is driven by a uniform seed as the scalar envelope and as each circular pair of the same total intensity: the device reproduces the scalar seed's rms energy modulation with the pair (1, +i) at 1.8e-7, where the CPU sits at 2.5e-8, and leaves 1.0e-3 of it with the pair (1, -i), which is the CPU's own residue to three digits.
+
+Harmonics, wakes, space charge and the coherent source are refused for the mode on both. `fp32_check = "freerun"` stays refused for the mode, since freerun compounds a single-precision state across steps and this twin carries none.
+
+(val-unaveraged-fp32)=
+## The unaveraged advance in single precision
+
+Apple GPUs carry no FP64, so this project's rule is that a single-precision form of an
+advance exists with its divergence from the FP64 path measured before any kernel is
+written for it. The averaged advance has had one since [](#val-fp32-lockstep). The
+unaveraged advance now has one too, and until it did, nothing could have judged a device
+port of that mode: `fp32_check` refused the mode outright.
+
+The twin advances every substep of a record step from the state that step received, and
+the comparison is read where the record step ends. That granularity is a choice with a
+reason: a substep is internal to the integrator, where a record step is the point the
+FP64 path and any device port synchronize, so it prices what a port would have to match.
+The FP64 run is untouched, which is asserted rather than asserted of: the diag stream and
+the ledger are both byte identical with the twin on against off.
+
+Four things single precision destroys in this advance, each measured on a real
+mid-segment state rather than argued from the formula:
+
+| quantity | the naive form | what it costs |
+|---|---|---|
+| slippage rate, `gamma/u_s - 1/beta0` | both terms are one to within 1.3e-8 | the difference is 1.9e-9, which is 0.016 of the quantum of one, so it returns exactly zero and the slippage is gone |
+| energy, gamma | 11358, quantum 9.8e-4 | the per-substep change is 1.0e-6, a thousandth of a quantum |
+| lag, tau | quantum grows with the window | the per-substep change is 3.1e-12 m, resolved at 4.4e5 quanta on one slice and 0.84 on a 351-slice window |
+| phase, Psi | carried whole per particle | 2.7e-5 rad at a segment's end, growing with s |
+
+The forms that replace them are the offset charts the averaged twin already uses, `goff`
+and a per-slice residual, a base phase held in FP64 one number a slice a substep, and for
+the slippage the identity `1/ra - 1/rb = (a - b)/(ra rb (ra + rb))`, which moves the
+cancellation into a difference of two small like quantities and is exact rather than a
+series. `u_s` needs no reformulation at all, which measurement settled against
+expectation: `sqrt(gamma^2 - 1 - ux^2 - uy^2)` does lose the 1 and the `ux^2` entirely,
+but they are 6.7e-9 of the result, so the naive and the reformed values agree to 5.0e-8.
+
+Two of those are mutation records and not arguments. Replacing the slippage identity with
+the naive difference takes the phase row from 9.9e-6 rad to 1.7 rad, a factor of 170,000,
+and 1.7 rad is comparable to pi: the bunching phase is meaningless. Storing gamma
+absolutely instead of as an offset takes the energy row from 2.1e-6 to 2.0e-4. The field
+row has its own: dropping the factor of 2 the substep's source carries takes it from
+6.0e-6 to 1.3e-2, a factor of 2200, so a wrong constant in the twin's field arithmetic
+lands well above the level the row is held to.
+
+Measured levels, worst over the run and worst of the two builds, which agree on every row
+to a few percent (M3 Max, the benchmark segment at 2048 macroparticles and grid 128, 89
+record steps of 60 substeps):
+
+| check (harness section `unaveraged`) | level |
+|---|---|
+| transverse rows, x and y | 1e-5 (measured 9.98e-7) |
+| transverse momentum rows, the quiver chart | 1e-4 (measured 7.64e-6) |
+| energy row | 1e-4 (measured 2.12e-6) |
+| phase row [rad] | 1e-3 (measured 9.88e-6) |
+| phasor row | 1e-5 (measured 7.75e-8) |
+| ledger row, the twin's energy against the step's | 1e-4 (measured 1.56e-5) |
+| field row, the twin's record against the step's | 5e-5 (measured 6.03e-6) |
+| the FP64 diag and ledger, twin on against off | byte identical |
+| the lag residual's guard [ulps a substep] | >= 32 (measured 8.8e5) |
+
+The ledger row is the mode's own term and not a coordinate, and it is scaled by the
+energy the step moved rather than by the energy it netted. Over a record step the gains
+and the losses very nearly cancel, so the net is a small difference of large exchanges:
+against it the ratio reaches 3, which is a statement about the cancellation and not about
+single precision. The turnover is what the ledger's own conservation check normalizes by
+for the same reason, and what the averaged instrument's phasor row does when it scales to
+charge rather than to a noise-level sum.
+
+The field row is this mode's and not the averaged instrument's. The mode diffracts once a
+substep, sixty times a record step on this deck, where the averaged mode diffracts once,
+so the twin keeps its own single-precision record and advances it every substep: a
+single-precision transform pair against a rounded propagator, then the step's source
+added. Sixty of those stand behind one row, and the row reads 6.0e-6 of the FP64 field's
+norm. The twin's particles gather from the FP64 record throughout, so the eight rows
+above price the particle path alone, which is where every reformulation lives, and the
+field row prices the field arithmetic alone. `fp32_check = "freerun"` is refused for the
+mode, since freerun compounds a single-precision state across steps and this twin carries
+none.
+
+(val-the-coarsestep-measurement)=
+## The coarse-step measurement
+
+(Summarized in manual [](fel-physics.md#sec-numerics).)
+
+SIMPLEX's reference case integrates twelve undulator periods per step with the slice
+spacing matched so slippage is one slice per step -- an order of magnitude fewer steps
+than one-step-per-period. Whether that economy transfers to this integrator is the
+question, measured by `run_delz_sweep.sh`: Genesis4 generates one
+time-dependent initial state (32 slices of spacing `12*lambda0`, shot noise on), and the
+tracker runs the full line from that same dump at `ds_step` of 1, 2, 3, 6 and 12 periods
+(two-line wrapper lattices overriding `ds_step`), so
+every run shares one shot-noise realization and the differences are pure integration
+error. That sharing is what the measurement rests on, and it holds whichever realization
+the reference produces, so the numbers below stand as measured against the reference of
+their day (a Genesis4 predating the 4.6.15 seeding change). A rerun on the current
+reference draws a different realization and would move them in their own right, which is
+a property of the comparison rather than of the integrator. Total power at the twelve
+undulator-segment exits, against the one-period run:
+
+| `ds_step` | max over exits | at saturation |
+|---|---|---|
+| 2 periods | 1.3e-1 | 1.5e-2 |
+| 3 periods | 2.5e-1 | 2.8e-2 |
+| 6 periods | 5.1e-1 | 2.1e-2 |
+| 12 periods | 7.0e-1 | 2.6e-1 |
+
+The max-over-exits error lives in the exponential-gain region, where a step-size error is
+a quasi-systematic gain-length shift. Fitted there, convergence is roughly first order
+(pairwise p of 1.7, 1.1, 0.5). The saturation error is oscillatory (post-saturation power
+oscillates, so a small phase shift moves the sampled value) and fits no clean order.
+
+The answer to 8.3: saturation power holds to ~3% up to six periods per step, and the
+twelve-period matched configuration misses it by 26%. SIMPLEX's step-size economy is
+tied to its semianalytic field advance and does not transfer to this Genesis4-style
+integrator as-is. `ds_step` of two to three periods is the operating point here. Six periods
+is defensible when only saturation power matters.
+
+(val-interlude-steps)=
+## The interlude's own steps
+
+Tao's comb carries two halves. `save_a_bunch_step` selects among the positions a tracker already reaches, and `tao_lattice_calc_mod`'s beam-track loop cuts an element into `max(1, int(1.01 L / ds))` pieces with `element_slice_iterator` where the tracker would otherwise cross it in one map. `comb_ds_save` here was the first half alone. An FEL element reaches one position per `ds_step`, so the comb had a fine grid to select from inside a wiggler. An interlude was one `track1_bunch` call over the whole element, so it reached one position, its end, and no comb setting added another. A frame series therefore had particles through a wiggler and a single frame through a break. `global%interlude_ds_step` is the second half.
+
+Each piece tracks the beam through its own sliced element, drifts the field by its own length, advances the common phase at the reference rate over it and takes its share of the element's slippage. Slippage is an accumulator in whole slices, so the pieces sum to the element's own and the ring rotates where the light actually passes a slice rather than at the element's end. A chicane's chord-versus-arc correction is a property of the whole break and lands on its last element, so it lands on that element's last piece and the pieces sum to what the element did before.
+
+What the pieces must not do is change the answer, and that is the check with teeth. On a wiggler, quadrupole, pipe, wiggler line the exit power of a cut run agrees with the whole-element run at 1.2e-13 and the exit `sigma_x` at 6.0e-16. The pieces come from Bmad's own `element_slice_iterator` rather than from splitting the lattice by hand, which is why an element's fringes stay at its own ends instead of appearing at every cut. What that construction buys is below notice at FEL beam sizes: a hand-split lattice of ten sub-quadrupoles with `fringe_type = full` agrees with the whole element at 9.7e-14 on the same line, the fringe kick being cubic in a transverse offset of order ten microns. The iterator is used because it is the correct construction, not because the difference shows.
+
+Off is the default and off is the path every run took before the setting existed. A deck naming `interlude_ds_step = 0` reproduces a deck that never names it byte for byte in the diag stream and on every array of the statistics file but the input echo and the timestamp. That is what lets the recorded tier digits stand unmoved: the single-piece branch keeps `z_now = z_now + L` where the several-piece branch takes each boundary from the element's start, so the walk and the setup's record-count precompute reach the same z bit for bit and the stats arrays stay exact-sized.
+
+Two configurations decline the cut, and the shape of both is Tao's. An element carrying a Bmad short-range wake is tracked whole: that wake is a once-per-passage kick of the element's length and pieces would make it one kick a piece, which is the judgment Tao makes where CSR or space charge would see a cut. The chamber wake needs no such refusal, being an energy loss proportional to the length applied additively in gamma, so its pieces sum to the element's own kick. `interlude_model = "genesis"` refuses the setting, that model being a transcription of Genesis's own interlude whose step is the element.
+
+Measured on the checks' own line, a quadrupole of 0.2 m and a pipe of 0.4 m at `interlude_ds_step = 0.04` and `comb_ds_save = 0.02`:
+
+| | whole | cut |
+|---|---|---|
+| rows strictly inside the quadrupole | 0 | 4 |
+| rows strictly inside the pipe | 0 | 9 |
+| frames, with `dump_at_comb` | one a row | one a row |
+| frames strictly inside the pipe | 0 | 9 |
+| exit power against the whole element | | 1.2e-13 |
+
+One thing Tao does not do and this does. Tao's comb gives statistics along an element but its beam dumps stay at element ends, `ix_slice == -1` guarding both the internal save and the dump file. `dump_at_comb` writes a frame at every comb row, so with the pieces on a frame lands wherever a row does, which is what a movie through a break wants.
+
+(val-the-saturation-demo)=
+## The saturation demo
+
+The practical end-to-end case: Genesis4's own Benchmark1-SASE configuration run to saturation over the full 57 m Aramis line, dark start, 96 slices, tracked three ways from identical dumps against one external clock. Its inputs, its run script and its measured result live with the demo itself, in [`../examples/saturation_demo/README.md`](../examples/saturation_demo/README.md). The headline: the averaged mode matches Genesis4 at 4.9e-4 through saturation, and the unaveraged mode rides +0.6 ln on the shot-noise radiation channel it physically resolves. On that configuration and machine (M3 Max, 12 performance cores, production builds on both sides) it also ran 1.26x faster at equal cores. That is one case on one machine, not a general claim about either code.
+
+Properties of Genesis4 that this transcription had to establish by reading its source are recorded in [](genesis4.md), which is the one page that tracks Genesis4 as it changes.

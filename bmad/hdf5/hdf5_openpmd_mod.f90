@@ -810,10 +810,22 @@ integer h5_err, n
 logical error
 character(*) dataset_name, descrip_name
 
-if (descrip_name /= '') call H5LTset_attribute_string_f(root_id, dataset_name, 'localName', descrip_name, h5_err)
+! error was never set here, so every pmd_write_*_to_dataset returned an undefined flag.
+! Callers that ignored it saw nothing; a caller that tests it saw whatever its variable
+! happened to hold.
+
+error = .false.
+
+if (descrip_name /= '') then
+  call H5LTset_attribute_string_f(root_id, dataset_name, 'localName', descrip_name, h5_err)
+  error = error .or. (h5_err < 0)
+endif
 call H5LTset_attribute_double_f(root_id, dataset_name, 'unitSI', [unit%unitSI], 1_size_t, h5_err)
+error = error .or. (h5_err < 0)
 call H5LTset_attribute_double_f(root_id, dataset_name, 'unitDimension', [unit%unitDimension], 7_size_t, h5_err)
+error = error .or. (h5_err < 0)
 call H5LTset_attribute_string_f(root_id, dataset_name, 'unitSymbol', unit%unitSymbol, h5_err)
+error = error .or. (h5_err < 0)
 
 end subroutine pmd_write_units_to_dataset 
 
@@ -1539,5 +1551,130 @@ if (abs(unit_si - conversion_factor) > 1d-15 * conversion_factor) array = array 
 error = .false.
 
 end subroutine pmd_read_complex_dataset_rank3
+
+
+!------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------
+!+
+! Subroutine pmd_write_particle_patches (species_id, pat_n, pat_off, pat_lo, pat_hi, error)
+!
+! Routine to write an openPMD particlePatches group: the standard's way of partitioning a
+! species' one-dimensional records into subsets that can be read independently. The union
+! of the patches is the whole species.
+!
+! Input:
+!   species_id  -- integer(hid_t): The species group to write the patches into.
+!   pat_n(:)    -- integer: Particles in each patch.
+!   pat_off(:)  -- integer: Index offset of each patch.
+!   pat_lo(:,:) -- real(rp): Lower position bound (x, y, z) of each patch.
+!   pat_hi(:,:) -- real(rp): Upper position bound of each patch.
+!
+! Output:
+!   error       -- logical: Set True on error, False otherwise.
+!-
+
+subroutine pmd_write_particle_patches (species_id, pat_n, pat_off, pat_lo, pat_hi, error)
+
+integer(hid_t) species_id, g_id, o_id, e_id
+integer pat_n(:), pat_off(:)
+real(rp) pat_lo(:,:), pat_hi(:,:)
+integer h5_err
+logical error
+character(*), parameter :: r_name = 'pmd_write_particle_patches'
+
+!
+
+error = .true.
+
+call H5Gcreate_f (species_id, 'particlePatches', g_id, h5_err)
+if (h5_err < 0) then
+  call out_io (s_error$, r_name, 'CANNOT CREATE THE particlePatches GROUP.')
+  return
+endif
+
+! A patch record is always a real dataset of numPatches values, never the constant form
+! pmd_write_*_to_dataset would collapse an all-equal array to. The partition IS the
+! information a reader needs before it reads a particle, one patch equal to the next is
+! the ordinary case rather than a special one, and a reader that walks the patch list
+! finds a group where the standard's numParticles dataset belongs.
+
+call write_int_patch_record (g_id, 'numParticles', pat_n, error);              if (error) return
+call write_int_patch_record (g_id, 'numParticlesOffset', pat_off, error);      if (error) return
+
+call H5Gcreate_f (g_id, 'offset', o_id, h5_err)
+call write_real_patch_record (o_id, 'x', pat_lo(:,1), error);  if (error) return
+call write_real_patch_record (o_id, 'y', pat_lo(:,2), error);  if (error) return
+call write_real_patch_record (o_id, 'z', pat_lo(:,3), error);  if (error) return
+call H5Gclose_f (o_id, h5_err)
+
+call H5Gcreate_f (g_id, 'extent', e_id, h5_err)
+call write_real_patch_record (e_id, 'x', pat_hi(:,1) - pat_lo(:,1), error);  if (error) return
+call write_real_patch_record (e_id, 'y', pat_hi(:,2) - pat_lo(:,2), error);  if (error) return
+call write_real_patch_record (e_id, 'z', pat_hi(:,3) - pat_lo(:,3), error);  if (error) return
+call H5Gclose_f (e_id, h5_err)
+
+call H5Gclose_f (g_id, h5_err)
+error = .false.
+
+!------------------------------------------------------------------------------------------
+contains
+
+!+
+! Subroutine write_int_patch_record (id, name, array, err_flag)
+!
+! Routine to write one integer patch record as a dataset, with its unit attributes.
+!-
+
+subroutine write_int_patch_record (id, name, array, err_flag)
+
+integer(hid_t) id, v_shape(1)
+integer array(:), her
+logical err_flag
+character(*) name
+
+!
+
+v_shape = shape(array)
+call H5LTmake_dataset_int_f (id, name, 1, v_shape, array, her)
+if (her < 0) then
+  call out_io (s_error$, r_name, 'CANNOT WRITE THE particlePatches DATASET: ' // name)
+  err_flag = .true.
+  return
+endif
+
+call pmd_write_units_to_dataset (id, name, name, unit_1, err_flag)
+
+end subroutine write_int_patch_record
+
+!+
+! Subroutine write_real_patch_record (id, name, array, err_flag)
+!
+! Routine to write one real patch record as a dataset, in meters, with its unit
+! attributes.
+!-
+
+subroutine write_real_patch_record (id, name, array, err_flag)
+
+integer(hid_t) id, v_shape(1)
+integer her
+real(rp) array(:)
+logical err_flag
+character(*) name
+
+!
+
+v_shape = shape(array)
+call H5LTmake_dataset_double_f (id, name, 1, v_shape, array, her)
+if (her < 0) then
+  call out_io (s_error$, r_name, 'CANNOT WRITE THE particlePatches DATASET: ' // name)
+  err_flag = .true.
+  return
+endif
+
+call pmd_write_units_to_dataset (id, name, name, unit_m, err_flag)
+
+end subroutine write_real_patch_record
+
+end subroutine pmd_write_particle_patches
 
 end module

@@ -113,6 +113,7 @@ The complete structure is shown in this and the following figure.}
   integer spin_tracking_method   ! bmad_standard$, symp_lie_ptc$, etc.
   integer csr_method             ! off$, one_dim$, steady_state_3d$, etc.
   integer space_charge_method    ! off$, slice$, fft_3d$, cathode_fft_3d$, etc.
+  integer fel_method             ! off$, averaged$, unaveraged$. Wiggler and undulator only.
   integer ptc_integration_type   ! drift_kick$, matrix_kick$, etc.
   integer field_calc             ! bmad_standard$, no_field$, fieldmap$, custom$, etc.
   integer ref_species            ! Reference species (not_set$ by default).
@@ -848,13 +849,14 @@ map calculations.  These are:
   %field_calc                 ! Integer switch: bmad_standard$, no_field$, fieldmap$, etc.
   %csr_method                 ! Integer switch: off$, one_dim$, steady_state_3d$, etc.
   %space_charge_method        ! Integer switch: off$, slice$, fft_3d$, cathode_fft_3d$, etc.
+  %fel_method                 ! Integer switch: off$, averaged$, unaveraged$.
   %symplectify                ! Logical: symplectify mat6 after calculation?
   %multipoles_on              ! Logical: include multipole components?
   %taylor_map_includes_offsets ! Logical: Taylor map includes element misalignments?
   %is_on                      ! Logical: element on or off?
   %offset_moves_aperture      ! Logical: does element offset move the aperture?
 \end{example}
-Note that \vn{%csr_method} and \vn{%space_charge_method} are \vn{integer} switch components
+Note that \vn{%csr_method}, \vn{%space_charge_method} and \vn{%fel_method} are \vn{integer} switch components
 (not logicals). See Chapter~\sref{c:tracking} for more details.
 
 %--------------------------------------------------------------------------
