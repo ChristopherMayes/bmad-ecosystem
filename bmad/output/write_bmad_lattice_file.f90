@@ -917,6 +917,8 @@ do ib = 0, ubound(lat%branch, 1)
                                       line = trim(line) // ', csr_method = ' // csr_method_name(ele%csr_method)
     if (has_attribute (ele, 'SPACE_CHARGE_METHOD') .and. (ele%space_charge_method /= ele_dflt%space_charge_method)) &
                                       line = trim(line) // ', space_charge_method = ' // space_charge_method_name(ele%space_charge_method)
+    if (has_attribute (ele, 'FEL_METHOD') .and. (ele%fel_method /= ele_dflt%fel_method)) &
+                                      line = trim(line) // ', fel_method = ' // fel_method_name(ele%fel_method)
     if (has_attribute (ele, 'PTC_INTEGRATION_TYPE') .and. (ele%ptc_integration_type /= ele_dflt%ptc_integration_type)) &
                                       line = trim(line) // ', ptc_integration_type = ' // ptc_integration_type_name(ele%ptc_integration_type)
     if (has_attribute (ele, 'FIELD_CALC') .and. (ele%field_calc /= ele_dflt%field_calc)) &
@@ -1367,6 +1369,10 @@ do ie = 1, lat%n_ele_max
     if (ele%space_charge_method /= slave1%space_charge_method) then
       if (.not. have_expand_lattice_line) call write_expand_lat_header
       write (iu, '(3a)') trim(ele%name), '[space_charge_method] = ', space_charge_method_name(ele%space_charge_method)
+    endif
+    if (ele%fel_method /= slave1%fel_method) then
+      if (.not. have_expand_lattice_line) call write_expand_lat_header
+      write (iu, '(3a)') trim(ele%name), '[fel_method] = ', fel_method_name(ele%fel_method)
     endif
   endif
 enddo

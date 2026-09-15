@@ -108,6 +108,8 @@ if (ele%lord_status == multipass_lord$) then
       slave%csr_method = a_ptr
     elseif (associated(a_ptr, ele%space_charge_method)) then
       slave%space_charge_method = a_ptr
+    elseif (associated(a_ptr, ele%fel_method)) then
+      slave%fel_method = a_ptr
     else
       exit
     endif
