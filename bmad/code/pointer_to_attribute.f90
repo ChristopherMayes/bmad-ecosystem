@@ -849,6 +849,7 @@ case ('PTC_FIELD_GEOMETRY');             a_ptr%r => ele%value(ptc_field_geometry
 case ('REF_ORBIT_FOLLOWS');              a_ptr%r => ele%value(ref_orbit_follows$)
 case ('REF_COORDS');                     a_ptr%r => ele%value(ref_coords$)
 case ('SCATTER_METHOD');                 a_ptr%r => ele%value(scatter_method$)
+case ('FEL_METHOD');                     a_ptr%i => ele%fel_method
 case ('SPACE_CHARGE_METHOD');            a_ptr%i => ele%space_charge_method
 case ('SPIN_TRACKING_METHOD');           a_ptr%i => ele%spin_tracking_method
 case ('TRACKING_METHOD');                a_ptr%i => ele%tracking_method

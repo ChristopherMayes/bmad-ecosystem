@@ -399,6 +399,10 @@ if (ele%lord_status /= multipass_lord$ .and. attribute_name(ele, space_charge_me
                   'SPACE_CHARGE_METHOD', '=', space_charge_method_name(ele%space_charge_method)
 endif
 
+if (attribute_name(ele, fel_method$) == 'FEL_METHOD') then
+  nl=nl+1; write (li(nl), fmt_a) 'FEL_METHOD', '=', fel_method_name(ele%fel_method)
+endif
+
 if (attribute_name(ele, field_calc$) == 'FIELD_CALC') then
   nl=nl+1; write (li(nl), fmt_a) 'FIELD_CALC', '=', field_calc_name(ele%field_calc)
 endif

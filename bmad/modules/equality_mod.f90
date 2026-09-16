@@ -2954,6 +2954,8 @@ is_eq = is_eq .and. (f1%csr_method == f2%csr_method)
 !! f_side.equality_test[integer, 0, NOT]
 is_eq = is_eq .and. (f1%space_charge_method == f2%space_charge_method)
 !! f_side.equality_test[integer, 0, NOT]
+is_eq = is_eq .and. (f1%fel_method == f2%fel_method)
+!! f_side.equality_test[integer, 0, NOT]
 is_eq = is_eq .and. (f1%ptc_integration_type == f2%ptc_integration_type)
 !! f_side.equality_test[integer, 0, NOT]
 is_eq = is_eq .and. (f1%field_calc == f2%field_calc)

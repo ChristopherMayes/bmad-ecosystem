@@ -139,6 +139,7 @@ interface hdf5_write_dataset_real
   module procedure hdf5_write_dataset_real_rank1
   module procedure hdf5_write_dataset_real_rank2
   module procedure hdf5_write_dataset_real_rank3
+  module procedure hdf5_write_dataset_real_rank4
 end interface
 
 interface hdf5_write_attribute_real
@@ -1363,17 +1364,18 @@ subroutine hdf5_write_dataset_real_rank0 (root_id, dataset_name, value, error)
 
 integer(hid_t) root_id, v_size(1)
 integer h5_err
-real(rp) value
+real(rp), intent(in) :: value
 real(rp) vector(1)
 logical error
 character(*) dataset_name
 
-!
+! See hdf5_write_dataset_int_rank0: the same reader's body was here, writing an
+! uninitialized vector and copying it back over the caller's value.
 
 error = .true.
 v_size = 1
+vector(1) = value
 call H5LTmake_dataset_double_f(root_id, dataset_name, 1, [v_size], vector, h5_err);  if (h5_err < 0) return
-value = vector(1)
 error = .false.
 
 end subroutine hdf5_write_dataset_real_rank0
@@ -1481,6 +1483,39 @@ end subroutine hdf5_write_dataset_real_rank3
 !------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------
 !+
+! Subroutine hdf5_write_dataset_real_rank4(root_id, dataset_name, value, error)
+!
+! Routine to create a dataset with a 4D array of real values.
+! Overloaded by: interface hdf5_write_dataset_real
+!
+! Input:
+!   root_id        -- integer(hid_t): ID of the group the dataset is to be put in.
+!   dataset_name   -- character(*): Name of the dataset.
+!   value(:,:,:,:) -- real(rp): Dataset values
+!   error          -- logical Set True if there is an error. False otherwise.
+!-
+
+subroutine hdf5_write_dataset_real_rank4 (root_id, dataset_name, value, error)
+
+integer(hid_t) root_id, v_size(4)
+integer h5_err
+real(rp) value(:,:,:,:)
+logical error
+character(*) dataset_name
+
+!
+
+error = .true.
+v_size = [size(value, 1), size(value, 2), size(value, 3), size(value, 4)]
+call H5LTmake_dataset_double_f(root_id, dataset_name, 4, v_size, value, h5_err);  if (h5_err < 0) return
+error = .false.
+
+end subroutine hdf5_write_dataset_real_rank4
+
+!------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------
+!+
 ! Subroutine hdf5_write_dataset_int_rank0(root_id, dataset_name, value, error)
 !
 ! Routine to create a dataset with one integer value.
@@ -1497,17 +1532,19 @@ subroutine hdf5_write_dataset_int_rank0 (root_id, dataset_name, value, error)
 
 integer(hid_t) root_id, v_size(1)
 integer h5_err
-integer value
+integer, intent(in) :: value
 integer vector(1)
 logical error
 character(*) dataset_name
 
-!
+! The intent(in) on value is the fix's point: this routine wrote an uninitialized
+! vector to the file and then copied it back INTO the caller's variable, a reader's
+! body in a writer. It had no callers until now, so nothing had ever noticed.
 
 error = .true.
 v_size = 1
+vector(1) = value
 call H5LTmake_dataset_int_f(root_id, dataset_name, 1, v_size, vector, h5_err);  if (h5_err < 0) return
-value = vector(1)
 error = .false.
 
 end subroutine hdf5_write_dataset_int_rank0

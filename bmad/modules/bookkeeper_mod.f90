@@ -485,6 +485,7 @@ slave%is_on                       = lord%is_on
 !! slave%ptc_integration_type = lord%ptc_integration_type
 !! slave%csr_method           = lord%csr_method
 !! slave%space_charge_method  = lord%space_charge_method
+!! slave%fel_method          = lord%fel_method
 !! slave%aperture_at          = lord%aperture_at
 !! slave%aperture_type        = lord%aperture_type
 !! slave%mat6_calc_method     = lord%mat6_calc_method
@@ -776,6 +777,7 @@ do j = 1, slave%n_lord
     slave%taylor_map_includes_offsets = lord%taylor_map_includes_offsets
     slave%csr_method                  = lord%csr_method
     slave%space_charge_method         = lord%space_charge_method
+    slave%fel_method                  = lord%fel_method
   endif
 
   if (has_attribute (lord, 'FRINGE_TYPE')) then
@@ -821,6 +823,7 @@ do j = 1, slave%n_lord
 
       if (slave%csr_method == off$) slave%csr_method = lord%csr_method
       if (slave%space_charge_method == off$) slave%space_charge_method = lord%space_charge_method
+      if (slave%fel_method == off$) slave%fel_method = lord%fel_method
 
       if (slave%taylor_map_includes_offsets .neqv. lord%taylor_map_includes_offsets) then
         call out_io(s_error$, r_name, &
@@ -1432,6 +1435,7 @@ slave%scale_multipoles            = lord%scale_multipoles
 slave%is_on                       = lord%is_on
 slave%csr_method                  = lord%csr_method
 slave%space_charge_method         = lord%space_charge_method
+slave%fel_method                  = lord%fel_method
 
 if (slave%tracking_method == bmad_standard$ .and. slave%key == em_field$) slave%tracking_method = runge_kutta$
 if (slave%mat6_calc_method == bmad_standard$ .and. slave%key == em_field$) slave%mat6_calc_method = tracking$
