@@ -2177,7 +2177,7 @@ case ('SCATTER_METHOD')
 case ('FEL_METHOD')
   call get_switch (attrib_word, fel_method_name(1:), switch, err_flag, ele, delim, delim_found)
   if (err_flag) return
-  ele%fel_method = switch
+  ele%value(fel_method$) = switch
 
 case ('SPACE_CHARGE_METHOD')
   call get_switch (attrib_word, space_charge_method_name(1:), switch, err_flag, ele, delim, delim_found)

@@ -389,6 +389,7 @@ if (found_it) then
   if (extra%undeterministic_ran_function_called) err_found = .true.  ! So lattice will be reparsed
 
   if (extra%ran_seed /= 0) then
+    call ran_seed_put (extra%ran_seed)                   ! Init all threads (ran_default_state only sets the current thread).
     call ran_default_state (set_state = extra%ran_state) ! Get random state.
   endif
 endif
@@ -543,7 +544,7 @@ read (d_unit, err = 9100, end = 9100) &
         ele%spin_tracking_method, ele%symplectify, ele%mode_flip, &
         ele%multipoles_on, ele%taylor_map_includes_offsets, ele%Field_master, &
         ele%logic, ele%field_calc, ele%aperture_at, ele%spin_taylor_ref_orb_in, &
-        ele%aperture_type, ele%csr_method, ele%space_charge_method, ele%fel_method, ele%orientation, &
+        ele%aperture_type, ele%csr_method, ele%space_charge_method, ele%orientation, &
         ele%map_ref_orb_in, ele%map_ref_orb_out, ele%time_ref_orb_in, ele%time_ref_orb_out, &
         ele%offset_moves_aperture, ele%ix_branch, ele%ref_time, ele%scale_multipoles, &
         ele%bookkeeping_state, ele%ptc_integration_type, ele%ref_species

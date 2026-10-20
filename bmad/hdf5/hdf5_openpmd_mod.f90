@@ -810,10 +810,6 @@ integer h5_err, n
 logical error
 character(*) dataset_name, descrip_name
 
-! error was never set here, so every pmd_write_*_to_dataset returned an undefined flag.
-! Callers that ignored it saw nothing; a caller that tests it saw whatever its variable
-! happened to hold.
-
 error = .false.
 
 if (descrip_name /= '') then
@@ -879,11 +875,21 @@ endif
 if (info%element_type == H5O_TYPE_DATASET_F) then
   if (info%data_dim(2) /= 0) then
     call out_io (s_error$, r_name, 'STORED DATA ARRAY IS NOT ONE-DIMENSIONAL! FOR DATA: ' // name)
+    error = .true.
     call hdf5_close_object(obj_id, info)
     return
   endif
 
-  call hdf5_read_dataset_int(root_id, name, array, err)
+  if (info%data_dim(1) /= size(array)) then
+    call out_io (s_error$, r_name, 'STORED DATA LENGTH OF \i0\ DOES NOT MATCH THE EXPECTED LENGTH OF \i0\ FOR DATA: ' // name, &
+                 '(FOR A BEAM RECORD, THE EXPECTED LENGTH IS THE numParticles ATTRIBUTE OF THE SPECIES.)', &
+                 i_array = [int(info%data_dim(1)), size(array)])
+    error = .true.
+    call hdf5_close_object(obj_id, info)
+    return
+  endif
+
+  if (size(array) > 0) call hdf5_read_dataset_int(root_id, name, array, error)
 
 else  ! Must be a "constant record component" as defined by the openPMD standard
   call hdf5_read_attribute_int(obj_id, 'value', c_val, error, .true., name)
@@ -1091,11 +1097,21 @@ endif
 if (info%element_type == H5O_TYPE_DATASET_F) then
   if (info%data_dim(2) /= 0) then
     call out_io (s_error$, r_name, 'STORED DATA ARRAY IS NOT ONE-DIMENSIONAL! FOR DATA: ' // name)
+    error = .true.
     call hdf5_close_object(obj_id, info)
     return
   endif
 
-  call hdf5_read_dataset_real(root_id, name, array, err)
+  if (info%data_dim(1) /= size(array)) then
+    call out_io (s_error$, r_name, 'STORED DATA LENGTH OF \i0\ DOES NOT MATCH THE EXPECTED LENGTH OF \i0\ FOR DATA: ' // name, &
+                 '(FOR A BEAM RECORD, THE EXPECTED LENGTH IS THE numParticles ATTRIBUTE OF THE SPECIES.)', &
+                 i_array = [int(info%data_dim(1)), size(array)])
+    error = .true.
+    call hdf5_close_object(obj_id, info)
+    return
+  endif
+
+  if (size(array) > 0) call hdf5_read_dataset_real(root_id, name, array, error)
 
 else  ! Must be a "constant record component" as defined by the openPMD standard
   call hdf5_read_attribute_real(obj_id, 'value', c_val, error, .true., name)
@@ -1560,7 +1576,10 @@ end subroutine pmd_read_complex_dataset_rank3
 !
 ! Routine to write an openPMD particlePatches group: the standard's way of partitioning a
 ! species' one-dimensional records into subsets that can be read independently. The union
-! of the patches is the whole species.
+! of the patches is the whole species. The group carries the attribute patchesAreBunches = 1,
+! which tells hdf5_read_beam that each patch is a Bmad bunch; a patch group from another
+! writer, where patches commonly divide a species between processors, carries no such
+! attribute and is read as one bunch.
 !
 ! Input:
 !   species_id  -- integer(hid_t): The species group to write the patches into.
@@ -1577,47 +1596,76 @@ subroutine pmd_write_particle_patches (species_id, pat_n, pat_off, pat_lo, pat_h
 
 integer(hid_t) species_id, g_id, o_id, e_id
 integer pat_n(:), pat_off(:)
-real(rp) pat_lo(:,:), pat_hi(:,:)
+real(rp) pat_lo(:,:), pat_hi(:,:), extent(size(pat_n), 3)
 integer h5_err
-logical error
+logical error, err
 character(*), parameter :: r_name = 'pmd_write_particle_patches'
 
 !
 
 error = .true.
-
+o_id = -1;  e_id = -1
 call H5Gcreate_f (species_id, 'particlePatches', g_id, h5_err)
 if (h5_err < 0) then
   call out_io (s_error$, r_name, 'CANNOT CREATE THE particlePatches GROUP.')
   return
 endif
 
-! A patch record is always a real dataset of numPatches values, never the constant form
-! pmd_write_*_to_dataset would collapse an all-equal array to. The partition IS the
-! information a reader needs before it reads a particle, one patch equal to the next is
-! the ordinary case rather than a special one, and a reader that walks the patch list
-! finds a group where the standard's numParticles dataset belongs.
+call hdf5_write_attribute_int (g_id, 'patchesAreBunches', 1, err)
+if (err) then
+  call close_patches();  return
+endif
 
-call write_int_patch_record (g_id, 'numParticles', pat_n, error);              if (error) return
-call write_int_patch_record (g_id, 'numParticlesOffset', pat_off, error);      if (error) return
+! A patch record is always written as a dataset of numPatches values and never as the
+! constant form pmd_write_*_to_dataset would use for an all-equal array.
+
+call write_int_patch_record (g_id, 'numParticles', pat_n, err)
+if (.not. err) call write_int_patch_record (g_id, 'numParticlesOffset', pat_off, err)
+if (err) then
+  call close_patches();  return
+endif
 
 call H5Gcreate_f (g_id, 'offset', o_id, h5_err)
-call write_real_patch_record (o_id, 'x', pat_lo(:,1), error);  if (error) return
-call write_real_patch_record (o_id, 'y', pat_lo(:,2), error);  if (error) return
-call write_real_patch_record (o_id, 'z', pat_lo(:,3), error);  if (error) return
-call H5Gclose_f (o_id, h5_err)
+if (h5_err < 0) then
+  call out_io (s_error$, r_name, 'CANNOT CREATE THE particlePatches/offset GROUP.')
+  o_id = -1;  call close_patches();  return
+endif
+call write_real_patch_record (o_id, 'x', pat_lo(:,1), err)
+if (.not. err) call write_real_patch_record (o_id, 'y', pat_lo(:,2), err)
+if (.not. err) call write_real_patch_record (o_id, 'z', pat_lo(:,3), err)
+if (err) then
+  call close_patches();  return
+endif
+call H5Gclose_f (o_id, h5_err);  o_id = -1
 
 call H5Gcreate_f (g_id, 'extent', e_id, h5_err)
-call write_real_patch_record (e_id, 'x', pat_hi(:,1) - pat_lo(:,1), error);  if (error) return
-call write_real_patch_record (e_id, 'y', pat_hi(:,2) - pat_lo(:,2), error);  if (error) return
-call write_real_patch_record (e_id, 'z', pat_hi(:,3) - pat_lo(:,3), error);  if (error) return
-call H5Gclose_f (e_id, h5_err)
+if (h5_err < 0) then
+  call out_io (s_error$, r_name, 'CANNOT CREATE THE particlePatches/extent GROUP.')
+  e_id = -1;  call close_patches();  return
+endif
+extent = pat_hi - pat_lo + 8 * epsilon(1.0_rp) * max(1.0_rp, abs(pat_lo), abs(pat_hi))
+call write_real_patch_record (e_id, 'x', extent(:,1), err)
+if (.not. err) call write_real_patch_record (e_id, 'y', extent(:,2), err)
+if (.not. err) call write_real_patch_record (e_id, 'z', extent(:,3), err)
+if (err) then
+  call close_patches();  return
+endif
+call H5Gclose_f (e_id, h5_err);  e_id = -1
 
 call H5Gclose_f (g_id, h5_err)
 error = .false.
 
 !------------------------------------------------------------------------------------------
 contains
+
+! Close whatever is still open, for a return on error.
+
+subroutine close_patches ()
+integer c_err
+if (o_id >= 0) call H5Gclose_f (o_id, c_err)
+if (e_id >= 0) call H5Gclose_f (e_id, c_err)
+call H5Gclose_f (g_id, c_err)
+end subroutine close_patches
 
 !+
 ! Subroutine write_int_patch_record (id, name, array, err_flag)
@@ -1634,11 +1682,11 @@ character(*) name
 
 !
 
+err_flag = .true.
 v_shape = shape(array)
 call H5LTmake_dataset_int_f (id, name, 1, v_shape, array, her)
 if (her < 0) then
   call out_io (s_error$, r_name, 'CANNOT WRITE THE particlePatches DATASET: ' // name)
-  err_flag = .true.
   return
 endif
 
@@ -1663,11 +1711,11 @@ character(*) name
 
 !
 
+err_flag = .true.
 v_shape = shape(array)
 call H5LTmake_dataset_double_f (id, name, 1, v_shape, array, her)
 if (her < 0) then
   call out_io (s_error$, r_name, 'CANNOT WRITE THE particlePatches DATASET: ' // name)
-  err_flag = .true.
   return
 endif
 

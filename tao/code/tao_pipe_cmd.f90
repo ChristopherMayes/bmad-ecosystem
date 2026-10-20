@@ -54,6 +54,8 @@ use location_encode_mod, only: location_encode
 use twiss_and_track_mod, only: twiss_and_track_at_s
 use wall3d_mod, only: calc_wall_radius, wall3d_d_radius
 use tao_command_mod, only: tao_next_switch, tao_cmd_split, tao_next_word
+use tao_command_names_mod, only: tao_pipe_cmd_names, tao_switches_for, tao_enum_value_names, no_enum_index$
+use tao_completion_mod, only: tao_complete
 use tao_init_data_mod, only: tao_point_d1_to_data
 use tao_init_variables_mod, only: tao_point_v1_to_var, tao_var_stuffit2
 use tao_c_interface_mod, only: tao_c_interface_com, re_allocate_c_double
@@ -195,6 +197,9 @@ character(40), allocatable :: str_arr(:)
 character(40), allocatable :: name_list(:)
 character(40) cmd, which, v_str, head, tail
 character(40) switch, color, shape_shape
+character(100), allocatable :: match_arr(:)
+character(8) complete_context
+character(100) complete_prefix
 character(1) :: mode(3) = ['a', 'b', 'c']
 character(*), parameter :: r_name = 'tao_pipe_cmd'
 
@@ -207,7 +212,7 @@ tao_c_interface_com%n_real = 0
 tao_c_interface_com%n_int = 0
 
 do
-  call tao_next_switch (line, [character(8):: '-append ', '-write', '-noprint'], .false., switch, err)
+  call tao_next_switch (line, tao_switches_for('pipe'), .false., switch, err)
   if (err) return
   if (switch == '') exit
 
@@ -220,9 +225,9 @@ do
     iu_write = lunget()
 
     if (switch == '-append') then
-      open (iu_write, file = file_name, position = 'APPEND', status = 'UNKNOWN', recl = 500)
+      open (iu_write, file = file_name, position = 'APPEND', status = 'UNKNOWN', recl = n_char_show)
     else
-      open (iu_write, file = file_name, status = 'REPLACE', recl = 500)
+      open (iu_write, file = file_name, status = 'REPLACE', recl = n_char_show)
     endif
 
     opened = .true.
@@ -238,32 +243,7 @@ call string_trim(line(ix+1:), line, ix_line)
 !   HOM
 !   x_axis_type (variable parameter)
 
-call match_word (cmd, [character(40) :: &
-          'beam', 'beam_init', 'branch1', 'bunch_comb', 'bunch_params', 'bunch1', 'bmad_com',&
-          'building_wall_list', 'building_wall_graph', 'building_wall_point', 'building_wall_section', &
-          'constraints', 'da_params', 'da_aperture', &
-          'data', 'data_d2_create', 'data_d2_destroy', 'data_d_array', 'data_d1_array', &
-          'data_d2', 'data_d2_array', 'data_set_design_value', 'data_parameter', &
-          'datum_create', 'datum_has_ele', 'derivative', &
-          'ele:ac_kicker', 'ele:cartesian_map', 'ele:chamber_wall', 'ele:control_var', &
-          'ele:cylindrical_map', 'ele:elec_multipoles', 'ele:floor', 'ele:gen_attribs', 'ele:gen_gradients', &
-          'ele:grid_field', 'ele:head', 'ele:lord_slave', 'ele:mat6', 'ele:methods', &
-          'ele:multipoles', 'ele:orbit', 'ele:param', 'ele:photon', 'ele:spin_taylor', 'ele:taylor', & 
-          'ele:twiss', 'ele:wake', 'ele:wall3d', &
-          'em_field', 'enum', 'evaluate', 'floor_plan', 'floor_orbit', &
-          'global', 'global:opti_de', 'global:optimization', 'global:ran_state', 'help', 'inum', &
-          'lat_branch_list', 'lat_calc_done', 'lat_ele_list', 'lat_header', 'lat_list', 'lat_param_units', 'lord_control', &
-          'matrix', 'merit', 'orbit_at_s', 'place_buffer', &
-          'plot_curve', 'plot_curve_manage', 'plot_graph', 'plot_graph_manage', 'plot_histogram', &
-          'plot_lat_layout', 'plot_line', 'plot_list', &
-          'plot_symbol', 'plot_template_manage', 'plot_transfer', 'plot1', &
-          'ptc_com', 'ring_general', &
-          'shape_list', 'shape_manage', 'shape_pattern_list', 'shape_pattern_manage', 'shape_pattern_point_manage', 'shape_set', &
-          'show', 'slave_control', 'space_charge_com', 'species_to_int', 'species_to_str', &
-          'spin_invariant', 'spin_polarization', 'spin_resonance', 'super_universe', &
-          'taylor_map', 'twiss_at_s', 'universe', &
-          'var_v1_create', 'var_v1_destroy', 'var_create', 'var_general', 'var_v1_array', 'var_v_array', 'var', &
-          'wall3d_radius', 'wave'], ix, matched_name = command)
+call match_word (cmd, tao_pipe_cmd_names, ix, matched_name = command)
 
 if (ix == 0) then
   call out_io (s_error$, r_name, 'pipe what? ' // quote(cmd) // ' is not recognized.')
@@ -280,9 +260,9 @@ amt2 = '(a, l1, 10a)'
 imt  = '(a, 100(i0, a))'
 iamt  = '(a, 100(a, i0))'
 jmt  = '(i0, a, i0)'
-rmt  = '(a, 100(es22.14, a))'
-ramt = '(a, 100(a, es22.14))'
-rmt2 = '(a, l1, a, 100(es22.14, a))'
+rmt  = '(a, 100(es24.15e3, a))'
+ramt = '(a, 100(a, es24.15e3))'
+rmt2 = '(a, l1, a, 100(es24.15e3, a))'
 lmt  = '(a, 100(l1, a))'
 vamt = '(a, i0, 3a)'
 
@@ -991,7 +971,7 @@ case ('building_wall_graph')
     bwp => s%building_wall%section(ib)%point
     do j = 1, size(bwp)
       call tao_floor_to_screen (g, [bwp(j)%x, 0.0_rp, bwp(j)%z], end1%r(1), end1%r(2))
-      nl=incr(nl); write (li(nl), '(2(i0,a), 3(es14.6, a))') ib, ';', j, ';', end1%r(1), ';', end1%r(2), ';', bwp(j)%radius
+      nl=incr(nl); write (li(nl), '(2(i0,a), 3(es16.6e3, a))') ib, ';', j, ';', end1%r(1), ';', end1%r(2), ';', bwp(j)%radius
     enddo
   enddo
 
@@ -1147,6 +1127,86 @@ case ('building_wall_section')
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
+!%% complete
+!
+! Output tab completion candidates for a partially typed Tao command line.
+!
+! Notes
+! -----
+! Command syntax:
+!   pipe complete "{line}"
+!
+! Where:
+!   {line} is the partial command line to complete, considered up to its end.
+!
+! The double quotes around {line} preserve trailing blanks and embedded
+! semicolons and may be omitted when neither is present. For example,
+! completing "sho" gives matching command names while completing "show "
+! (note the trailing blank) gives the possible show subcommands.
+!
+! Output is in parameter list form:
+!   word;STR;F;{word}
+!   context;STR;F;{context}
+!   prefix;STR;F;{prefix}
+!   match[1];STR;F;{candidate_1}
+!   match[2];STR;F;{candidate_2}
+!   ...
+! where {word} is the (possibly empty) token being completed (the trailing
+! whitespace-delimited word of {line}) and {context} is one of:
+!   LIST -- The match[i] lines are the completion candidates (possibly none).
+!           Each candidate is a full replacement for {word}.
+!   FILE -- {word} is a file name. The caller should do file name completion.
+!   NONE -- The command is not recognized.
+! {prefix} is what {word} can be replaced with immediately: the sole candidate, or
+! {word} followed by whatever all candidates agree on. It is never shorter than
+! {word} and is meaningful only for LIST.
+!
+! Element selectors use Tao's full syntax ("quad::*", "1:10", "2@q1", ...) when
+! finding attributes and values, and the "n@" and "key::" prefixes are completed.
+!
+! Values of "set" commands are completed after an "=": enumerated element
+! attributes (eg "set element q1 tracking_method = ") offer the values valid for
+! that element, logical attributes and struct components offer T/F, and
+! enumerated struct components (eg "set global track_type = ") offer their values.
+!
+! Known limitation: words following value-taking switches (eg "-write file")
+! are counted as command words, so completion after such a switch is off by one.
+!
+! Parameters
+! ----------
+! line : ""
+!
+! Returns
+! -------
+! string_list
+!
+! Examples
+! --------
+! Example: 1
+!  init: -init $ACC_ROOT_DIR/regression_tests/pipe_test/cesr/tao.init
+!  args:
+!    line: sho
+
+case ('complete')
+
+  ! Quotes are stripped by hand so a significant trailing blank survives.
+  n = len_trim(line)
+  if (n >= 2 .and. line(1:1) == '"' .and. line(n:n) == '"') then
+    line = line(2:n-1)
+    n = n - 2
+  endif
+
+  call tao_complete (line, n + 1, ix, complete_context, match_arr, complete_prefix)
+
+  nl=incr(nl); write (li(nl), '(2a)') 'word;STR;F;', line(ix:n)
+  nl=incr(nl); write (li(nl), '(2a)') 'context;STR;F;', trim(complete_context)
+  nl=incr(nl); write (li(nl), '(2a)') 'prefix;STR;F;', trim(complete_prefix)
+  do i = 1, size(match_arr)
+    nl=incr(nl); write (li(nl), '(a, i0, 2a)') 'match[', i, '];STR;F;', trim(match_arr(i))
+  enddo
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
 !%% constraints
 !
 ! Output optimization data and variable parameters that contribute to the merit function.
@@ -1219,7 +1279,7 @@ case ('constraints')
           a_name = branch%ele(ie)%name
         endif
 
-        nl=incr(nl); write (li(nl), '(10a, 6(es22.14, a), 2a)') trim(tao_datum_name(data)), ';', &
+        nl=incr(nl); write (li(nl), '(10a, 6(es24.15e3, a), 2a)') trim(tao_datum_name(data)), ';', &
             trim(tao_constraint_type_name(data)), ';', &
             trim(data%ele_name), ';', trim(data%ele_start_name), ';', trim(data%ele_ref_name), ';', &
             data%meas_value, ';', data%ref_value, ';', data%model_value, ';', data%base_value, ';', &
@@ -1231,7 +1291,7 @@ case ('constraints')
     do i = 1, s%n_var_used
       var => s%var(i)
       if (.not. var%useit_opt) cycle
-      nl=incr(nl); write (li(nl), '(4a, 7(es22.14, a))') trim(tao_var1_name(var)), ';', &
+      nl=incr(nl); write (li(nl), '(4a, 7(es24.15e3, a))') trim(tao_var1_name(var)), ';', &
             trim(tao_var_attrib_name(var)), ';', &
             var%meas_value, ';', var%ref_value, ';', var%model_value, ';', var%base_value, ';', &
             var%weight, var%merit, var%dmerit_dvar
@@ -1279,7 +1339,7 @@ case ('da_aperture')
 
   do i = 1, size(da%scan)
     do j = 1, size(da%scan(i)%point)
-      nl=incr(nl); write (li(nl), '(2(i0, a), 2(es14.6, a))') i, ';', j, ';', &
+      nl=incr(nl); write (li(nl), '(2(i0, a), 2(es16.6e3, a))') i, ';', j, ';', &
                                                        da%scan(i)%point(j)%x, ';', da%scan(i)%point(j)%y
     enddo
   enddo
@@ -1486,7 +1546,7 @@ case ('data_d_array')
   do i = 1, size(d_array)
     d_ptr => d_array(i)%d
     name = tao_constraint_type_name(d_ptr)
-    nl=incr(nl); write(li(nl), '(i0, 11a, 3(es22.14, a), 3(l1, a), es22.14, a, l1)') d_ptr%ix_d1, ';', &
+    nl=incr(nl); write(li(nl), '(i0, 11a, 3(es24.15e3, a), 3(l1, a), es24.15e3, a, l1)') d_ptr%ix_d1, ';', &
               trim(d_ptr%data_type), ';', trim(d_ptr%merit_type), ';', &
               trim(d_ptr%ele_ref_name), ';', trim(d_ptr%ele_start_name), ';', trim(d_ptr%ele_name), ';', &
               d_ptr%meas_value, ';', d_ptr%model_value, ';', d_ptr%design_value, ';', &
@@ -2336,13 +2396,13 @@ case ('ele:ac_kicker')
   if (allocated(ac%amp_vs_time)) then
     nl=incr(nl); write (li(nl), '(a)') 'has#amp_vs_time'
     do i = 1, size(ac%amp_vs_time)
-      nl=incr(nl); write (li(nl), '(i0, 2(a, es22.14))') i, ';', ac%amp_vs_time(i)%amp, ';', ac%amp_vs_time(i)%time
+      nl=incr(nl); write (li(nl), '(i0, 2(a, es24.15e3))') i, ';', ac%amp_vs_time(i)%amp, ';', ac%amp_vs_time(i)%time
     enddo
 
   else
     nl=incr(nl); write (li(nl), '(a)') 'has#frequencies'
     do i = 1, size(ac%frequency)
-      nl=incr(nl); write (li(nl), '(i0, 3(a, es22.14))') i, ';', &
+      nl=incr(nl); write (li(nl), '(i0, 3(a, es24.15e3))') i, ';', &
                       ac%frequency(i)%f, ';', ac%frequency(i)%amp, ';', ac%frequency(i)%phi
     enddo
   endif
@@ -2416,7 +2476,7 @@ case ('ele:cartesian_map')
   case ('terms')
     do i = 1, size(ct_map%ptr%term)
       ctt => ct_map%ptr%term(i)
-      nl=incr(nl); write (li(nl), '(i0, 7(a, es22.14), 4a)') i, ';', &
+      nl=incr(nl); write (li(nl), '(i0, 7(a, es24.15e3), 4a)') i, ';', &
             ctt%coef, ';', ctt%kx, ';', ctt%ky, ';', ctt%kz, ';', ctt%x0, ';', ctt%y0, ';', ctt%phi_z, ';', &
             trim(cartesian_map_family_name(ctt%family)), ';', trim(cartesian_map_form_name(ctt%form))
     enddo
@@ -2493,7 +2553,7 @@ case ('ele:chamber_wall')
       return
     end select
 
-    nl=incr(nl); write (li(nl), '(i0, 3(a, es14.6))') i, ';', wall3d%section(i)%s, ';', z1, ';', -z2
+    nl=incr(nl); write (li(nl), '(i0, 3(a, es16.6e3))') i, ';', wall3d%section(i)%s, ';', z1, ';', -z2
   enddo
 
 !------------------------------------------------------------------------------------------------
@@ -2554,12 +2614,12 @@ case ('ele:control_var')
   if (ele%key == group$) then
     do i = 1, size(ele%control%var)
       cvar => ele%control%var(i)
-      nl=incr(nl); write (li(nl), '(i0, 2a, 2(a, es22.14))') i, ';', trim(cvar%name), ';', cvar%value, ';', cvar%old_value
+      nl=incr(nl); write (li(nl), '(i0, 2a, 2(a, es24.15e3))') i, ';', trim(cvar%name), ';', cvar%value, ';', cvar%old_value
     enddo
   else
     do i = 1, size(ele%control%var)
       cvar => ele%control%var(i)
-      nl=incr(nl); write (li(nl), '(i0, 2a, 2(a, es22.14))') i, ';', trim(cvar%name), ';', cvar%value
+      nl=incr(nl); write (li(nl), '(i0, 2a, 2(a, es24.15e3))') i, ';', trim(cvar%name), ';', cvar%value
     enddo
   endif
 
@@ -2706,7 +2766,7 @@ case ('ele:elec_multipoles')
 
   do i = 0, n_pole_maxx
     if (ele%a_pole_elec(i) == 0 .and. ele%b_pole_elec(i) == 0) cycle
-    nl=incr(nl); write (li(nl), '(i0, 4(a, es22.14))') i, ';', ele%a_pole_elec(i), ';', ele%b_pole_elec(i), ';', a(i), ';', b(i)
+    nl=incr(nl); write (li(nl), '(i0, 4(a, es24.15e3))') i, ';', ele%a_pole_elec(i), ';', ele%b_pole_elec(i), ';', a(i), ';', b(i)
   enddo
 
 !------------------------------------------------------------------------------------------------
@@ -2938,7 +2998,7 @@ case ('ele:gen_gradients')
       gg => gg_map%curve(i)
       do j = gg_map%iz0, gg_map%iz1
         do k = 0, ubound(gg%deriv,2)
-          nl=incr(nl); write (li(nl), '(3(i0,a), es22.14, a, es22.14)') i, ';', j, ';', k, ';', &
+          nl=incr(nl); write (li(nl), '(3(i0,a), es24.15e3, a, es24.15e3)') i, ';', j, ';', k, ';', &
                               j*gg_map%dz, ';', gg%deriv(j,k)
         enddo
       enddo
@@ -3269,7 +3329,7 @@ case ('ele:mat6')
   select case (tail_str)
   case ('mat6')
     do i = 1, 6
-      nl=incr(nl); write (li(nl), '(i0, a, 6(a, es22.14))') i, ';REAL_ARR;F', (';', ele%mat6(i,j), j = 1, 6)
+      nl=incr(nl); write (li(nl), '(i0, a, 6(a, es24.15e3))') i, ';REAL_ARR;F', (';', ele%mat6(i,j), j = 1, 6)
     enddo
 
   case ('vec0')
@@ -3448,15 +3508,15 @@ case ('ele:multipoles')
     if (a_orig(i) == 0 .and. b_orig(i) == 0) cycle
 
     if (ele%key == multipole$) then
-      nl=incr(nl); write (li(nl), '(i0, 6(a, es22.14))') i, ';', &
+      nl=incr(nl); write (li(nl), '(i0, 6(a, es24.15e3))') i, ';', &
                       ele%a_pole(i), ';', ele%b_pole(i), ';', knl(i), ';', tn(i), ';', a(i), ';', b(i)
 
     elseif (ele%key == ab_multipole$) then
-      nl=incr(nl); write (li(nl), '(i0, 6(a, es22.14))') i, ';', &
+      nl=incr(nl); write (li(nl), '(i0, 6(a, es24.15e3))') i, ';', &
                       ele%a_pole(i), ';', ele%b_pole(i), ';', a2(i), ';', b2(i), ';', knl(i), ';', tn(i)
 
     else
-      nl=incr(nl); write (li(nl), '(i0, 8(a, es22.14))') i, ';', &
+      nl=incr(nl); write (li(nl), '(i0, 8(a, es24.15e3))') i, ';', &
                       a_orig(i), ';', b_orig(i), ';', a(i), ';', b(i), ';', a2(i), ';', b2(i), ';', knl(i), ';', tn(i)
     endif
   enddo
@@ -3663,6 +3723,79 @@ case ('ele:photon')
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
+!%% ele:shape
+!
+! Output the shape(s) Tao uses to draw an element in a lat_layout or floor_plan graph.
+!
+! Notes
+! -----
+! Command syntax:
+!   pipe ele:shape {ele_id}|{which} {who}
+!
+! Where:
+!   {ele_id} is an element name or index.
+!   {which} is one of: "model", "base" or "design"
+!   {who} is one of: "lat_layout" or "floor_plan"
+!
+! Example:
+!   pipe ele:shape 3@1>>7|model lat_layout
+! This gives element number 7 in branch 1 of universe 3.
+!
+! Output lines have the form:
+!   ix_shape;shape;color;line_width;y1;y2;label_name;draw;multi
+! where ix_shape is the index of the matched shape in the "pipe shape_list {who}" output,
+! and y1, y2 are the vertical extents before the plot_page shape scale is applied.
+! Every matching shape is listed, up to and including the first with draw = T and multi = F.
+! Shapes with draw = F are listed but are not drawn by Tao, so the lines with draw = T are
+! exactly what Tao draws. Nothing is output if no shape matches the element.
+!
+! Parameters
+! ----------
+! ele_id
+! who
+! which : default=model
+!
+! Returns
+! -------
+! string_list
+!
+! Examples
+! --------
+! Example: 1
+!  init: -init $ACC_ROOT_DIR/regression_tests/pipe_test/tao.init_shape
+!  args:
+!   ele_id: 1@0>>1
+!   which: model
+!   who: lat_layout
+
+case ('ele:shape')
+
+  u => point_to_uni(line, .true., err); if (err) return
+  tao_lat => point_to_tao_lat(line, u, err, which, tail_str); if (err) return
+  ele => point_to_ele(line, tao_lat%lat, err); if (err) return
+
+  select case (tail_str)
+  case ('lat_layout')
+    shapes => s%plot_page%lat_layout%ele_shape
+  case ('floor_plan')
+    shapes => s%plot_page%floor_plan%ele_shape
+  case default
+    call invalid ('Expected {who} to be one of "lat_layout" or "floor_plan"')
+    return
+  end select
+
+  ix_shape_min = 1
+  do
+    call tao_ele_shape_info (u%ix_uni, ele, shapes, shape, label_name, y1, y2, ix_shape_min, include_undrawn = .true.)
+    if (.not. associated(shape)) exit
+    nl=incr(nl); write (li(nl), '(i0, 5a, i0, 2(a, es16.6e3), 3a, l1, a, l1)') ix_shape_min - 1, ';', &
+              trim(shape%shape), ';', trim(shape%color), ';', shape%line_width, ';', y1, ';', y2, ';', &
+              trim(label_name), ';', shape%draw, ';', shape%multi
+    if (shape%draw .and. .not. shape%multi) exit
+  enddo
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
 !%% ele:spin_taylor
 !
 ! Output element spin_taylor parameters
@@ -3710,7 +3843,7 @@ case ('ele:spin_taylor')
   do i = 0, 3
     do j = 1, size(ele%spin_taylor(i)%term)
       tt => ele%spin_taylor(i)%term(j)
-      nl=incr(nl); write (li(nl), '(i0, a, es22.14, 6(a, i0))') i, ';term;', tt%coef, (';', tt%expn(k), k = 1, 6)
+      nl=incr(nl); write (li(nl), '(i0, a, es24.15e3, 6(a, i0))') i, ';term;', tt%coef, (';', tt%expn(k), k = 1, 6)
     enddo
   enddo
 
@@ -3766,10 +3899,10 @@ case ('ele:taylor')
   endif
 
   do i = 1, 6
-    nl=incr(nl); write (li(nl), '(i0, a, es22.14)') i, ';ref;', ele%taylor(i)%ref
+    nl=incr(nl); write (li(nl), '(i0, a, es24.15e3)') i, ';ref;', ele%taylor(i)%ref
     do j = 1, size(ele%taylor(i)%term)
       tt => ele%taylor(i)%term(j)
-      nl=incr(nl); write (li(nl), '(2(i0, a), es22.14, 6(a, i0))') i, ';', j, ';', tt%coef, (';', tt%expn(k), k = 1, 6)
+      nl=incr(nl); write (li(nl), '(2(i0, a), es24.15e3, 6(a, i0))') i, ';', j, ';', tt%coef, (';', tt%expn(k), k = 1, 6)
     enddo
   enddo
 
@@ -3915,7 +4048,7 @@ case ('ele:wake')
   case ('sr_long_table')
     do i = 1, size(wake%sr%long)
       wsr => wake%sr%long(i)
-      nl=incr(nl); write (li(nl), '(4(es16.8, a), 4a)') wsr%amp, ';', wsr%damp, ';', wsr%k, ';', wsr%phi, ';', &
+      nl=incr(nl); write (li(nl), '(4(es18.8e3, a), 4a)') wsr%amp, ';', wsr%damp, ';', wsr%k, ';', wsr%phi, ';', &
           sr_longitudinal_position_dep_name(wsr%position_dependence)
     enddo
 
@@ -3925,7 +4058,7 @@ case ('ele:wake')
   case ('sr_trans_table')
     do i = 1, size(wake%sr%trans)
       wsr => wake%sr%trans(i)
-      nl=incr(nl); write (li(nl), '(4(es16.8, a), 4a)') wsr%amp, ';', wsr%damp, ';', wsr%k, ';', wsr%phi, ';', &
+      nl=incr(nl); write (li(nl), '(4(es18.8e3, a), 4a)') wsr%amp, ';', wsr%damp, ';', wsr%k, ';', wsr%phi, ';', &
           sr_transverse_polarization_name(wsr%polarization), ';', sr_transverse_position_dep_name(wsr%position_dependence)
     enddo
 
@@ -3941,7 +4074,7 @@ case ('ele:wake')
   case ('sr_z_long_table')
     do i = 1, n
       z = -srz%z0 + (i-1) * srz%dz
-      nl=incr(nl); write (li(nl), '(es16.8, a, es16.8)') z, ';', srz%w(i)
+      nl=incr(nl); write (li(nl), '(es18.8e3, a, es18.8e3)') z, ';', srz%w(i)
     enddo
 
   case ('lr_mode_table')
@@ -3949,7 +4082,7 @@ case ('ele:wake')
       lr_mode => wake%lr%mode(i)
       v_str = 'none'
       if (lr_mode%polarized) write (v_str, '(f8.3)') lr_mode%angle
-      nl=incr(nl); write (li(nl), '(3(es22.14, a), i0, 2a)') &
+      nl=incr(nl); write (li(nl), '(3(es24.15e3, a), i0, 2a)') &
                 lr_mode%freq, ';', lr_mode%R_over_Q, ';', lr_mode%Q, ';', lr_mode%m, ';', v_str
     enddo
 
@@ -4038,7 +4171,7 @@ case ('ele:wall3d')
       endif
       nl=incr(nl); write (li(nl), imt)   'vertex;INT;F;',    i
       do j = 1, size(sec%v)
-        nl=incr(nl); write (li(nl), '(i0, 5(a, es22.14))') j, ';', sec%v(j)%x, ';', sec%v(j)%y, ';', &
+        nl=incr(nl); write (li(nl), '(i0, 5(a, es24.15e3))') j, ';', sec%v(j)%x, ';', sec%v(j)%y, ';', &
                                               sec%v(j)%radius_x, ';', sec%v(j)%radius_y, ';', sec%v(j)%tilt
       enddo
     enddo
@@ -4175,7 +4308,7 @@ case ('em_field')
   endif
 
   call em_field_calc (ele, ele%branch%param, z, orb, .false., field, err_flag = err);  if (err) return
-  nl=incr(nl); write (li(nl), '(6(es22.14, a))') (field%B(i), ';',  i = 1, 3), (field%E(i), ';',  i = 1, 2), field%E(3)
+  nl=incr(nl); write (li(nl), '(6(es24.15e3, a))') (field%B(i), ';',  i = 1, 3), (field%E(i), ';',  i = 1, 2), field%E(3)
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
@@ -4208,171 +4341,19 @@ case ('em_field')
 
 case ('enum')
 
-  if (index(line, 'color') /= 0) then
-    do i = lbound(qp_color_name, 1), ubound(qp_color_name, 1)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(qp_color_name(i))
-    enddo
-    call end_stuff(li, nl)
+  call tao_enum_value_names (line, name_list, int_arr)
+  if (.not. allocated(name_list)) then
+    call invalid ('Not a valid switch name.')
     return
   endif
 
-  select case (line)
-  case ('axis^type')
-    nl=incr(nl); write(li(nl), '(a)') '1;LINEAR'
-    nl=incr(nl); write(li(nl), '(a)') '2;LOG'
-
-  case ('bounds')
-    nl=incr(nl); write(li(nl), '(a)') '1;GENERAL'
-    nl=incr(nl); write(li(nl), '(a)') '2;ZERO_AT_END'
-    nl=incr(nl); write(li(nl), '(a)') '3;ZERO_SYMMETRIC'
-
-  case ('building^constraint')
-    nl=incr(nl); write(li(nl), '(a)') '1;none'
-    nl=incr(nl); write(li(nl), '(a)') '2;left_side'
-    nl=incr(nl); write(li(nl), '(a)') '3;right_side'
-
-  case ('data^merit_type')
-    do i = 1, size(tao_data_merit_type_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(tao_data_merit_type_name(i))
-    enddo
-
-  case ('data_source')
-    do i = 1, size(tao_data_source_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(tao_data_source_name(i))
-    enddo
-
-  case ('distribution_type')
-    do i = 1, size(beam_distribution_type_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(beam_distribution_type_name(i))
-    enddo
-
-  case ('floor_plan_view_name')
-    do i = 1, size(tao_floor_plan_view_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(tao_floor_plan_view_name(i))
-    enddo
-
-  case ('graph^type')
-    do i = 1, size(tao_graph_type_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(tao_graph_type_name(i))
-    enddo
-
-  case ('line^pattern', 'orbit_pattern')
-    do i = 1, size(qp_line_pattern_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(qp_line_pattern_name(i))
-    enddo
-
-  case ('lord_status')
-    nl=incr(nl); li(nl) = '4;Group_Lord'
-    nl=incr(nl); li(nl) = '5;Super_Lord' 
-    nl=incr(nl); li(nl) = '6;Overlay_Lord' 
-    nl=incr(nl); li(nl) = '7;Girder_Lord' 
-    nl=incr(nl); li(nl) = '8;Multipass_Lord'
-    nl=incr(nl); li(nl) = '10;Not_a_Lord' 
-    nl=incr(nl); li(nl) = '12;Control_Lord' 
-    nl=incr(nl); li(nl) = '13;Ramper_Lord'
-
-  case ('optimizer')
-    do i = 1, size(tao_optimizer_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(tao_optimizer_name(i))
-    enddo
-
-  case ('orbit_lattice')
-    nl=incr(nl); li(nl) = '1;model'
-    nl=incr(nl); li(nl) = '2;design'
-    nl=incr(nl); li(nl) = '3;base'
-
-  case ('photon_type')
-    do i = 1, size(photon_type_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(photon_type_name(i))
-    enddo
-
-  case ('plot^type')
-    nl=incr(nl); li(nl) = '1;normal'
-    nl=incr(nl); li(nl) = '2;wave'
-
-  case ('random_engine')
-    nl=incr(nl); li(nl) = '1;pseudo'
-    nl=incr(nl); li(nl) = '2;quasi'
-
-  case ('random_gauss_converter')
-    nl=incr(nl); li(nl) = '1;exact'
-    nl=incr(nl); li(nl) = '2;quick'
-
-  case ('shape^label')
-    do i = 1, size(tao_shape_label_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(tao_shape_label_name(i))
-    enddo
-
-  case ('shape^shape')
-    do i = 1, size(tao_shape_shape_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(tao_shape_shape_name(i))
-    enddo
-
-  case ('slave_status')
-    nl=incr(nl); li(nl) = '1;Minor_Slave'
-    nl=incr(nl); li(nl) = '2;Super_Slave' 
-    nl=incr(nl); li(nl) = '3;Free' 
-    nl=incr(nl); li(nl) = '9;Multipass_Slave' 
-    nl=incr(nl); li(nl) = '11;Slice_Slave' 
-
-  case ('fill_pattern')
-    do i = 1, size(qp_symbol_fill_pattern_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(qp_symbol_fill_pattern_name(i))
-    enddo
-
-  case ('symbol^type')
-    do i = lbound(qp_symbol_type_name, 1), ubound(qp_symbol_type_name, 1)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(qp_symbol_type_name(i))
-    enddo
-
-  case ('track_type')
-    nl=incr(nl); li(nl) = 'single'
-    nl=incr(nl); li(nl) = 'beam'
-
-  case ('var^merit_type')
-    do i = 1, size(tao_var_merit_type_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(tao_var_merit_type_name(i))
-    enddo
-
-  case ('view')
-    nl=incr(nl); li(nl) = 'zx'
-    nl=incr(nl); li(nl) = 'xz'
-    nl=incr(nl); li(nl) = 'xy'
-    nl=incr(nl); li(nl) = 'yx'
-    nl=incr(nl); li(nl) = 'zy'
-    nl=incr(nl); li(nl) = 'yz'
-
-  case ('wave_data_type')
-    do i = 1, size(tao_wave_data_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(tao_wave_data_name(i))
-    enddo
-
-  case ('x_axis_type')
-    do i = 1, size(tao_x_axis_type_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(tao_x_axis_type_name(i))
-    enddo
-
-  case ('data_type_z')
-    do i = 1, size(tao_data_type_z_name)
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(tao_data_type_z_name(i))
-    enddo
-
-  case default
-
-    name = upcase(line)
-    if (name == 'EVAL_POINT') name = 'ELE_ORIGIN'  ! Cheat since data%eval_point is not recognized by switch_attrib_value_name
-
-    a_name = switch_attrib_value_name(name, 1.0_rp, this_ele, name_list = name_list)
-    if (.not. allocated(name_list)) then
-      call invalid ('Not a valid switch name.')
-      return
+  do i = 1, size(name_list)
+    if (int_arr(i) == no_enum_index$) then
+      nl=incr(nl); li(nl) = name_list(i)
+    else
+      nl=incr(nl); write(li(nl), '(i0, 2a)') int_arr(i), ';', trim(name_list(i))
     endif
-
-    do i = lbound(name_list, 1), ubound(name_list, 1)
-      if (index(name_list(i), '!') /= 0 .or. name_list(i) == '') cycle
-      nl=incr(nl); write(li(nl), '(i0, 2a)') i, ';', trim(name_list(i))
-    enddo
-  end select
+  enddo
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
@@ -4534,8 +4515,8 @@ case ('floor_orbit')
         do ix = 0, 100
           i0 = 50*ix
           i1 = min(50*(ix+1), n_bend)
-          nl=incr(nl); write (li(nl), '(2(i0, a), 1000(a, es14.6))') ib, ';', ie, ';x', (';', dx_orbit(i), i = i0, i1)
-          nl=incr(nl); write (li(nl), '(2(i0, a), 1000(a, es14.6))') ib, ';', ie, ';y', (';', dy_orbit(i), i = i0, i1)
+          nl=incr(nl); write (li(nl), '(2(i0, a), 1000(a, es16.6e3))') ib, ';', ie, ';x', (';', dx_orbit(i), i = i0, i1)
+          nl=incr(nl); write (li(nl), '(2(i0, a), 1000(a, es16.6e3))') ib, ';', ie, ';y', (';', dy_orbit(i), i = i0, i1)
           if (i1 == n_bend) exit
         enddo
 
@@ -4569,8 +4550,8 @@ case ('floor_orbit')
           dy_orbit(ic) = f_orb%r(2)
         enddo
 
-        nl=incr(nl); write (li(nl), '(2(i0, a), 1000(a, es14.6))') ib, ';', ie, ';x', (';', dx_orbit(i), i = 0, n)
-        nl=incr(nl); write (li(nl), '(2(i0, a), 1000(a, es14.6))') ib, ';', ie, ';y', (';', dy_orbit(i), i = 0, n)
+        nl=incr(nl); write (li(nl), '(2(i0, a), 1000(a, es16.6e3))') ib, ';', ie, ';x', (';', dx_orbit(i), i = 0, n)
+        nl=incr(nl); write (li(nl), '(2(i0, a), 1000(a, es16.6e3))') ib, ';', ie, ';y', (';', dy_orbit(i), i = 0, n)
       endif
     enddo
   enddo
@@ -5229,9 +5210,9 @@ case ('lat_list')
             endif
           else
             if (i == 1 .and. ix == 1) then
-              nl=incr(nl); write (li(nl), '(es22.14)') values(ix)
+              nl=incr(nl); write (li(nl), '(es24.15e3)') values(ix)
             else
-              write (li(nl), '(2a, es22.14)') trim(li(nl)), ';', values(ix)
+              write (li(nl), '(2a, es24.15e3)') trim(li(nl)), ';', values(ix)
             endif
           endif
         enddo
@@ -5455,7 +5436,7 @@ case ('matrix')
 
 case ('merit')
 
-  nl=incr(nl); write (li(nl), '(es22.14)') tao_merit()
+  nl=incr(nl); write (li(nl), '(es24.15e3)') tao_merit()
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
@@ -5857,7 +5838,7 @@ case ('plot_lat_layout')
       if (.not. shape%draw) cycle
       y1 = y1 * s%plot_page%lat_layout_shape_scale
       y2 = y2 * s%plot_page%lat_layout_shape_scale
-      nl=incr(nl); write (li(nl), '(2(i0, a), 2(es22.14, a), (i0, a), 2a, 2(es10.2, a), 4a)') ele%ix_branch, ';', ele%ix_ele, &
+      nl=incr(nl); write (li(nl), '(2(i0, a), 2(es24.15e3, a), (i0, a), 2a, 2(es12.2e3, a), 4a)') ele%ix_branch, ';', ele%ix_ele, &
                 ';', ele%s_start, ';', ele%s, ';', shape%line_width, ';', trim(shape%shape), ';', &
                 y1, ';', y2, ';', trim(shape%color), ';', trim(label_name)
     enddo
@@ -5876,7 +5857,7 @@ case ('plot_lat_layout')
       if (.not. shape%draw) cycle
       y1 = y1 * s%plot_page%lat_layout_shape_scale
       y2 = y2 * s%plot_page%lat_layout_shape_scale
-      nl=incr(nl); write (li(nl), '(2(i0, a), 2(es22.14, a), (i0, a), 2a, 2(es10.2, a), 4a)') ele%ix_branch, ';', ele%ix_ele, &
+      nl=incr(nl); write (li(nl), '(2(i0, a), 2(es24.15e3, a), (i0, a), 2a, 2(es12.2e3, a), 4a)') ele%ix_branch, ';', ele%ix_ele, &
                 ';', ele%s_start, ';', ele%s, ';', shape%line_width, ';', trim(shape%shape), ';', &
                 y1, ';', y2, ';', trim(shape%color), ';', trim(label_name)
     enddo
@@ -6268,7 +6249,7 @@ endif
 
   case ('')
     do i = 1, n
-      nl=incr(nl); write (li(nl), '(i0, 2(a, es22.14))') i, ';', c%x_line(i), ';', c%y_line(i)
+      nl=incr(nl); write (li(nl), '(i0, 2(a, es24.15e3))') i, ';', c%x_line(i), ';', c%y_line(i)
     enddo
 
   case default
@@ -6368,9 +6349,9 @@ case ('plot_symbol')
   case ('')
     do i = 1, size(c%x_symb)
       if (allocated(c%ix_symb)) then
-        nl=incr(nl); write (li(nl), '(2(i0, a), 2(es22.14, a))') i, ';', c%ix_symb(i), ';', c%x_symb(i), ';', c%y_symb(i)
+        nl=incr(nl); write (li(nl), '(2(i0, a), 2(es24.15e3, a))') i, ';', c%ix_symb(i), ';', c%x_symb(i), ';', c%y_symb(i)
       else
-        nl=incr(nl); write (li(nl), '(2(i0, a), 2(es22.14, a))') i, ';', 0, ';', c%x_symb(i), ';', c%y_symb(i)
+        nl=incr(nl); write (li(nl), '(2(i0, a), 2(es24.15e3, a))') i, ';', 0, ';', c%x_symb(i), ';', c%y_symb(i)
       endif
     enddo
 
@@ -6674,7 +6655,7 @@ case ('shape_list')
   do i = 1, size(shapes)
     shape => shapes(i)
     if (shape%ele_id == '') cycle
-    nl=incr(nl); write (li(nl), '(i0, 7a, es12.4, 3a, 2(l1, a), 2a)') i, ';', &
+    nl=incr(nl); write (li(nl), '(i0, 7a, es14.4e3, 3a, 2(l1, a), 2a)') i, ';', &
           trim(shape%ele_id), ';', trim(shape%shape), ';', trim(shape%color), ';', shape%size, ';', &
           trim(shape%label), ';', shape%draw, ';', shape%multi, ';', int_str(shape%line_width)
   enddo
@@ -7367,7 +7348,7 @@ case ('spin_invariant')
   n = 0
   do ie = 0, branch%n_ele_track
     if (ie /= 0) call track1(orb, branch%ele(ie), branch%param, orb)
-    nl=incr(nl); write (li(nl), '(i0, 3(a, es22.14))') ie, (';', orb%spin(j), j = 1, 3)
+    nl=incr(nl); write (li(nl), '(i0, 3(a, es24.15e3))') ie, (';', orb%spin(j), j = 1, 3)
     if (use_real_array_buffer) then
       tao_c_interface_com%c_real(n+1:n+3) = orb%spin
       n = n + 3
@@ -7636,7 +7617,7 @@ case ('taylor_map')
   do i = 1, 6
     do j = 1, size(taylor(i)%term)
       tt => taylor(i)%term(j)
-      nl=incr(nl); write (li(nl), '(i0, a, es22.14, 6(a, i0))') i, ';term;', tt%coef, (';', tt%expn(k), k = 1, 6)
+      nl=incr(nl); write (li(nl), '(i0, a, es24.15e3, 6(a, i0))') i, ';term;', tt%coef, (';', tt%expn(k), k = 1, 6)
     enddo
   enddo
 
@@ -7995,7 +7976,7 @@ case ('var_v_array')
   do i = 1, size(v_array)
     v_ptr => v_array(i)%v
     if (.not. v_ptr%exists) cycle
-    nl=incr(nl); write(li(nl), '(i0, 3a, 3(es22.14, a), 2(l1, a), es22.14)') &
+    nl=incr(nl); write(li(nl), '(i0, 3a, 3(es24.15e3, a), 2(l1, a), es24.15e3)') &
                   v_ptr%ix_v1, ';', trim(tao_var_attrib_name(v_ptr)), ';', v_ptr%meas_value, ';', &
                   v_ptr%model_value, ';', v_ptr%design_value, ';', v_ptr%useit_opt, ';', v_ptr%good_user, ';', v_ptr%weight
   enddo
@@ -8041,7 +8022,7 @@ case ('var_v1_array')
   do i = lbound(v1_ptr%v, 1), ubound(v1_ptr%v, 1)
     v_ptr => v1_ptr%v(i)
     if (.not. v_ptr%exists) cycle
-    nl=incr(nl); write (li(nl), '(2a, i0, 5a, 3(es22.14, a), 2 (l1, a))') trim(v1_ptr%name), '[', &
+    nl=incr(nl); write (li(nl), '(2a, i0, 5a, 3(es24.15e3, a), 2 (l1, a))') trim(v1_ptr%name), '[', &
                      v_ptr%ix_v1, '];', trim(v_ptr%ele_name), ';', trim(v_ptr%attrib_name), ';', &
                      v_ptr%meas_value, ';', v_ptr%model_value, ';', &
                      v_ptr%design_value, ';', v_ptr%good_user, ';', v_ptr%useit_opt
@@ -8378,7 +8359,7 @@ case ('wave')
 
     c => g%curve(1)
     do i = 1, size(c%x_symb)
-      nl=incr(nl); write (li(nl), '(i0, 2(a, es14.6))') i, ';', c%x_symb(i), ';', c%y_symb(i)
+      nl=incr(nl); write (li(nl), '(i0, 2(a, es16.6e3))') i, ';', c%x_symb(i), ';', c%y_symb(i)
     enddo
 
   case default
@@ -8813,7 +8794,7 @@ else
   v_str = ';REAL;F;'
 endif
 
-fmt = '(4a, es22.14)'
+fmt = '(4a, es24.15e3)'
 
 nl=incr(nl); write (li(nl), fmt) prefix, 'beta_', suffix, v_str,               twiss%beta
 nl=incr(nl); write (li(nl), fmt) prefix, 'alpha_', suffix, v_str,              twiss%alpha
@@ -8854,7 +8835,7 @@ else
   v_str = ';REAL;F;'
 endif
 
-fmt = '(3a, es22.14)'
+fmt = '(3a, es24.15e3)'
 
 nl=incr(nl); write (li(nl), fmt) 'eta_', suffix, v_str,                         xy_disp%eta
 nl=incr(nl); write (li(nl), fmt) 'etap_', suffix, v_str,                        xy_disp%etap
@@ -9084,9 +9065,9 @@ end function rstr
 function real_part_str(z) result (str)
 
 complex(rp) z
-character(23) str
+character(25) str
 
-write (str, '(a, es22.14)') ';', real(z)
+write (str, '(a, es24.15e3)') ';', real(z)
 
 end function real_part_str
 
@@ -9096,9 +9077,9 @@ end function real_part_str
 function cmplx_str(z) result (str)
 
 complex(rp) z
-character(46) str
+character(50) str
 
-write (str, '(2(a, es22.14))') ';', real(z), ';', aimag(z)
+write (str, '(2(a, es24.15e3))') ';', real(z), ';', aimag(z)
 
 end function cmplx_str
 
@@ -9517,15 +9498,15 @@ call twiss_out(bunch_params%c, 'twiss_', 'c', emit_out = .true.)
 ! Sigma matrix
 do i = 1, 6
   do j = 1,6
-    nl=incr(nl); write (li(nl), '(a, i0, i0, a, es22.14)') 'sigma_', i, j, ';REAL;F;', bunch_params%sigma(i,j)
+    nl=incr(nl); write (li(nl), '(a, i0, i0, a, es24.15e3)') 'sigma_', i, j, ';REAL;F;', bunch_params%sigma(i,j)
   enddo
 enddo
 
 ! Relative min, max, centroid
 do i = 1, 6
-  nl=incr(nl); write (li(nl), '(a, i0, a, es22.14)') 'rel_min_', i, ';REAL;F;',      bunch_params%rel_min(i)
-  nl=incr(nl); write (li(nl), '(a, i0, a, es22.14)') 'rel_max_', i, ';REAL;F;',      bunch_params%rel_max(i)
-  nl=incr(nl); write (li(nl), '(a, i0, a, es22.14)') 'centroid_vec_', i, ';REAL;F;', bunch_params%centroid%vec(i)
+  nl=incr(nl); write (li(nl), '(a, i0, a, es24.15e3)') 'rel_min_', i, ';REAL;F;',      bunch_params%rel_min(i)
+  nl=incr(nl); write (li(nl), '(a, i0, a, es24.15e3)') 'rel_max_', i, ';REAL;F;',      bunch_params%rel_max(i)
+  nl=incr(nl); write (li(nl), '(a, i0, a, es24.15e3)') 'centroid_vec_', i, ';REAL;F;', bunch_params%centroid%vec(i)
 enddo
 
 nl=incr(nl); write (li(nl), rmt) 'centroid_t;REAL;F;',                       bunch_params%centroid%t
@@ -9567,7 +9548,7 @@ if (use_buffer) then
 else  ! string_list
   do i = 1, n_arr
     j = i + integer_option(1, ix0) - 1
-    nl=incr(nl); write (li(nl), '(i0, a, es22.14)') j, ';', val_arr(i)
+    nl=incr(nl); write (li(nl), '(i0, a, es24.15e3)') j, ';', val_arr(i)
   enddo
 endif
 
@@ -9737,14 +9718,14 @@ call tao_floor_to_screen_coords (graph, floor1, end1)
 call tao_floor_to_screen_coords (graph, floor2, end2)
 
 if (ele%key == sbend$) then
-  nl=incr(nl); write (li(nl), '(2(i0, a), 2a, 6(es14.7, a), (i0, a), 2a, 2(es10.2, a), 4a, 4(es14.7, a))') &
+  nl=incr(nl); write (li(nl), '(2(i0, a), 2a, 6(es16.7e3, a), (i0, a), 2a, 2(es12.2e3, a), 4a, 4(es16.7e3, a))') &
               ele%ix_branch, ';', ele%ix_ele, ';', &
               trim(key_name(ele%key)), ';', end1%r(1), ';', end1%r(2), ';', end1%theta, ';', &
               end2%r(1), ';', end2%r(2), ';', end2%theta, ';', &
               line_width, ';', trim(shape_shape), ';', off1, ';', off2, ';', trim(color), ';', trim(label_name), ';', &
               ele%value(l$), ';', ele%value(angle$), ';', ele%value(e1$), ';', ele%value(e2$)
 else
-  nl=incr(nl); write (li(nl), '(2(i0, a), 2a, 6(es14.7, a), (i0, a), 2a, 2(es10.2, a), 4a)') &
+  nl=incr(nl); write (li(nl), '(2(i0, a), 2a, 6(es16.7e3, a), (i0, a), 2a, 2(es12.2e3, a), 4a)') &
               ele%ix_branch, ';', ele%ix_ele, ';', &
               trim(key_name(ele%key)), ';', end1%r(1), ';', end1%r(2), ';', end1%theta, ';', &
               end2%r(1), ';', end2%r(2), ';', end2%theta, ';', &

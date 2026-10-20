@@ -266,11 +266,12 @@ character(20), parameter :: csr_method_name(3) = [character(20):: 'Off', '1_Dim'
 integer, parameter :: slice$ = 2, fft_3D$ = 3, cathode_fft_3d$ = 4
 character(20), parameter :: space_charge_method_name(4) = [character(20):: 'Off', 'Slice', 'FFT_3D', 'Cathode_FFT_3D']
 
-! Free-electron-laser method, valid on wiggler and undulator elements. Off is the
-! default and leaves the element a plain periodic wiggler. averaged$ selects the
-! wiggle-averaged model and unaveraged$ the direct integration of the undulator field.
-! Like space_charge_method, this names multiparticle physics that rides on whatever
-! tracking_method the element carries, and a program that does not implement it ignores it.
+! Free-electron-laser method, valid on wiggler and undulator elements and stored in
+! ele%value(fel_method$). Off is the default and leaves the element a plain periodic
+! wiggler. averaged$ selects the wiggle-averaged model and unaveraged$ the direct
+! integration of the undulator field. Like space_charge_method, this names multiparticle
+! physics that rides on whatever tracking_method the element carries, and a program that
+! does not implement it ignores it.
 
 integer, parameter :: averaged$ = 2, unaveraged$ = 3
 character(20), parameter :: fel_method_name(3) = [character(20):: 'Off', 'Averaged', 'Unaveraged']
@@ -1513,7 +1514,6 @@ type ele_struct
   integer :: spin_tracking_method = tracking$     ! symp_lie_ptc$, etc.
   integer :: csr_method = off$                    ! or one_dim$ ("1_dim"), steady_state_3d$
   integer :: space_charge_method = off$           ! slice$, slice_longitudinal$, slice_transverse$, fft_3D$, cathode_fft_3d$
-  integer :: fel_method = off$                    ! or averaged$, unaveraged$. Wiggler and undulator only.
   integer :: ptc_integration_type = matrix_kick$  ! drift_kick$, matrix_kick$, or ripken_kick$
   integer :: field_calc = bmad_standard$          ! no_field$, fieldmap$, refer_to_lords$, or custom$
   integer :: aperture_at = exit_end$              ! Aperture location: entrance_end$, ...
@@ -1878,7 +1878,7 @@ integer, parameter :: photon_type$ = 44, coupler_phase$ = 44, dB_field$ = 44, cr
 integer, parameter :: lattice_type$ = 45, B1_gradient$ = 45, E1_gradient$ = 45, coupler_angle$ = 45
 integer, parameter :: live_branch$ = 46, B2_gradient$ = 46, E2_gradient$ = 46, coupler_strength$ = 46
 integer, parameter :: geometry$ = 47, coupler_at$ = 47, E_tot_offset$ = 47, ptc_canonical_coords$ = 47
-integer, parameter :: B3_gradient$ = 48, E3_gradient$ = 48, ptc_fringe_geometry$ = 48, e_tot_set$ = 48
+integer, parameter :: B3_gradient$ = 48, E3_gradient$ = 48, ptc_fringe_geometry$ = 48, e_tot_set$ = 48, fel_method$ = 48
 integer, parameter :: Bs_field$ = 49, p0c_set$ = 49, ptc_field_geometry$ = 49, delta_ref_time_user_set$ = 49
 integer, parameter :: delta_ref_time$ = 50
 integer, parameter :: p0c_start$ = 51
@@ -1908,8 +1908,6 @@ integer, parameter :: y2_limit$ = 74
 integer, parameter :: check_sum$ = 75
 
 !!    = 1 + num_ele_attrib$
-
-integer, parameter :: fel_method$ = 76
 
 integer, parameter :: is_on$ = 79
 integer, parameter :: alias$  = 80
@@ -2172,6 +2170,7 @@ type aperture_param_struct
   real(rp) :: rel_accuracy = 1e-2_rp  ! Relative resolution of bracketed aperture.
   real(rp) :: abs_accuracy = 1e-5_rp  ! Absolute resolution of bracketed aperture (meters).
   character(40) :: start_ele = ''     ! Element to start tracking at.
+  logical :: debug = .false.          ! Used for code debugging.
 end type
 
 ! Structure for a single dynamic aperture scan over a set of angles.
