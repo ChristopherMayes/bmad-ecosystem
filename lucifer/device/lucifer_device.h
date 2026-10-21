@@ -1,0 +1,303 @@
+/* The device seam: the C interface fel_device_mod talks to through iso_c_binding.
+ *
+ * One implementation file sits behind this header per build: lucifer_metal.mm where
+ * the toolchain can carry it (macOS with a Clang-family Objective-C++ compiler, since
+ * the backend is ARC-managed Objective-C++ against the Metal framework) and
+ * lucifer_device_stub.c everywhere else, which refuses and says why. No device type or
+ * call appears outside that one file, so a second backend is a new implementation of
+ * these functions plus one CMake branch. The shape follows GPUEngine.h of this project's
+ * own prior work, the Genesis 1.3 v4 backends on branch gpu/metal-engine (commit
+ * 4919b01, unmerged upstream): residency for the whole element, refusal with a stated reason,
+ * and single precision arranged for rather than accepted.
+ *
+ * Units and charts are the caller's business. Everything crossing this seam is
+ * already in the device representation: transverse coordinates and the energy
+ * offset as 32-bit floats, the longitudinal state as a 64-bit fixed-point phase
+ * (ticks of 2 pi / 2^32 off the slice reference), weights as floats, field slices
+ * as interleaved re/im float pairs. fel_device_mod owns every conversion, beside
+ * the FP32 reformulations it mirrors from fel_fp32_mod.
+ *
+ * Slice and field indices at this seam are 0-based. Error reporting: functions
+ * returning int give 0 on success and nonzero on refusal, with 'reason' filled as
+ * a NUL-terminated string naming what was refused.
+ */
+
+#ifndef LUCIFER_DEVICE_H
+#define LUCIFER_DEVICE_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The field set's size bound, wavefront_init%harmonics(9)'s. Mirrored by
+ * fel_dev_max_field$ in fel_device_mod.f90. */
+#define LUC_DEV_MAX_FIELD 9
+
+/* One integration step's constants. Mirrored field for field by
+ * fel_device_par_struct in fel_device_mod.f90: editing one side alone skews the
+ * struct layout silently, the hazard MetalEngine.mm records for its own shader
+ * structs. All doubles first, then 32-bit ints, so both mirrors agree on layout
+ * without padding surprises. cret_ticks travels separately (luc_dev_step's own
+ * argument) to keep this struct free of 64-bit members.
+ *
+ * The field set: nfield members, each a harmonic of the fundamental with its own
+ * coupling fc(h) and deposit scale, and npol planes per member (Ex alone, or the
+ * (Ex, Ey) pair when the run carries two live polarizations). The push gathers
+ * every member at h*theta and the deposit writes every member's source with
+ * exp(-i h theta). pol is the element's polarization 2-vector, read as conj(pol).E
+ * in the gather and written as pol*src at the field add, fel_advance's and
+ * fel_field_step's own conventions. With one member and one plane, every kernel
+ * reduces to the single-field arithmetic it had before the set. */
+typedef struct {
+  double dz;             /* full step length [m] */
+  double ks, ku;         /* fundamental radiation and undulator wavenumbers [1/m] */
+  double aw;             /* rms undulator parameter */
+  double qres;           /* 2 ku / ks, the detuning difference's resonance */
+  double e0;             /* p0_mc^2 / gamma0: pz <-> goff conversion */
+  double gam0;           /* reference gamma */
+  double p0_mc;          /* reference momentum / m_e c */
+  double kx, ky;         /* natural-focusing roll-off [1/m^2] */
+  double ax, ay;         /* undulator field offset [m] */
+  double cos_t, sin_t;   /* wiggle-plane tilt */
+  double k1x, k1y;       /* Bmad transverse map k1 locals (pre 1/rel_p^2) */
+  double gridmax, dgrid; /* grid half width and spacing [m], one grid for the set */
+  double harm[LUC_DEV_MAX_FIELD];   /* per member: the harmonic number, as a real factor */
+  double rtmp[LUC_DEV_MAX_FIELD];   /* per member: energy-exchange coupling fc(h) / (sqrt(2) m_e) */
+  double scl_w[LUC_DEV_MAX_FIELD];  /* per member: deposit scale, fel_field_step's scl_w at h */
+  double pol_re[2], pol_im[2];      /* the element's polarization pair on (Ex, Ey) */
+  /* The deposit's fixed-point scale, in ticks per volt per metre, one for the whole
+   * set. Integer addition is associative where float addition is not, so a deposit
+   * that accumulates in ticks does not depend on the order threads reach a cell. A
+   * power of two, so the scale and its reciprocal are exact and the conversion back
+   * costs one rounding. The caller derives it from a bound on the per-cell sum that
+   * holds for the run and refuses a deck whose bound it cannot carry. */
+  double dep_scale;
+  /* The gamma the deposit's bound assumes no particle falls below. The kernel drops a
+   * particle under it without converting or accumulating it and records a fault, which
+   * luc_dev_dep_fault reports so the caller can refuse the run. Checking in the kernel
+   * rather than on a readback covers the interval between two readbacks, which is where
+   * the bound could otherwise be breached and used. */
+  double dep_gam_floor;
+  int32_t first;         /* field ring offset, Genesis's Field::first, one for the set */
+  int32_t helical;       /* octupole kick shape (1 = both planes) */
+  int32_t mutate;        /* falsifiability hook: perturb the kernel's detuning */
+  int32_t source_filter; /* 1 = filter the source term before it reaches the field */
+  int32_t nfield;        /* members in use, 1 to LUC_DEV_MAX_FIELD */
+  int32_t npol;          /* planes per member, 1 or 2 */
+  int32_t pad;
+} luc_dev_step_par;
+
+/* One unaveraged record step's constants, mirrored field for field by
+ * fel_device_unavg_par_struct in fel_device_mod.f90 (all doubles, then the 32-bit
+ * ints). Editing one mirror alone skews the layout silently. */
+typedef struct {
+  double dsub;           /* substep length [m], the Strang step */
+  double ks, ku, aw;     /* radiation and undulator wavenumbers [1/m], rms aw */
+  double gam0, beta0;    /* reference gamma and its beta */
+  double g0inv2;         /* 1/gamma0^2, the slippage identity's second half */
+  double cos_t, sin_t;   /* wiggle-plane tilt */
+  double gridmax, dgrid; /* grid half width and spacing [m] */
+  double scl_u;          /* the unaveraged source scale, fel_unavg_step's scl_u */
+  double m_electron;     /* electron rest energy [eV], the kick's divisor */
+  double dep_scale;      /* the deposit's fixed-point scale [ticks per V/m] */
+  /* The deposit's bound rests on one ratio: a contribution carries |j|/u_s, and this
+   * is the largest value of it the bound assumes. The kernel drops a particle above
+   * it without converting or accumulating it and records the same fault the averaged
+   * deposit's gamma floor records, so the caller refuses the run. The quiver sets the
+   * scale of the ratio and the bound is generous against it. */
+  double dep_u_bound;
+  double spont_fac;      /* 4 dgrid^2 / (2 Z0) times the slice time, J per |src|^2 */
+  int32_t nsub;          /* substeps in this record step */
+  int32_t first;         /* field ring offset, constant across the record step */
+  int32_t helical;       /* the undulator's helicity */
+  int32_t mutate;        /* falsifiability hook: coarsen the lag's residual angle */
+  int32_t pad;
+} luc_dev_unavg_par;
+
+/* Backend presence and the device it would run on. Returns 1 when a backend is
+ * compiled in and a usable device exists, else 0 with 'reason' naming what is
+ * missing. Safe to call on any machine; allocates nothing. */
+int luc_dev_available (char *name, int name_len, char *reason, int reason_len);
+
+/* Allocate the resident buffers and compile the kernels for this run shape: nslice
+ * slices of npart particles, and a field set of nfield members with npol planes
+ * each on one ngrid grid. Refuses (nonzero return, reason filled): no device, a grid
+ * the transform does not handle (powers of two 64 to 1024, the message names the
+ * nearest supported size), a set outside 1..LUC_DEV_MAX_FIELD members or 1..2
+ * planes, or a failed allocation with the wanted bytes as the device reports them. */
+int luc_dev_init (int nslice, int npart, int ngrid, int nfield, int npol,
+                  char *reason, int reason_len);
+
+void luc_dev_close (void);
+
+/* Grow the particle buffers to npart per slice, keeping the grid, the field set and
+ * the compiled kernels: the kernels take npart at dispatch, so no recompile. Growth
+ * only, since a smaller rectangle is never needed and shrinking would free buffers a
+ * later element could ask for again. The buffers' contents are not preserved, and the
+ * caller re-uploads every slice afterwards, which is what an element entry does. This
+ * is what slice migration needs: fel_migrate_slices grows a slice's arrays on the
+ * host, and the resident rectangle was sized at setup to the largest fill then. */
+void luc_dev_resize_particles (int npart);
+
+/* Whole-slice transfers between the caller's staging arrays and the resident
+ * buffers. The upload carries the weights; they are constant while resident
+ * (migration is refused), so downloads do not return them.
+ *
+ * Concurrency contract: every transfer drains the device before touching a
+ * buffer, and that drain is not thread-safe, so concurrent transfers are
+ * illegal in general. After one serial luc_dev_sync with no further encoding,
+ * however, a transfer is a pure copy of a caller-chosen region of the
+ * shared-storage buffers, and transfers of DISJOINT regions (distinct slice
+ * indices) may then run from concurrent threads. The parallel readback is
+ * built on exactly that: one drain, then one download per slice per thread. */
+void luc_dev_upload_slice (int is, int n, const float *x, const float *px,
+                           const float *y, const float *py, const float *goff,
+                           const int64_t *uphase, const float *w);
+void luc_dev_download_slice (int is, int n, float *x, float *px, float *y,
+                             float *py, float *goff, int64_t *uphase);
+
+/* Field-plane transfers, 2*ngrid*ngrid floats interleaved re/im, addressed by
+ * member im (0-based in the set), plane ip (0 = Ex, 1 = Ey) and record slice is,
+ * plus the zero fill slippage needs and the source-grid readback the instrument's
+ * rows read. The source is per member, not per plane: the polarization factors
+ * apply at the field add, as in fel_field_step. */
+void luc_dev_upload_field_slice (int im, int ip, int is, const float *e);
+void luc_dev_download_field_slice (int im, int ip, int is, float *e);
+void luc_dev_zero_field_slice (int im, int ip, int is);
+void luc_dev_download_source_slice (int im, int is, float *s);
+
+/* The step propagator exp(K2 dz) of member im, 2*ngrid*ngrid floats, FFT order:
+ * each member diffracts at its own wavelength. The caller keys rebuilds
+ * (fel_device_mod mirrors fp32_kernel_cache's key, per member). */
+void luc_dev_set_kernel (int im, const float *expk);
+
+/* The source filter's sigmoid for member 'im', ngrid*ngrid interleaved complex floats in
+ * the same FFT order as the propagator. Real-valued, carried as complex so the same
+ * multiply-then-transform kernel serves both. Only read when par->source_filter is 1. */
+void luc_dev_set_filter (int im, const float *sig);
+
+/* Per-slice phase rotators e^{-i h (phi0 + ks z_ref)} per member, member-major
+ * (index im*nslice + is), 2*nfield*nslice floats each: the push works against the
+ * step's entry phase (base) and the deposit against its exit phase (base_dep, read
+ * as i times the rotator), the two epochs fel_fp32_mod's twin uses. Uploaded per
+ * step: phi0 advances, and in lockstep z_ref moves. */
+void luc_dev_set_slice_phases (const float *base, const float *base_dep);
+
+/* Encode one integration step: transverse half step, longitudinal push in the
+ * (goff, phase-tick) chart gathering every member, transverse half step, source
+ * deposit into every member, four-pass FFT field solve of every plane with its
+ * member's propagator. One command buffer for the whole step; nothing is waited
+ * on here. cret_ticks is this step's phi0 advance in ticks, subtracted exactly. */
+int luc_dev_step (const luc_dev_step_par *par, int64_t cret_ticks,
+                  char *reason, int reason_len);
+
+/* Drain the device: everything encoded completes before this returns. Every
+ * transfer above syncs itself; this exists for the caller's own sequencing. */
+void luc_dev_sync (void);
+
+/* ---------------- the unaveraged mode ----------------
+ *
+ * The quiver-resolving advance of fel_unaveraged_mod, one record step at a time.
+ * The field set is one member of one plane here and the caller refuses anything
+ * else, so these calls carry no member or plane index.
+ *
+ * The chart across this seam is the same seven buffers luc_dev_upload_slice
+ * fills, read differently, and the caller owns the reading: px and py carry the
+ * kinetic transverse momenta ux and uy (in units of m_e c) where the averaged
+ * chart carries Bmad's px and py, and the phase accumulator carries
+ * ks (tau - tau_ref) in ticks where the averaged chart carries ks z/beta - ks
+ * z_ref. goff, the weights and the transverse positions are the same quantities
+ * in both. The tick chart is what lets the lag be carried exactly: the push
+ * integrates its increment from zero over a substep and adds it, so no
+ * arithmetic ever differences the increment against a lag that grew. */
+
+/* Size the unaveraged work buffers for nsub substeps a record step, which is
+ * fel_unavg_setup's own count, and clear the ledger's accumulators. Called at each
+ * unaveraged element's entry, after luc_dev_init and the beam upload. Refuses
+ * (nonzero, reason filled) a nsub the buffers cannot hold. */
+int luc_dev_unavg_begin (int nsub, char *reason, int reason_len);
+
+/* Encode one record step: nsub substeps of clear, half push, kick and deposit,
+ * half push, spontaneous reduction and the four-pass solve. fq holds the
+ * per-substep stage factors, 8 float4 a substep as (g, gp, cos(ku s), sin(ku s))
+ * at the four RK stage positions of each half push, and cbase the per-substep
+ * per-slice carrier rotator e^{i psi_mid}, nsub by nslice. Both are computed in
+ * FP64 by the caller and rounded once here. One command buffer holds the whole
+ * record step and nothing is waited on. */
+int luc_dev_unavg_step (const luc_dev_unavg_par *par, const float *fq,
+                        const float *cbase, char *reason, int reason_len);
+
+/* The element's banked spontaneous energy, sum over slices and substeps of
+ * 4 sum|src|^2 scaled by the caller's factor, in FP64 over the per-threadgroup
+ * partials in index order. Drains first. */
+double luc_dev_unavg_spont (void);
+
+/* One slice's energy offsets as they stood at the start of the record step now
+ * encoded, npart floats. gamma changes only in the kick, so the caller forms the
+ * step's beam-energy change from these and the offsets luc_dev_download_slice
+ * returns, in FP64 and in its own order. Drains first, and obeys the same
+ * post-drain concurrency contract as the other transfers. */
+void luc_dev_download_g0 (int is, int n, float *g0);
+
+/* The exact-wrap assertion, run on the device itself: a probe set of phase
+ * accumulators is shifted by whole buckets and back through device arithmetic.
+ * Returns 0 only if the round trip is bit-exact and the extracted phase is
+ * bit-identical under bucket shifts (wraps are modular arithmetic, so this
+ * asserts exactly rather than to a tolerance). */
+int luc_dev_wrap_check (int64_t bucket_ticks);
+
+/* Nonzero once any deposit has met a particle below dep_gam_floor. Sticky, and it
+ * drains before reading, so a caller that sees zero has seen every step encoded. */
+int luc_dev_dep_fault (void);
+
+/* Seconds the device spent executing since init, from command-buffer
+ * timestamps, and the resident footprint in bytes. */
+double luc_dev_seconds (void);
+int64_t luc_dev_bytes (void);
+
+/* Per-pass timing. luc_dev_seconds above is a whole command buffer, and a command
+ * buffer holds every step between two host touches, so it cannot say what a pass
+ * costs. With timing on, each pass of luc_dev_step is encoded into its own compute
+ * encoder carrying a timestamp counter attachment, all still inside the one command
+ * buffer the step batching rests on, and the per-pass seconds accumulate into these
+ * slots. The passes of one kind in a step sum into one slot: the transverse map runs
+ * twice a step, and the filter and the solve are four dispatches each.
+ *
+ * Dispatch-boundary counter sampling would time each dispatch inside one encoder and
+ * is absent on the hardware this backend runs (Apple M3 Max reports stage boundary
+ * alone), so an encoder a pass is what stage-boundary sampling allows. The instrument
+ * therefore costs encoder boundaries the production path does not pay, which is why it
+ * is off by default and why the price is measured with it off.
+ *
+ * The counter sample buffer holds 4096 samples on this hardware, two a pass, so a
+ * command buffer covering more than 2048 passes is committed early to make room. That
+ * is a batching change the instrument caused, so the count of those is returned. */
+#define LUC_DEV_PASS_TRK    0   /* transverse map, twice a step */
+#define LUC_DEV_PASS_PUSH   1   /* longitudinal push and field gather */
+#define LUC_DEV_PASS_ZERO   2   /* clear the source planes */
+#define LUC_DEV_PASS_DEP    3   /* source deposit */
+#define LUC_DEV_PASS_FILTER 4   /* the source filter's four passes */
+#define LUC_DEV_PASS_SOLVE  5   /* the field solve's four passes */
+#define LUC_DEV_PASS_UPUSH  6   /* unaveraged: the half magnetic push, twice a substep */
+#define LUC_DEV_PASS_UKICK  7   /* unaveraged: the radiation kick and its deposit */
+#define LUC_DEV_PASS_USPONT 8   /* unaveraged: the ledger's spontaneous reduction */
+#define LUC_DEV_PASS_N      9
+
+/* Turn per-pass timing on or off. Legal only with nothing encoded, which the caller
+ * arranges by calling it before the first step. Returns 0, or nonzero with 'reason'
+ * filled when the hardware carries no timestamp counter set. */
+int luc_dev_timing (int on, char *reason, int reason_len);
+
+/* Fill sec(1:n) with the accumulated per-pass seconds, n at most LUC_DEV_PASS_N, and
+ * count(1:n) with the passes summed into each. Returns the number of command buffers
+ * committed early to make room in the sample buffer. Zero everywhere when timing was
+ * never on. */
+int luc_dev_pass_seconds (double *sec, int64_t *count, int n);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

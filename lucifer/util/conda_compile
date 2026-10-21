@@ -1,0 +1,131 @@
+#!/bin/bash
+#
+# Build Bmad against a conda environment, then build Lucifer against that Bmad.
+#
+# Lucifer is a Bmad user program: its CMakeLists.txt includes Bmad's Master.cmake, which
+# compiles it against the Bmad distribution's libraries and modules and places its
+# binaries in debug/ and production/ beside the Lucifer source, inside the Bmad checkout
+# or out of it. The Bmad source is BMAD_DIR, or the parent of this tree when that holds
+# a Bmad checkout, and Bmad's own build goes through its distribution scripts with the
+# conda preferences below, the one route through that build system that resolves the
+# dependencies rather than requiring them to be built.
+#
+# Create the environment once, then build:
+#
+#   conda env create -n bmad-build -f <bmad>/.github/bmad-build-env.yaml
+#   lucifer/util/conda_compile                    # production: Bmad, then Lucifer
+#   BUILD_PRODUCTION=N lucifer/util/conda_compile # debug, the build to develop against
+#   BUILD_BMAD=N lucifer/util/conda_compile       # Lucifer alone, Bmad already built
+#
+# Preferences go in the heredoc below, not in Bmad's util/dist_prefs: this script restores
+# that file from origin/main on every run and appends to it, so any edit to it is discarded.
+
+set -e
+
+# The Bmad root, by the shared rule (locations.sh), into a name of this script's own:
+# dist_source_me uses BMAD_DIR as a loop variable and would otherwise overwrite the one
+# given here.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/locations.sh"
+BMAD_ROOT="$BMAD_SRC"
+if [[ -z "$BMAD_ROOT" ]]; then
+  echo "Error: no Bmad checkout found (set BMAD_DIR to one, which holds util/dist_source_me)" >&2
+  exit 1
+fi
+
+# The checkout must be at least the release Lucifer declares (lucifer/BMAD_RELEASE). This
+# runs before anything is built or util/dist_prefs is touched, BUILD_BMAD=N included, so a
+# refused checkout is left exactly as it was found.
+
+"$LUCIFER_DIR/util/bmad_release_check" "$BMAD_ROOT" || exit 1
+
+if ! command -v conda &>/dev/null; then
+  echo "Error: conda binary not found"
+  exit 1
+fi
+
+CONDA_ROOT=$(conda info --base)
+source "$CONDA_ROOT/etc/profile.d/conda.sh"
+
+conda activate bmad-build
+
+export LDFLAGS="$LDFLAGS -Wl,-no_compact_unwind"
+
+# Pin HDF5 to this environment.
+#
+# util/Master.cmake calls find_package(HDF5 COMPONENTS Fortran HL) with nothing to anchor
+# it, and CMake's FindHDF5 prefers the h5fc and h5cc compiler wrappers it finds on PATH. Any
+# other conda environment that is active, or merely earlier on PATH, therefore supplies the
+# HDF5 that gets linked, while the compile side picks up this environment's hdf5.mod from
+# ACC_CONDA_PATH/include. Observed on one machine: compiled against 1.14.6 module files and
+# linked against 2.1.0 shared libraries, a mismatch across a major version that happened to
+# run. HDF5_ROOT takes precedence over the wrapper search and makes the choice explicit.
+
+export HDF5_ROOT="$CONDA_PREFIX"
+
+echo "** CONDA PREFIX IS: $CONDA_PREFIX"
+echo "** HDF5_ROOT IS:    $HDF5_ROOT"
+echo "** BMAD ROOT IS:    $BMAD_ROOT"
+echo "** LUCIFER_DIR IS:  $LUCIFER_DIR"
+
+BUILD_PRODUCTION=${BUILD_PRODUCTION=Y}
+BUILD_BMAD=${BUILD_BMAD=Y}
+
+# Everything the distribution scripts do is relative to the Bmad root, and dist_source_me
+# takes the working directory as that root.
+
+cd "$BMAD_ROOT"
+
+git checkout origin/main -- util/dist_prefs
+
+cat <<PREFS >>util/dist_prefs
+export DIST_F90_REQUEST="gfortran"
+export ACC_PLOT_PACKAGE="pgplot"
+export ACC_PLOT_DISPLAY_TYPE="X"
+export ACC_ENABLE_OPENMP="Y"
+export ACC_ENABLE_MPI="N"
+export ACC_FORCE_BUILTIN_MPI="N"
+export ACC_ENABLE_GFORTRAN_OPTIMIZATION="$BUILD_PRODUCTION"
+export ACC_ENABLE_SHARED="Y"
+export ACC_ENABLE_SHARED_ONLY="N"
+export ACC_ENABLE_FPIC="Y"
+export ACC_ENABLE_PROFILING="N"
+export ACC_SET_GMAKE_JOBS="12"
+export ACC_CONDA_BUILD="Y"
+export ACC_CONDA_BUILD_TESTS="Y"
+export ACC_CONDA_PATH="$CONDA_PREFIX"
+export ACC_USE_MACPORTS="N"
+PREFS
+
+echo "**** Invoking dist_source_me"
+set +e
+source util/dist_source_me
+set -e
+
+# The packages' configure scripts want current config.guess and config.sub, which the
+# conda environment ships. They are copied in for the build and removed after, so the
+# Bmad tree is left as it was.
+
+cp "$CONDA_PREFIX"/share/gnuconfig/config.* .
+trap "rm -f '$BMAD_ROOT/config.guess' '$BMAD_ROOT/config.sub'" EXIT
+
+if [[ "$BUILD_BMAD" == "Y" ]]; then
+  if [[ "$BUILD_PRODUCTION" == "Y" ]]; then
+    echo "**** Invoking dist_build_production"
+    util/dist_build_production
+  else
+    echo "**** Invoking dist_build_debug"
+    util/dist_build_debug
+  fi
+fi
+
+# Lucifer, through Master.cmake with the environment dist_source_me set. mk builds
+# production and mkd debug, into debug/ and production/ beside the Lucifer source.
+
+cd "$LUCIFER_DIR"
+if [[ "$BUILD_PRODUCTION" == "Y" ]]; then
+  echo "**** Building Lucifer, production"
+  mk
+else
+  echo "**** Building Lucifer, debug"
+  mkd
+fi

@@ -33,10 +33,10 @@ end type
 
 type nametable_struct
   character(40), allocatable :: name(:)    ! Array of names.
-  integer, allocatable :: index(:)         ! Sorted index for names(:) array.
-                                           !   names(an_index(i)) is in alphabetical order.
+  integer, allocatable :: index(:)         ! Sorted index for %name(:) array.
+                                           !   %name(%index(i)) is in alphabetical order.
   integer :: n_min = 1                     ! Set to 0 for use in a lattice.
-  integer :: n_max = 0                     ! Use only names(n_min:n_max) part of array.
+  integer :: n_max = 0                     ! Use only %name(n_min:n_max) part of array.
 end type
 
 ! An all_pointer_struct is just a pointer to either a real, integer, or logical variable.
@@ -102,7 +102,12 @@ character(*), parameter :: yellow_color = achar(27) // '[33m'
 character(*), parameter :: blue_color = achar(27) // '[34m' 
 character(*), parameter :: magenta_color = achar(27) // '[35m' 
 character(*), parameter :: cyan_color = achar(27) // '[36m' 
-character(*), parameter :: gray_color = achar(27) // '[37m' 
+character(*), parameter :: gray_color = achar(27) // '[37m'
+
+! Color names accepted by the prompt_color argument of read_a_line (input_mod).
+
+character(8), parameter :: terminal_color_name(9) = [character(8):: 'BLACK', 'RED', 'GREEN', 'YELLOW', &
+                                                      'BLUE', 'MAGENTA', 'CYAN', 'GRAY', 'DEFAULT']
 
 
 character(*), parameter :: dark_gray_color = achar(27) // '[90m' 

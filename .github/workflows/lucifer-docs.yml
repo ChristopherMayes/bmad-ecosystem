@@ -1,0 +1,140 @@
+# The part of Lucifer's validation that needs no Fortran build.
+#
+# The keystone runs eleven comparison tiers and twenty-five check sections against a
+# genesis4 binary, which needs the whole distribution built and the reference installed.
+# That is lucifer-keystone.yml, which costs a build and runs on demand. What fits here is
+# everything that only reads files, so it runs on every push: the documentation builds,
+# the input reference agrees with the Fortran declarations, the examples agree with the
+# feature list, and the generated example pages are current.
+#
+# Scoped to the lucifer-dev branch on purpose. The distribution's own ci.yml owns every
+# other branch, and this workflow has nothing to say about them.
+
+name: Lucifer - Docs & Conformance
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [lucifer-dev]
+  pull_request:
+    branches: [lucifer-dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs-and-conformance:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # pip rather than conda-forge here, which is the opposite of the rule for a
+      # workstation. A runner is thrown away after the job, so there is no shared
+      # environment for an install to escape into.
+      - name: Install mystmd
+        run: npm install -g mystmd
+
+      # The three conformance checks are standard library only, so nothing else is
+      # installed. If one of them ever needs numpy, it stops belonging in this job.
+      - name: Input-reference conformance
+        run: python lucifer/tests/scripts/check_input_reference.py
+
+      - name: Examples conformance
+        run: python lucifer/tests/scripts/check_examples.py
+
+      # A deck edited without regenerating its page would leave the documentation
+      # quoting text that no longer runs. Regenerating here and requiring no diff is the
+      # same guarantee the keystone gives, and it costs no build. The Markdown only: the
+      # figures beside it are rewritten byte for byte by a plotting-library upgrade, and
+      # diffing them would fail on a version bump rather than on a stale page.
+      - name: Example pages are current
+        run: |
+          python lucifer/tests/scripts/report_examples.py \
+            --examples lucifer/examples \
+            --out lucifer/doc/generated/examples
+          git diff --exit-code -- 'lucifer/doc/generated/examples/*.md'
+
+      # BASE_URL is what makes the built site work at a project-page address. Pages
+      # serves this repository under /<name>, so without it every asset and link
+      # resolves against the domain root and the pages load blank. The name is read
+      # from the repository rather than written out, so a rename or another fork needs
+      # no edit here.
+      - name: Build the documentation
+        working-directory: lucifer/doc
+        env:
+          BASE_URL: /${{ github.event.repository.name }}
+        run: myst build --html
+
+      - name: Package the site for Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: lucifer/doc/_build/html
+
+      - name: Scripts parse
+        run: |
+          for f in lucifer/tests/*.sh lucifer/examples/*.sh lucifer/examples/*/*.sh \
+                   lucifer/wavefront/tests/*.sh; do
+            [ -e "$f" ] || continue
+            bash -n "$f" || exit 1
+          done
+          python - <<'PY'
+          import ast, pathlib, sys
+          bad = 0
+          for f in sorted(pathlib.Path("lucifer").rglob("*.py")):
+              try:
+                  ast.parse(f.read_text())
+              except SyntaxError as e:
+                  print(f"{f}: {e}")
+                  bad = 1
+          sys.exit(bad)
+          PY
+
+  # Publishing the site the job above already built. This serves the fork's own Pages
+  # site, which is the only place Lucifer's documentation is readable without building
+  # it: the rest of Bmad ships LaTeX. The permissions live on this job rather than the
+  # workflow, so the conformance steps keep read-only access to the repository.
+  #
+  # A pull request builds the documentation and stops there. A proposed change must not
+  # replace what the branch is serving, and the build alone is what tells the author
+  # whether their page compiles.
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: docs-and-conformance
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    # Deploys are not cancelled when one supersedes another, so a half-finished
+    # deployment cannot be left behind by a quick second push.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+  # The tiers and the check sections are in lucifer-keystone.yml, which builds the debug
+  # tree and runs the benchmark harness on a Linux toolchain. It is separate from this
+  # workflow because it costs a distribution build where these steps cost none, so the
+  # two have different triggers: this one runs on every push, and that one on demand.
